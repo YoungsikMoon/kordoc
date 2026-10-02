@@ -58,7 +58,7 @@ const isSmallCapName = (name: string) => /^[^.]+\.(?:sc|smcp|c2sc)$/.test(name)
 /** 글자 대신 공백·빈 글·제어 문자로 나오는 코드 — 탭·줄바꿈(9·10·13)과 C1(0x80~0x9F)도 여기 든다 */
 const isRestorableCode = (code: number) => code < 0x20 || (code >= 0x80 && code <= 0x9f)
 
-interface OpGlyph { originalCharCode?: number; unicode?: string }
+interface OpGlyph { originalCharCode?: number; unicode?: string; width?: number }
 
 /**
  * TeX CM 수식 글꼴을 다시 매긴 하위 글꼴(Springer 계열 조판, ODL 028~031) — 이름·코드가 가리키는 글자가 아니라 원래 기호다.
@@ -185,3 +185,86 @@ export function restoreNamedGlyphs(
   }
   return changed
 }
+
+/** CID 글꼴 — commonObjs 의 글꼴 객체(fontExtraProperties)에서 쓰는 필드만 */
+export interface CidFontInfo { composite?: boolean; toUnicode?: { _map?: ArrayLike<string | undefined> } | null }
+
+/**
+ * ToUnicode 에 없는 CID 글꼴 코드 중 공백 폭인 것을 공백으로 되돌린다 (normalizeItems 전, 제자리). 바뀐 아이템 수.
+ *
+ * pdfjs 는 ToUnicode 에 없는 코드를 코드값 그대로 글자로 낸다 — Identity-H 의 코드는 글리프 번호라 엉뚱한 한자가 된다.
+ * Microsoft Print To PDF 는 OpenType 조판이 낱말 사이 공백을 바꿔 넣은 대체 공백 글리프(Noto Sans KR GID 22586, 폭 280)를
+ * ToUnicode 에 싣지 않아 공백마다 "堺"(U+583A) 가 찍혔다. pdfium·poppler 는 이 코드를 글자로 내지 않는다.
+ * 같은 글꼴에서 ToUnicode 가 공백으로 매긴 글리프 폭의 1.5배 이하인 코드만 공백으로 — 공백 폭을 모르는 글꼴,
+ * 넓은 글리프, ToUnicode 의 다른 코드가 같은 글자를 내는 경우는 손대지 않는다.
+ */
+export function restoreUnmappedCidSpaces(
+  items: PdfTextItem[], fnArray: ArrayLike<number>, argsArray: ArrayLike<unknown>,
+  fontOf: (loadedName: string) => CidFontInfo | null | undefined,
+): number {
+  const maps = new Map<string, ArrayLike<string | undefined> | null>()
+  const mapOf = (font: string) => {
+    if (!maps.has(font)) {
+      const f = fontOf(font)
+      const m = f?.composite ? f.toUnicode?._map : undefined
+      maps.set(font, m && m.length > 0 ? m : null)
+    }
+    return maps.get(font)!
+  }
+  const spaceWidth = new Map<string, number>()
+  const unmapped = new Map<string, Map<number, { width: number; glyphs: OpGlyph[] }>>()
+  const saved: string[] = []
+  let font = ""
+  for (let i = 0; i < fnArray.length; i++) {
+    const fn = fnArray[i]
+    const args = (argsArray as unknown[][])[i]
+    if (fn === OPS.setFont) font = String(args[0])
+    else if (fn === OPS.save || fn === OPS.paintFormXObjectBegin) saved.push(font)
+    else if (fn === OPS.restore || fn === OPS.paintFormXObjectEnd) font = saved.pop() ?? font
+    else if (fn === OPS.showText) {
+      const map = mapOf(font)
+      if (!map) continue
+      for (const raw of args[0] as unknown[]) {
+        if (!raw || typeof raw !== "object") continue
+        const g = raw as OpGlyph
+        const code = g.originalCharCode
+        if (code === undefined || typeof g.width !== "number") continue
+        if (map[code] === " ") spaceWidth.set(font, Math.max(spaceWidth.get(font) ?? 0, g.width))
+        else if (map[code] === undefined && g.unicode === String.fromCharCode(code)) {
+          let codes = unmapped.get(font)
+          if (!codes) unmapped.set(font, codes = new Map())
+          const seen = codes.get(code)
+          if (seen) seen.glyphs.push(g)
+          else codes.set(code, { width: g.width, glyphs: [g] })
+        }
+      }
+    }
+  }
+
+  const spaceChars = new Map<string, Set<string>>()
+  for (const [fontName, codes] of unmapped) {
+    const sw = spaceWidth.get(fontName)
+    if (!sw) continue
+    const mapped = new Set(Array.from(mapOf(fontName) ?? [], v => v))
+    const chars = new Set<string>()
+    for (const [code, { width, glyphs }] of codes) {
+      const ch = String.fromCharCode(code)
+      if (width > sw * 1.5 || mapped.has(ch)) continue
+      chars.add(ch)
+      for (const g of glyphs) g.unicode = " " // 뒤의 글리프 흐름 대조(markSyntheticSpaces 등)가 같은 글을 보게
+    }
+    if (chars.size) spaceChars.set(fontName, chars)
+  }
+  if (!spaceChars.size) return 0
+
+  let changed = 0
+  for (const it of items) {
+    const chars = it.fontName ? spaceChars.get(it.fontName) : undefined
+    if (!chars || typeof it.str !== "string") continue
+    let out = ""
+    for (const ch of it.str) out += chars.has(ch) ? " " : ch
+    if (out !== it.str) { it.str = out; changed++ }
+  }
+  return changed
+}
+
