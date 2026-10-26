@@ -2,6 +2,19 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.11: OCR, rendering and generation · 2026-10-27
+
+Compared document by document against 4.24.10 on the same corpora and scorers: OCR, degraded inputs and ODL OCR (rounds 115, 116, 118, 119), rendered text and image positions and page counts (112), and generation fidelity and round trip (113). PDF text, table and annex code is unchanged. The two exceptions are listed in the changelog.
+
+| Metric | 4.24.10 | 4.24.11 |
+| --- | --- | --- |
+| OCR CER (fair · strict) | 0.03096 · 0.06255 | **0.03055 · 0.06215** |
+| OCR character recall | 0.99100 | **0.99121** |
+| Degraded-input OCR CER (clean · blur · JPEG · scan) | 0.0476 · 0.0631 · 0.0504 · 0.0730 | **0.0475 · 0.0630 · 0.0503 · 0.0730** |
+| Rendered text position (same measurement) | 87,546/90,840 | **87,577/90,840** |
+| Generation fidelity (mean of 5) | 0.80596 | **0.80681** |
+| PDF text · tables · statute annexes · ODL · round trip · image position · page count | — | unchanged |
+
 ## 4.24.10: security, OCR and PDF · 2026-10-26
 
 Compared document by document against 4.24.9 on the same corpora and scorers for OCR, degraded inputs, PDF text and tables, statute annexes and ODL (no regressions; HWPX, round-trip, generation and rendering code is unchanged). This release fixes the vulnerable demo lockfile and the Java SDK build-file name that blocked the government GitLab mirror, plus OCR leading bullets (▣, ❐, ‣), Roman numerals read as a vertical bar and date-final periods, and PDF vertical-writing 、。, gradient backgrounds taken as rules and CJK–Latin autospacing.
