@@ -27,7 +27,16 @@ export function restoreSymbols(text: string, ringDecided = false): string {
   // "(cid:NN)" 은 PDF 텍스트 추출기가 유니코드 없는 글리프에 쓰는 표기 — 인식기가 학습 자료에서 배워 티끌·가는
   // 막대 박스에 낸다(pcccr·rda-planfarm·yeosu 실측, 박스 5~16px). 인쇄된 글자일 수 없으니 지운다
   s = s.replace(/\(cid:\d*\)/g, "")
-  return smartQuotes(joinDigitGroups(s))
+  return smartQuotes(dateCommas(joinDigitGroups(s)))
+}
+
+/**
+ * 날짜 마침표를 쉼표로 읽은 것 — "2021, 12, 9" → "2021. 12. 9"(선거 사례집). 네 자리 연도 뒤 한두 자리 월·일만 —
+ * 천 단위 쉼표는 늘 세 자리씩 끊기니("2,021") 숫자와 섞이지 않는다
+ */
+export function dateCommas(s: string): string {
+  return s.replace(/(?<![\d,.])((?:19|20)\d{2})(\s?)[,.](\s?)(1[0-2]|0?[1-9])(\s?),(\s?)(3[01]|[12]\d|0?[1-9])(?![\d,])/g, "$1.$2$3$4.$5$6$7")
+    .replace(/(?<![\d,.])((?:19|20)\d{2})(\s?),(\s?)(1[0-2]|0?[1-9])(\s?)\.(\s?)(3[01]|[12]\d|0?[1-9])(?![\d,])/g, "$1.$2$3$4.$5$6$7")
 }
 
 /**
