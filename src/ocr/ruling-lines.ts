@@ -25,6 +25,10 @@ import type { LineSegment } from "../pdf/line-types.js"
 const INK_LUMA_MAX = 205
 /** 최소 선 길이 (pt) — 최소 셀 변(≈7mm)과 대형 글리프 획(≤1em) 사이 */
 const MIN_LINE_LENGTH_PT = 20
+/** 두 가로 괘선을 잇는 짧은 세로선의 최소 길이 (pt) — 조직도 상자 사이 연결선(16pt) */
+const BRIDGE_MIN_LENGTH_PT = 6
+/** 연결선이 잇는 상자의 최소 폭 (pt) */
+const BRIDGE_BOX_MIN_PT = 30
 /** 선 두께 상한 (pt) — 진짜 괘선(0.12~0.7mm ≈ 0.3~2pt)과 굵은 글리프 획(2pt+) 분리 */
 const MAX_LINE_WIDTH_PT = 2.5
 /** 런 내 허용 끊김 (px) — 스캔 노이즈/JPEG 아티팩트 */
@@ -123,6 +127,30 @@ export function detectRulingLines(
   const dotH = detectBands(ink, width, height, maxThickPx, false, dotted)
   const dotV = detectBands(ink, width, height, maxThickPx, true, dotted)
   const tol = Math.max(2, Math.round(DOT_TOUCH_PT * scale))
+  // 같은 폭 두 가로 괘선을 잇는 짧은 세로선 — 최소 길이(20pt)에 못 미쳐 빠지던 조직도 연결선(과 상자 밑변 ↔ 팀 상자 윗변, 16pt)을 살린다.
+  // 텍스트층 경로는 벡터 연결선으로 두 상자를 한 열 격자로 묶어 과 → 팀 순으로 읽는다(여수 업무계획 조직도) — 위아래 끝이 모두
+  // 가로 괘선에 닿는 것만이라 칸 안 글자 획은 걸리지 않는다
+  const bridgeMin = Math.max(2, Math.round(BRIDGE_MIN_LENGTH_PT * scale))
+  const endsOn = (x: number, y: number) => horizontals.filter(h => Math.abs(h.y1 - y) <= tol + h.thicknessPx && h.x1 - tol <= x && h.x2 + tol >= x)
+  // 같은 폭 상자끼리(위 가로선과 아래 가로선의 양끝이 같다) — 조직도 가로 막대에서 상자로 내린 선까지 살리면 조직도 전체가 한 표로 뭉친다.
+  // 두 상자 사이 빈 틈이어야 한다 — 표 행은 양옆 세로 테두리가 그 사이를 지나가고, 행 높이에 꽉 찬 글자 획도 위아래 행 선에 닿는다
+  // (미래전략포럼 개요 표 3열이 16열로 갈렸다)
+  const sides = (x: number, y1: number, y2: number) => verticals.some(p => Math.abs(p.x1 - x) <= tol && p.y1 <= y1 + tol && p.y2 >= y2 - tol)
+  // 연결선은 상자 가로 가운데에 내린다(폭의 25% 안) — 겹친 네모 장식 그림 안 선은 가장자리에 붙는다(학교 업무 매뉴얼 표지 그림).
+  // 상자는 글 한 줄을 담을 폭(30pt) 이상
+  const boxMin = BRIDGE_BOX_MIN_PT * scale
+  // 위 가로선은 닫힌 상자의 밑변(양끝 세로 테두리가 위에서 내려와 거기서 끝남), 아래 가로선은 닫힌 상자의 윗변(양끝 테두리가 거기서
+  // 시작해 내려감)이어야 한다 — 테두리 없는 글 영역의 글자 획(가로로 긴 획)이 짧은 가로선으로 잡혀 그 사이를 이었다(web068 소속기관 줄)
+  const endsAt = (x: number, y: number) => verticals.some(p => Math.abs(p.x1 - x) <= tol && Math.abs(p.y2 - y) <= tol * 2 && p.y1 < y - tol)
+  const startsAt = (x: number, y: number) => verticals.some(p => Math.abs(p.x1 - x) <= tol && Math.abs(p.y1 - y) <= tol * 2 && p.y2 > y + tol)
+  const sameSpan = (a: PxSegment[], b: PxSegment[], x: number) => a.some(p => b.some(q => Math.abs(p.x1 - q.x1) <= tol && Math.abs(p.x2 - q.x2) <= tol
+    && p.x2 - p.x1 >= boxMin && Math.abs(x - (p.x1 + p.x2) / 2) <= (p.x2 - p.x1) * 0.25
+    && !sides(p.x1, p.y1, q.y1) && !sides(p.x2, p.y1, q.y1)
+    && endsAt(p.x1, p.y1) && endsAt(p.x2, p.y1) && startsAt(q.x1, q.y1) && startsAt(q.x2, q.y1)))
+  for (const v of detectBands(ink, width, height, maxThickPx, true, (m, base, step, span) => solidRuns(m, base, step, span, bridgeMin))) {
+    if (v.y2 - v.y1 + 1 >= minLenPx || !sameSpan(endsOn(v.x1, v.y1), endsOn(v.x1, v.y2), v.x1)) continue
+    if (!verticals.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 <= v.y1 + tol && p.y2 >= v.y2 - tol)) verticals.push(v)
+  }
   const allH = [...horizontals, ...dotH], allV = [...verticals, ...dotV]
   // 가로 a 가 세로 선(p.x1 = p.x2)과 만나거나 끝이 닿는지 (세로 a 는 축을 바꿔 같은 판정)
   const touchesV = (a: PxSegment) => allV.some(p => p.x1 >= a.x1 - tol && p.x1 <= a.x2 + tol && a.y1 >= p.y1 - tol && a.y1 <= p.y2 + tol)
