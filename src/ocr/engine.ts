@@ -40,7 +40,7 @@ import {
 import { edgeTrim, leadingBullet, tallInkCount, grayCrop, inkBounds, inkStats, leaderRuns, leadingTriangle, leadingRing, splitRowBands } from "./line-split.js"
 import { restoreGlyphs, trimInklessEnds } from "./glyph-restore.js"
 import { isDotFragment, joinLeaderItems, restoreBulletItems, restoreSymbols } from "./postprocess.js"
-import { bandBoxes, splitBoxAtCellRules, lineCrop, type Box, REC_HEIGHT } from "./crop.js"
+import { bandBoxes, splitBoxAtCellRules, splitBoxAtRowRules, lineCrop, type Box, REC_HEIGHT } from "./crop.js"
 import { disableOrtTelemetry } from "./runtime-env.js"
 import { findOcrTextGaps, rememberOcrTextGaps } from "./text-gaps.js"
 
@@ -233,10 +233,12 @@ export class OcrEngine {
     stats?: OcrPageStats,
     tuning: Readonly<OcrTuning> = DEFAULT_OCR_TUNING,
     cellRules: Array<{ x1: number; y1: number; y2: number; thicknessPx: number }> = [],
+    rowRules: Array<{ x1: number; x2: number; y1: number; thicknessPx: number }> = [],
   ): Promise<OcrItem[]> {
     if (width < DET_MIN_SIZE || height < DET_MIN_SIZE) return []
     const detected = await this.detect(rgba, width, height, tuning, stats)
-    const boxes = cellRules.length ? detected.flatMap(b => splitBoxAtCellRules(b, cellRules)) : detected
+    const rows = rowRules.length ? detected.flatMap(b => splitBoxAtRowRules(b, rowRules)) : detected
+    const boxes = cellRules.length ? rows.flatMap(b => splitBoxAtCellRules(b, cellRules)) : rows
 
     // 박스 픽셀 분석 → 인식 작업(라인) 목록. group = 한 결과로 합칠 후보 묶음(회전 후보)
     const jobs: LineJob[] = []
