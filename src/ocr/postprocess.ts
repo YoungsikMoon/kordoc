@@ -27,6 +27,9 @@ export function restoreSymbols(text: string, ringDecided = false): string {
   // "(cid:NN)" 은 PDF 텍스트 추출기가 유니코드 없는 글리프에 쓰는 표기 — 인식기가 학습 자료에서 배워 티끌·가는
   // 막대 박스에 낸다(pcccr·rda-planfarm·yeosu 실측, 박스 5~16px). 인쇄된 글자일 수 없으니 지운다
   s = s.replace(/\(cid:\d*\)/g, "")
+  // 직함 앞 "전(前)·현(現)" — 인식 사전에 前·現 이 없어 괄호만 남는다("트리셰 전()유럽중앙은행 총재", 금융안정 콘퍼런스 보도자료).
+  // 낱말 머리에 홀로 선 전·현 뒤 빈 괄호만 채운다(속기록 "생기()되는" 같은 다른 한자 자리는 무엇인지 모르니 둔다)
+  s = s.replace(/(^|[^\uac00-\ud7a3])(전|현)\(\s?\)(?=\S)/g, (_, a: string, b: string) => `${a}${b}(${b === "전" ? "\u524d" : "\u73fe"})`)
   return smartQuotes(dateCommas(joinDigitGroups(s)))
 }
 

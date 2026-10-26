@@ -92,6 +92,15 @@ describe("restoreBulletItems — 떨어진 글머리 O", () => {
   })
 })
 
+describe("restoreSymbols — 직함 앞 전(前)·현(現)", () => {
+  it("낱말 머리 전·현 뒤 빈 괄호만 채운다", () => {
+    assert.equal(restoreSymbols("트리셰 전()유럽중앙은행 총재"), "트리셰 전(前)유럽중앙은행 총재")
+    assert.equal(restoreSymbols("및 현()명예총재"), "및 현(現)명예총재")
+    assert.equal(restoreSymbols("하여 생기()되는 직무"), "하여 생기()되는 직무")
+    assert.equal(restoreSymbols("발전()"), "발전()")
+  })
+})
+
 describe("dateCommas — 날짜 마침표를 쉼표로 읽은 것", () => {
   it("네 자리 연도 뒤 한두 자리 월·일만 마침표로", () => {
     assert.equal(dateCommas("2021, 12, 9(목)"), "2021. 12. 9(목)")
