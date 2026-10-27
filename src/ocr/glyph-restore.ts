@@ -253,7 +253,8 @@ function gaps({ chars, cx, gray, w, h, ink }: Ctx) {
  */
 function ring({ chars, cx, gray, w, h, ink }: Ctx): boolean {
   const k = chars.findIndex(c => c.trim())
-  if (k < 0 || !/^[\u3147Oo0\u25cb]$/.test(chars[k])) return false
+  // C·c 로도 읽는다("○ 제2차~제5차" → "C제2차", 구의회 예산 검토) — 진짜 C 는 오른쪽이 트여 ringBullet 이 고리로 보지 않는다
+  if (k < 0 || !/^[\u3147Oo0\u25cbCc]$/.test(chars[k])) return false
   // 뒤 글이 한글이거나 여는 괄호 뒤 한글("❍(정책) 민생성장"), 숫자 뒤 한글("ｏ4대보험" 을 모델은 "04대보험" 으로 읽는다 — 숫자 0 은
   // 세로로 길어 ringBullet 이 고리로 보지 않는다)
   const rest = chars.slice(k + 1).join("").trimStart()
@@ -274,6 +275,7 @@ function ring({ chars, cx, gray, w, h, ink }: Ctx): boolean {
   }
   if (!/^[(\[「【<]?\d*[가-힣]/.test(rest)) return false
   const r = ringBullet(gray, w, h, ink, cx(k))
+  if (/^[Cc]$/.test(chars[k]) && r !== "\u25cb") return false
   if (r) chars[k] = r
   return r !== null
 }

@@ -85,3 +85,21 @@ describe("고리만 든 칸", () => {
     assert.notEqual(restoreGlyphs(cellPage(true), W, box, "O", [4], 10), "○")
   })
 })
+
+describe("C 로 읽은 줄 머리 고리", () => {
+  function headPage(open: boolean): Uint8Array {
+    const rgba = new Uint8Array(W * H * 4).fill(255)
+    for (let y = 0; y < H; y++) for (let x = 0; x < 24; x++) {
+      const d = Math.hypot(x + 0.5 - 11, y + 0.5 - 17)
+      if (d <= 10 && d > 9 && !(open && x > 15 && Math.abs(y + 0.5 - 17) < 5)) { const p = (y * W + x) * 4; rgba[p] = rgba[p + 1] = rgba[p + 2] = 0 }
+    }
+    for (let y = 4; y < 30; y++) for (let x = 28; x < 70; x++) if (x % 14 < 11) { const p = (y * W + x) * 4; rgba[p] = rgba[p + 1] = rgba[p + 2] = 0 }
+    return rgba
+  }
+  it("닫힌 가는 고리면 ○", () => {
+    assert.equal(restoreGlyphs(headPage(false), W, box, "C제2차", [1, 3.4, 4.8, 6.2], 10), "○제2차")
+  })
+  it("오른쪽이 트인 진짜 C 는 그대로", () => {
+    assert.equal(restoreGlyphs(headPage(true), W, box, "C제2차", [1, 3.4, 4.8, 6.2], 10), "C제2차")
+  })
+})
