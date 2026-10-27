@@ -145,7 +145,28 @@ interface SharpChain {
 /** 인식 대상 한 줄 — rot 는 crop 회전(90=반시계, 270=시계). join: 리더로 가른 박스 번호, dotsBefore: 앞에 리더가 있었는지,
  *  trimDots: crop 이 뒤 리더 점을 물었는지(결과 끝 점을 지운다) */
 /** keep: 인식 crop 에서 남길 박스 로컬 구간 — 밖(이웃 줄 끝자락·상자 테두리)은 배경으로 칠한다 (edgeTrim) */
-interface LineJob { box: Box; rot: 0 | 90 | 270; group: number; join?: number; dotsBefore?: boolean; trimDots?: boolean; keep?: { x0: number; x1: number; y0: number; y1: number; bg: number } }
+interface LineJob { box: Box; rot: 0 | 90 | 270; group: number; footer?: boolean; join?: number; dotsBefore?: boolean; trimDots?: boolean; keep?: { x0: number; x1: number; y0: number; y1: number; bg: number } }
+
+/**
+ * 검출기가 놓친 쪽 번호 꼬리말 — 띄엄띄엄 얇은 "-   1   -" 는 DB 검출 지도에서 글줄로 이어지지 않아 상자가 아예 없다(국회 예산 검토
+ * 보고서·연구 보고서·업무보고 첫 쪽). 쪽 아래 12%·가운데 40% 띠에서 검출 상자에 들지 않은 잉크의 외곽이 쪽 높이 0.5~2.5% 면
+ * 그 외곽(여백 4px)을 인식 상자로 하나 더 낸다 — 결과가 쪽 번호 꼴("- 1 -"·"3"·"- ii -")이 아니면 버린다
+ */
+export function footerInkBox(rgba: Uint8Array, width: number, height: number, boxes: Box[]): Box | null {
+  const y0 = Math.floor(height * 0.88), x0 = Math.floor(width * 0.3), x1 = Math.ceil(width * 0.7)
+  let minX = Infinity, maxX = -1, minY = Infinity, maxY = -1
+  for (let y = y0; y < height; y++) for (let x = x0; x < x1; x++) {
+    const p = (y * width + x) * 4
+    if ((rgba[p] * 77 + rgba[p + 1] * 150 + rgba[p + 2] * 29) >> 8 >= 128) continue
+    if (boxes.some(b => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h)) continue
+    if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y
+  }
+  if (maxX < 0) return null
+  const bh = maxY - minY + 1
+  if (bh < height * 0.005 || bh > height * 0.025 || maxX - minX + 1 > width * 0.2) return null
+  const pad = 4, bx = Math.max(0, minX - pad), by = Math.max(0, minY - pad)
+  return { x: bx, y: by, w: Math.min(width, maxX + pad + 1) - bx, h: Math.min(height, maxY + pad + 1) - by }
+}
 
 export class OcrEngine {
   private det: InferenceSession
@@ -262,6 +283,7 @@ export class OcrEngine {
     const detected = await this.detect(rgba, width, height, tuning, stats)
     const rows = rowRules.length ? detected.flatMap(b => splitBoxAtRowRules(b, rowRules)) : detected
     const boxes = cellRules.length ? rows.flatMap(b => splitBoxAtCellRules(b, cellRules)) : rows
+    const footer = tuning.postprocess ? footerInkBox(rgba, width, height, boxes) : null
 
     // 박스 픽셀 분석 → 인식 작업(라인) 목록. group = 한 결과로 합칠 후보 묶음(회전 후보)
     const jobs: LineJob[] = []
@@ -322,6 +344,7 @@ export class OcrEngine {
       jobs.push({ box: b, rot: 0, group: group++ })
     }
 
+    if (footer) jobs.push({ box: footer, rot: 0, group: group++, footer: true })
     const results = await this.recognizeJobs(rgba, width, jobs, tuning.recBatch)
 
     // 회전 후보 그룹은 최고 신뢰도 하나만
@@ -375,6 +398,11 @@ export class OcrEngine {
       if (tuning.postprocess && text === "\u2192" && job.rot === 0 && job.join === undefined) {
         const g = grayCrop(rgba, width, job.box)
         text = arrowGlyph(g, job.box.w, job.box.h, inkStats(g)) ?? text
+      }
+      // 쪽 번호 꼴만 받고 막대는 붙임표로(OCR 코퍼스 정답 쪽 번호 31곳 모두 "-")
+      if (job.footer) {
+        if (!/^[-\u2013\u2014]?\s*(?:\d{1,4}|[ivxIVXⅰ-ⅹⅠ-Ⅹ]{1,4})\s*[-\u2013\u2014]?$/.test(text.trim())) continue
+        text = text.replace(/[\u2013\u2014]/g, "-")
       }
       if (tuning.postprocess && isDotFragment(text)) continue
       if (confidence < tuning.textScore) {
