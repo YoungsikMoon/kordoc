@@ -168,6 +168,42 @@ export function footerInkBox(rgba: Uint8Array, width: number, height: number, bo
   return { x: bx, y: by, w: Math.min(width, maxX + pad + 1) - bx, h: Math.min(height, maxY + pad + 1) - by }
 }
 
+/**
+ * 서식 칸에서 멀리 떨어진 닫는 괄호 — "(전화 :            )" 처럼 빈칸 뒤 홀로 선 ")" 는 검출기가 상자로 잡지 않는다(법령 별지서식
+ * 신청서 주소 칸). 닫히지 않은 "(" 로 끝나는 줄 박스 오른쪽, 같은 높이 띠에서 다음 박스 앞까지 잉크가 좁고 키 큰 조각 하나뿐이면
+ * 그 자리에 ")" 아이템을 낸다(폭 ≤ 띠 높이 0.5·높이 ≥ 0.6, 박스 높이 8배 안)
+ */
+export function closingParens(rgba: Uint8Array, width: number, items: OcrItem[]): OcrItem[] {
+  const out: OcrItem[] = []
+  const dark = (x: number, y: number) => { const p = (y * width + x) * 4; return ((rgba[p] * 77 + rgba[p + 1] * 150 + rgba[p + 2] * 29) >> 8) < 128 }
+  for (const it of items) {
+    const t = it.text.replace(/\s+$/, "")
+    if ((t.match(/\(/g)?.length ?? 0) <= (t.match(/\)/g)?.length ?? 0) || !/\([^()]*$/.test(t)) continue
+    const x0 = it.x + it.w + 2
+    const next = items.filter(o => o !== it && o.x >= x0 && o.y < it.y + it.h && o.y + o.h > it.y).reduce((m, o) => Math.min(m, o.x), Infinity)
+    const x1 = Math.min(width, next, x0 + it.h * 8)
+    let minX = Infinity, maxX = -1, minY = Infinity, maxY = -1, cols = 0, prevOn = false, runs = 0
+    for (let x = x0; x < x1; x++) {
+      let on = false
+      for (let y = it.y; y < it.y + it.h; y++) if (dark(x, y)) { on = true; if (y < minY) minY = y; if (y > maxY) maxY = y }
+      if (on) { cols++; if (!prevOn) runs++; if (x < minX) minX = x; maxX = x }
+      prevOn = on
+    }
+    if (runs !== 1 || maxX - minX + 1 > it.h * 0.5 || maxY - minY + 1 < it.h * 0.6) continue
+    // 칸 세로 테두리는 띠 밖으로 이어진다 — 위아래 2px 밖에 잉크가 있으면 뺀다
+    let rule = false
+    for (let x = minX; x <= maxX && !rule; x++) rule = (minY > 1 && dark(x, minY - 2)) || dark(x, Math.min(maxY + 2, Math.floor(rgba.length / 4 / width) - 1))
+    if (rule) continue
+    // ")" 는 가운데가 오른쪽으로 휜다 — 위·아래 20% 줄의 잉크 x 평균보다 가운데 줄이 오른쪽
+    const meanX = (ya: number, yb: number) => { let sx = 0, k = 0; for (let y = ya; y < yb; y++) for (let x = minX; x <= maxX; x++) if (dark(x, y)) { sx += x; k++ } return k ? sx / k : NaN }
+    const ch = maxY - minY + 1, band = Math.max(1, Math.round(ch * 0.2))
+    const ends = (meanX(minY, minY + band) + meanX(maxY + 1 - band, maxY + 1)) / 2, mid = meanX(minY + Math.floor(ch * 0.4), minY + Math.ceil(ch * 0.6))
+    if (!(mid - ends >= 0.8)) continue
+    out.push({ text: ")", x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1, confidence: it.confidence })
+  }
+  return out
+}
+
 export class OcrEngine {
   private det: InferenceSession
   private rec: InferenceSession
@@ -448,6 +484,7 @@ export class OcrEngine {
     if (leaderEnds.size) items = joinLeaderItems(items, leaderEnds)
     if (tuning.postprocess) items = dropNestedFragments(items)
     if (tuning.postprocess) for (const it of items) this.outerSquare(rgba, width, it, items)
+    if (tuning.postprocess) items.push(...closingParens(rgba, width, items))
     if (tuning.postprocess) restoreBulletItems(items)
     items.sort((a, b) => (a.y - b.y) || (a.x - b.x))
     return items
