@@ -232,6 +232,42 @@ export function leadingTriangle(gray: Uint8Array, w: number, h: number, ink: Ink
 }
 
 /**
+ * 홀로 선 화살표 박스의 모양 — 사전에 → 만 있어 모델은 화살표류를 모두 → 로 읽는다(서식 흐름도 ➔·▶, 업무계획 ⇨).
+ * 가장 큰 잉크 성분의 왼쪽(대) 부분 세로 단면으로 가른다: 단면이 위아래 둘(테두리만)이면 속 빈 ⇨, 왼끝 단면이 성분
+ * 높이를 거의 채우고 오른쪽으로 갈수록 줄면 삼각 ▶(대가 따로 떨어진 "----▶"), 대 굵기가 성분 높이의 22% 넘으면 굵은 ➔.
+ * 그 밖(가는 대)은 → 그대로(null)
+ */
+export function arrowGlyph(gray: Uint8Array, w: number, h: number, ink: InkStats): "\u21e8" | "\u25b6" | "\u2794" | null {
+  const { comps, label } = components(gray, w, h, ink)
+  const main = comps.sort((a, b) => (b.x1 - b.x0) * (b.y1 - b.y0) - (a.x1 - a.x0) * (a.y1 - a.y0))[0]
+  if (!main) return null
+  const cw = main.x1 - main.x0, ch = main.y1 - main.y0
+  if (ch < 8 || cw < ch * 0.6) return null
+  const runs = (x: number): number[] => {
+    const out: number[] = []
+    let n = 0
+    for (let y = main.y0; y < main.y1; y++) {
+      if (label[y * w + x] === main.id) n++
+      else if (n) { out.push(n); n = 0 }
+    }
+    if (n) out.push(n)
+    return out
+  }
+  const cols: number[][] = []
+  for (let x = main.x0 + 1; x < main.x0 + Math.max(2, Math.round(cw * 0.35)); x++) cols.push(runs(x))
+  if (cols.length < 2) return null
+  if (cols.filter(r => r.length === 2).length >= cols.length * 0.7) return "\u21e8"
+  // 대 끝 쪽 단면에 머리 날개 끝이 걸릴 수 있다 — 한 덩어리 단면이 대부분이면 그것만 본다
+  const single = cols.filter(r => r.length === 1)
+  if (single.length < cols.length * 0.7) return null
+  const lens = single.map(r => r[0]).sort((a, b) => a - b), med = lens[lens.length >> 1]
+  const tail = runs(main.x0 + Math.round(cw * 0.8))
+  if (med >= ch * 0.8 && tail.length === 1 && tail[0] <= ch * 0.5) return "\u25b6"
+  if (med >= ch * 0.22 && med < ch * 0.5 && cw >= ch * 0.9) return "\u2794"
+  return null
+}
+
+/**
  * 목차 리더 점("·········")의 가로 구간들 (박스 로컬 [x0, x1)). 검출기는 쪽번호를 앞쪽 리더 점과 한 박스로
  * 묶는데, 인식기는 점 무리 뒤 숫자를 망친다 — "·····5"→"…55", "·····141"→"…11", "·····203"→"03"
  * (changwon-plan2026 목차 실측, 코퍼스 80쪽의 리더 섞인 박스 192개). 점 무리를 빼고 앞뒤 글만 따로 인식한다.

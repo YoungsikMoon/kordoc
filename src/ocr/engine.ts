@@ -37,7 +37,7 @@ import {
   ocrSourcePath,
   parseCharacterDict,
 } from "./models.js"
-import { edgeTrim, leadingBullet, tallInkCount, grayCrop, inkBounds, inkStats, leaderRuns, leadingTriangle, leadingRing, splitRowBands } from "./line-split.js"
+import { arrowGlyph, edgeTrim, leadingBullet, tallInkCount, grayCrop, inkBounds, inkStats, leaderRuns, leadingTriangle, leadingRing, splitRowBands } from "./line-split.js"
 import { restoreGlyphs, trimInklessEnds } from "./glyph-restore.js"
 import { isDotFragment, joinLeaderItems, restoreBulletItems, restoreSymbols } from "./postprocess.js"
 import { bandBoxes, splitBoxAtCellRules, splitBoxAtRowRules, lineCrop, type Box, REC_HEIGHT } from "./crop.js"
@@ -347,6 +347,11 @@ export class OcrEngine {
         const g = grayCrop(rgba, width, job.box)
         const tri = leadingTriangle(g, job.box.w, job.box.h, inkStats(g))
         if (tri) text = tri + text
+      }
+      // 홀로 선 화살표는 모양대로 — 사전에 → 만 있다 (line-split arrowGlyph)
+      if (tuning.postprocess && text === "\u2192" && job.rot === 0 && job.join === undefined) {
+        const g = grayCrop(rgba, width, job.box)
+        text = arrowGlyph(g, job.box.w, job.box.h, inkStats(g)) ?? text
       }
       if (tuning.postprocess && isDotFragment(text)) continue
       if (confidence < tuning.textScore) {

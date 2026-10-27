@@ -12,7 +12,7 @@
  */
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { bracketFeatures, bracketShape, circledAt, edgeTrim, gapGlyphs, inkStats, ringBullet, serifOne, starRun, leaderRuns, leadingBullet, leadingTriangle, quoteHead, romanStems, splitRowBands, tallInkCount } from "../src/ocr/line-split.js"
+import { arrowGlyph, bracketFeatures, bracketShape, circledAt, edgeTrim, gapGlyphs, inkStats, ringBullet, serifOne, starRun, leaderRuns, leadingBullet, leadingTriangle, quoteHead, romanStems, splitRowBands, tallInkCount } from "../src/ocr/line-split.js"
 
 function canvas(w: number, h: number, bg = 255): Uint8Array {
   return new Uint8Array(w * h).fill(bg)
@@ -488,5 +488,33 @@ describe("gapGlyphs — 분수 칸 빗금 / 과 꼬리말 막대 -", () => {
     assert.deepEqual(gapGlyphs(g, w, h, inkStats(g)).glyphs.map(x => x.mark), ["/"])
     const d = canvas(w, h); rect(d, w, 10, 6, 28, 34); rect(d, w, 80, 6, 98, 34); rect(d, w, 45, 19, 57, 21)
     assert.deepEqual(gapGlyphs(d, w, h, inkStats(d)).glyphs.map(x => x.mark), ["-"])
+  })
+})
+
+describe("arrowGlyph — 홀로 선 화살표 모양", () => {
+  // 사전에 → 만 있어 ➔·▶·⇨ 가 모두 → 로 읽혔다(서식 흐름도·업무계획)
+  const W = 60, H = 40
+  /** 대(x0..x1, 굵기 t) + 오른쪽 열린 꺾쇠 머리(획 굵기 s) */
+  function arrow(t: number, s: number, hollow = false): Uint8Array {
+    const g = canvas(W, H)
+    const cy = 20, x0 = 6, x1 = 40
+    if (hollow) { rect(g, W, x0, cy - t, x1, cy - t + 2); rect(g, W, x0, cy + t - 2, x1, cy + t); rect(g, W, x0, cy - t, x0 + 2, cy + t) }
+    else rect(g, W, x0, cy - (t >> 1), x1 + 6, cy - (t >> 1) + t)
+    for (let k = 0; k <= 14; k++) { rect(g, W, 30 + k, cy - 14 + k, 30 + k + s, cy - 14 + k + 1); rect(g, W, 30 + k, cy + 14 - k, 30 + k + s, cy + 15 - k) }
+    return g
+  }
+  it("굵은 대 → ➔, 가는 대 → null", () => {
+    const heavy = arrow(8, 6), thin = arrow(2, 2)
+    assert.equal(arrowGlyph(heavy, W, H, inkStats(heavy)), "\u2794")
+    assert.equal(arrowGlyph(thin, W, H, inkStats(thin)), null)
+  })
+  it("테두리만 있는 대 → ⇨", () => {
+    const g = arrow(7, 2, true)
+    assert.equal(arrowGlyph(g, W, H, inkStats(g)), "\u21e8")
+  })
+  it("속 찬 삼각형 → ▶", () => {
+    const g = canvas(W, H)
+    for (let x = 10; x < 40; x++) { const half = Math.round(15 * (40 - x) / 30); rect(g, W, x, 20 - half, x + 1, 20 + half + 1) }
+    assert.equal(arrowGlyph(g, W, H, inkStats(g)), "\u25b6")
   })
 })
