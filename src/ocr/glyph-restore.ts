@@ -257,6 +257,12 @@ function ring({ chars, cx, gray, w, h, ink }: Ctx): boolean {
   // 뒤 글이 한글이거나 여는 괄호 뒤 한글("❍(정책) 민생성장"), 숫자 뒤 한글("ｏ4대보험" 을 모델은 "04대보험" 으로 읽는다 — 숫자 0 은
   // 세로로 길어 ringBullet 이 고리로 보지 않는다)
   const rest = chars.slice(k + 1).join("").trimStart()
+  // 라틴 대문자 약어 앞("❍ ICT 융복합" → "OICT") — 라틴 O("OECD")와 섞이니 획이 가는 도형 ○ 로 판정될 때만 바꾸고 띄운다
+  if (/^[A-Z]{2,}/.test(rest) && /^[Oo0]$/.test(chars[k])) {
+    if (ringBullet(gray, w, h, ink, cx(k)) !== "\u25cb") return false
+    chars[k] = chars[k + 1] === " " ? "\u25cb" : "\u25cb "
+    return true
+  }
   if (!/^[(\[「【<]?\d*[가-힣]/.test(rest)) return false
   const r = ringBullet(gray, w, h, ink, cx(k))
   if (r) chars[k] = r

@@ -48,3 +48,23 @@ describe("따옴표로 읽은 여는 홑낫표", () => {
     assert.ok(!restoreGlyphs(quotePage(false), W, box, "'가,나", [0, 1, 3, 5], 10).includes("「"))
   })
 })
+
+describe("줄 머리 도형 ○ 뒤 라틴 대문자 약어", () => {
+  // 칸 0 가는 고리(높이 22, 획 1px), 칸 2~4 대문자, 칸 6 한글 — 키 26 글자 띠
+  function ringPage(thick: number): Uint8Array {
+    const rgba = new Uint8Array(W * H * 4).fill(255)
+    const rect = (x0: number, y0: number, x1: number, y1: number) => {
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const p = (y * W + x) * 4; rgba[p] = rgba[p + 1] = rgba[p + 2] = 0 }
+    }
+    const cx = 11, cy = 17, r = 10
+    for (let y = 0; y < H; y++) for (let x = 0; x < 24; x++) { const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy); if (d <= r && d > r - thick) rect(x, y, x + 1, y + 1) }
+    rect(26, 6, 30, 30); rect(33, 6, 41, 30); rect(44, 6, 52, 30); rect(56, 4, 76, 30)
+    return rgba
+  }
+  it("획이 가는 도형 고리면 ○ 로 바꾸고 띄운다", () => {
+    assert.equal(restoreGlyphs(ringPage(1), W, box, "OICT가", [1, 2.8, 3.7, 4.8, 6.6], 10), "○ ICT가")
+  })
+  it("획이 굵은 라틴 O 는 그대로", () => {
+    assert.equal(restoreGlyphs(ringPage(4), W, box, "OICT가", [1, 2.8, 3.7, 4.8, 6.6], 10), "OICT가")
+  })
+})
