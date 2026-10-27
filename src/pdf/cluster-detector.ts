@@ -597,7 +597,35 @@ function mergeEvenSpacedClusters(
       i++
     }
   }
-  return { merged, originMap }
+  // 넓게 벌린 균등배분 — 같은 칸 폭에 글자가 적으면 틈이 글자 3배를 넘는다(목차 "총   무   과" 는 위아래 "기획예산실" 과 같은 폭, hampyeong
+  // OCR). 다른 행에서 합친 균등배분 낱말과 양끝이 맞고 틈이 고르면(최대/최소 1.3 이하) 합친다
+  const spans = [...originMap.keys()].map(m => [m.x, m.x + m.w])
+  if (!spans.length) return { merged, originMap }
+  const out: ClusterItem[] = []
+  for (const row of groupByBaseline(merged)) {
+    const sorted = [...row.items].sort((a, b) => a.x - b.x)
+    let i = 0
+    while (i < sorted.length) {
+      let e = i
+      while (e < sorted.length && /^[가-힣]$/.test(sorted[e].text) && (e === i || !sorted[e].hasSpaceBefore)) e++
+      if (e === i) { out.push(sorted[i++]); continue }
+      const run = sorted.slice(i, e), first = run[0], last = run[run.length - 1]
+      const gaps = run.slice(1).map((r, k) => r.x - (run[k].x + run[k].w))
+      const tol = first.fontSize * 0.5
+      if (run.length >= 3 && Math.min(...gaps) > 0 && Math.max(...gaps) <= Math.min(...gaps) * 1.3 &&
+          spans.some(([a, b]) => Math.abs(a - first.x) <= tol && Math.abs(b - (last.x + last.w)) <= tol)) {
+        const item: ClusterItem = {
+          text: run.map(r => r.text).join(""), x: first.x, y: first.y,
+          w: (last.x + last.w) - first.x, h: first.h,
+          fontSize: first.fontSize, fontName: first.fontName,
+        }
+        originMap.set(item, run)
+        out.push(item)
+      } else out.push(...run)
+      i = e
+    }
+  }
+  return { merged: out, originMap }
 }
 
 /** 병합된 ClusterItem의 usedItems를 원본 아이템으로 확장 */
@@ -1082,6 +1110,24 @@ function assignRowItems(
     result.push({ col: ci, items: groups[gi] })
     assignedGroups.add(gi)
     usedCols.add(ci)
+  }
+  // 탐욕 배정이 그룹의 좌우 순서를 뒤집으면(머리 열 사이에 든 글머리 ◎ 가 오른쪽 열을 먼저 차지해 부서명이 왼쪽 열로 밀림 — OCR 목차
+  // "◎ 기획예산실 19" → "기획예산실 ◎ 19", hampyeong) 순서를 지키는 배정 중 거리 합이 가장 작은 것으로 바꾼다
+  // groups 는 x 순이다
+  const colOf = groups.map(g => result.find(a => a.items === g)?.col ?? -1)
+  if (groups.length <= numCols && colOf.some((c, g) => g > 0 && c < colOf[g - 1])) {
+    const G = groups.length, cost = (g: number, c: number) => Math.abs(groupCenters[g] - colCenters[c])
+    // best[g][c] — 앞 g+1 그룹을 배정하고 g 번째를 c 열에 둔 최소 거리 합
+    const best = groups.map(() => new Array<number>(numCols).fill(Infinity)), from = groups.map(() => new Array<number>(numCols).fill(-1))
+    for (let c = 0; c < numCols; c++) best[0][c] = cost(0, c)
+    for (let g = 1; g < G; g++) for (let c = g; c < numCols; c++) for (let p = g - 1; p < c; p++) {
+      const v = best[g - 1][p] + cost(g, c)
+      if (v < best[g][c]) { best[g][c] = v; from[g][c] = p }
+    }
+    let c = best[G - 1].indexOf(Math.min(...best[G - 1]))
+    const cols: number[] = []
+    for (let g = G - 1; g >= 0; g--) { cols[g] = c; c = from[g][c] }
+    return groups.map((items, g) => ({ col: cols[g], items }))
   }
   // 남은 그룹 (numGroups > numCols인 경우 — 가장 가까운 열에 추가)
   for (let gi = 0; gi < groups.length; gi++) {

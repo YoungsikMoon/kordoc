@@ -211,3 +211,20 @@ describe("detectClusterTables — 낱말마다 찍은 고정폭 글줄", () => {
     assert.ok(found[0].table.cells[0].some(cell => /Saccharometer/.test(cell.text)))
   })
 })
+
+describe("detectClusterTables — 글머리 ◎ 목차 (OCR)", () => {
+  // 머리 행 "Ⅰ. 일반현황 5" 의 열 사이에 글머리 ◎ 가 서고, 부서명은 같은 칸 폭에 균등배분(다섯 자·세 자)
+  const spread = (word: string, y: number) => {
+    const chars = [...word], step = (339 - 13 - 158) / (chars.length - 1)
+    return chars.map((c, k) => ({ ...item(c, Math.round(158 + k * step), y, 13, 15) }))
+  }
+  const rowsOf = (names: string[]) => names.flatMap((n, r) => [item("◎", 122, 569 - r * 22, 13, 14), ...spread(n, 569 - r * 22), item(String(19 + r * 20), 503, 569 - r * 22, 17, 13)])
+  const toc = [item("Ⅰ.", 100, 667, 17, 15), item("일반현황", 140, 667, 77, 15), item("5", 511, 667, 9, 15), ...rowsOf(["기획예산실", "관광정책실", "총무과", "민원봉사과", "재무과"])]
+  const texts = () => detectClusterTables(toc, 1)[0].table.cells.map(row => row.map(c => c.text.trim()).filter(Boolean).join(" "))
+  it("◎ 가 부서명 앞 칸에 남는다", () => {
+    assert.equal(texts()[1], "◎ 기획예산실 19")
+  })
+  it("넓게 벌린 세 자 부서명은 같은 폭 균등배분 낱말로 합쳐 제 행에 남는다", () => {
+    assert.deepEqual(texts().slice(3), ["◎ 총무과 59", "◎ 민원봉사과 79", "◎ 재무과 99"])
+  })
+})
