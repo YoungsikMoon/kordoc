@@ -30,7 +30,7 @@ export function restoreSymbols(text: string, ringDecided = false): string {
   // 직함 앞 "전(前)·현(現)" — 인식 사전에 前·現 이 없어 괄호만 남는다("트리셰 전()유럽중앙은행 총재", 금융안정 콘퍼런스 보도자료).
   // 낱말 머리에 홀로 선 전·현 뒤 빈 괄호만 채운다(속기록 "생기()되는" 같은 다른 한자 자리는 무엇인지 모르니 둔다)
   s = s.replace(/(^|[^\uac00-\ud7a3])(전|현)\(\s?\)(?=\S)/g, (_, a: string, b: string) => `${a}${b}(${b === "전" ? "\u524d" : "\u73fe"})`)
-  return smartQuotes(dateCommas(joinDigitGroups(s)))
+  return smartQuotes(dateDots(dateCommas(joinDigitGroups(s))))
 }
 
 /**
@@ -40,6 +40,15 @@ export function restoreSymbols(text: string, ringDecided = false): string {
 export function dateCommas(s: string): string {
   return s.replace(/(?<![\d,.])((?:19|20)\d{2})(\s?)[,.](\s?)(1[0-2]|0?[1-9])(\s?),(\s?)(3[01]|[12]\d|0?[1-9])(?![\d,])/g, "$1.$2$3$4.$5$6$7")
     .replace(/(?<![\d,.])((?:19|20)\d{2})(\s?),(\s?)(1[0-2]|0?[1-9])(\s?)\.(\s?)(3[01]|[12]\d|0?[1-9])(?![\d,])/g, "$1.$2$3$4.$5$6$7")
+}
+
+/**
+ * 요일 붙은 날짜에서 빠진 마침표 — "2022. 3.3(목)" → "2022. 3.3.(목)", "2022 1.8.(토)" → "2022. 1.8.(토)"(선거 사례집).
+ * 작은 마침표가 숫자·괄호에 붙어 사라진다. 공문서는 요일 앞 일자 뒤에 마침표를 찍는다(PDF 코퍼스 텍스트층 1,110 : 21)
+ */
+export function dateDots(s: string): string {
+  return s.replace(/(?<![\d,.])((?:19|20)\d{2})( ?\. ?| )(1[0-2]|0?[1-9])( ?\. ?)(3[01]|[12]\d|0?[1-9])(\.?)( ?)(?=\([월화수목금토일]\))/g,
+    (_, y: string, a: string, m: string, b: string, d: string, _dot: string, sp: string) => `${y}${a === " " ? ". " : a}${m}${b}${d}.${sp}`)
 }
 
 /**

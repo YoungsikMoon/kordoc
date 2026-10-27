@@ -12,7 +12,7 @@
  */
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { dateCommas, isDotFragment, joinDigitGroups, joinLeaderItems, restoreBulletItems, restoreSymbols, smartQuotes } from "../src/ocr/postprocess.js"
+import { dateCommas, dateDots, isDotFragment, joinDigitGroups, joinLeaderItems, restoreBulletItems, restoreSymbols, smartQuotes } from "../src/ocr/postprocess.js"
 
 describe("restoreSymbols — 사전 밖 기호 복원", () => {
   it("줄 머리 O/o + 한글 → ○", () => {
@@ -98,6 +98,19 @@ describe("restoreSymbols — 직함 앞 전(前)·현(現)", () => {
     assert.equal(restoreSymbols("및 현()명예총재"), "및 현(現)명예총재")
     assert.equal(restoreSymbols("하여 생기()되는 직무"), "하여 생기()되는 직무")
     assert.equal(restoreSymbols("발전()"), "발전()")
+  })
+})
+
+describe("dateDots — 요일 붙은 날짜에서 빠진 마침표", () => {
+  it("일자 뒤·연도 뒤 마침표를 채운다", () => {
+    assert.equal(dateDots("2022. 3.3(목)"), "2022. 3.3.(목)")
+    assert.equal(dateDots("2022 1.8.(토)"), "2022. 1.8.(토)")
+    assert.equal(dateDots("2021. 12. 9.(목)"), "2021. 12. 9.(목)")
+  })
+  it("요일 괄호가 아니거나 날짜 꼴이 아니면 그대로", () => {
+    assert.equal(dateDots("2022. 3.3(안)"), "2022. 3.3(안)")
+    assert.equal(dateDots("12.2022 3.3(목)"), "12.2022 3.3(목)")
+    assert.equal(dateDots("1,2022 3.3(목)"), "1,2022 3.3(목)")
   })
 })
 
