@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.24.14] - 2026-10-28
+
 ### Fixed
 
 - OCR: 서식 칸에서 빈칸 뒤 멀리 떨어진 닫는 괄호("(전화 :            )") — 홀로 선 ")" 는 검출 상자가 없어 빠졌다. 닫히지 않은 "(" 로 끝나는 줄 오른쪽, 같은 높이 띠에서 다음 상자 앞까지 잉크가 좁고 키 큰 휜 조각 하나뿐이면 ")" 를 낸다(띠 밖으로 이어지는 칸 테두리는 뺀다). 열화 입력 web049 noise .1429 → .1409.

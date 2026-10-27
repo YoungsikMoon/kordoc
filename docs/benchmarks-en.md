@@ -2,6 +2,18 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.14: OCR and rendering · 2026-10-28
+
+Compared document by document against 4.24.13 with the same corpora and scorers across the full suite (rounds 141–150; 144 rejected). No decreases. Rendered text position uses the same measurement (Hancom PDF pair text runs).
+
+| Metric | 4.24.13 | 4.24.14 |
+| --- | --- | --- |
+| OCR CER (fair · strict) | 0.02630 · 0.05740 | **0.02596 · 0.05713** |
+| OCR character recall · precision | 0.99155 · 0.99480 | **0.99190 · 0.99504** |
+| Degraded-input OCR CER (clean · blur · JPEG · scan) | 0.0409 · 0.0555 · 0.0457 · 0.0697 | **0.0405 · 0.0554 · 0.0455 · 0.0694** |
+| Rendered text position (same measurement) | 87,577/90,840 | **87,643/90,840** |
+| PDF text · PDF tables · statute annexes · ODL · HWPX · round trip · generation | — | unchanged |
+
 ## 4.24.13: OCR, PDF and agency packs · 2026-10-27
 
 Compared document by document against 4.24.12 with the same corpora and scorers across the full suite (rounds 132–138; 131, 139 and 140 rejected). The eight decreases are listed in the CHANGELOG (measurement exceptions): order changes inside false tables, soft hyphens deleted by the ground truth or reference extractors, and decorative heading order. Agency-pack reproduction comes from bench/pack-repro.mjs (leave-one-out packs, docs/agency-pack-en.md).
