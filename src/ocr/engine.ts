@@ -368,7 +368,7 @@ export class OcrEngine {
       let text = tuning.postprocess ? restoreSymbols(raw.trim(), note.ringLead) : raw
       if (!text.trim()) continue
       // 사전 밖·작은 점으로 읽히거나 빠지는 글머리(◎ ● ▪ □) — 첫 글리프 모양으로 되살린다 (line-split.ts)
-      if (tuning.postprocess && job.rot === 0 && !/^[◎●▪□■▣❐❏○ㅇ]/.test(text)) {
+      if (tuning.postprocess && job.rot === 0 && !/^[◎●▪□■▣❐❏○ㅇ◆◇◈]/.test(text)) {
         const chars = [...read], k = chars.findIndex(c => c.trim())
         if (k >= 0 && steps.length === chars.length) {
           const g = grayCrop(rgba, width, job.box)
@@ -380,6 +380,10 @@ export class OcrEngine {
           if (b?.mark === "\u25ce" && b.covers && /^[Oo0○]/.test(text)) text = b.mark + " " + text.slice(1).trimStart()
           // □ 는 인식에서 빠진 자리만(첫 글자 앞) — 모델은 사전에 □ 가 있어도 내지 않고 통째로 빠뜨린다
           else if (b?.mark === "\u25a1" || b?.mark === "\u25a3") { if (!b.covers && body) text = b.mark + " " + text }
+          // 마름모 ◆◇◈ 는 사전 밖이라 다른 기호(√ 등)로 읽거나 빠뜨린다 — 기호 글자 자리면 바꾸고, 빠졌으면 본문 줄에 붙인다
+          else if (b?.mark === "\u25c6" || b?.mark === "\u25c7" || b?.mark === "\u25c8") {
+            if (b.covers ? /^[\p{S}\p{P}]/u.test(text) : body) text = b.covers ? b.mark + " " + text.slice(1).trimStart() : b.mark + " " + text
+          }
           // ❐ 는 모델이 자모 ㅁ 으로 읽거나 빠뜨린다 — 그림자 모양으로 정했으니 그 글자를 바꾸거나 붙인다
           else if (b?.mark === "\u2023") { if (b.covers ? text.startsWith("\u2192") : body) text = b.covers ? b.mark + " " + text.slice(1).trimStart() : b.mark + " " + text }
           else if (b?.mark === "\u2750" || b?.mark === "\u274f") { if (b.covers ? /^[ㅁ口]/.test(text) : body) text = b.covers ? b.mark + text.slice(1) : b.mark + " " + text }

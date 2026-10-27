@@ -831,7 +831,7 @@ export function bracketShape(f: BracketFeatures, close: boolean): string | null 
  * 네모는 그림으로 그린 도형이기 쉽다, eval-perf-2024), 박스 바깥으로 떨어진 줄 머리는 따로 정한다. firstX 는 첫 인식 글자의 CTC 자리(박스 로컬) —
  * 덩어리가 그 앞에서 끝나면 인식에서 빠진 것, 그 글자 자리에 걸치면 그 글자가 이 기호를 잘못 읽은 것이다
  */
-export function leadingBullet(gray: Uint8Array, w: number, h: number, ink: InkStats, firstX: number, squareMax = 0.92): { mark: "◎" | "●" | "▪" | "□" | "▣" | "❐" | "❏" | "‣"; covers: boolean } | null {
+export function leadingBullet(gray: Uint8Array, w: number, h: number, ink: InkStats, firstX: number, squareMax = 0.92): { mark: "◎" | "●" | "▪" | "□" | "▣" | "❐" | "❏" | "‣" | "◆" | "◇" | "◈"; covers: boolean } | null {
   const { comps, label } = components(gray, w, h, ink)
   let charH = 0
   for (const c of comps) charH = Math.max(charH, c.y1 - c.y0)
@@ -899,7 +899,23 @@ export function leadingBullet(gray: Uint8Array, w: number, h: number, ink: InkSt
   const top = run(mx0, y0, 0, 1), bottom = run(mx0, y1 - 1, 0, -1)
   // 오른쪽 위 그림자 ❐(U+2750) · 오른쪽 아래 그림자 ❏(U+274F)
   const shadow = !boxed ? null : thin(bottom, top) ? "\u2750" : thin(top, bottom) ? "\u274f" : null
-  let mark: "\u25ce" | "\u25cf" | "\u25aa" | "\u25a1" | "\u25a3" | "\u2750" | "\u274f" | null = null
+  // 마름모 ◆·◇·◈ — 줄마다 잉크 외곽 폭이 가운데에서 위아래로 고르게 준다(전략목표 머리 "◈ 전략목표 Ⅰ", 모델은 √ 로 읽거나 빠뜨림).
+  // 속이 차면 ◆, 비면 ◇, 안에 속 찬 마름모를 품으면 ◈. 글자 높이 0.5~1.0배
+  const diamond = (() => {
+    if (rel < 0.5 || rel > 1.0) return false
+    const half = ch / 2, cyc = y0 + half
+    let ok = 0
+    for (let y = y0; y < y1; y++) {
+      let l = -1, r = -1
+      for (let x = x0; x < x1; x++) if (cl.some(c => label[y * w + x] === c.id)) { if (l < 0) l = x; r = x }
+      const want = cw * (1 - Math.abs(y + 0.5 - cyc) / half)
+      if (l >= 0 && Math.abs(r - l + 1 - want) <= Math.max(2, cw * 0.15)) ok++
+    }
+    return ok >= ch * 0.85
+  })()
+  let mark: "\u25ce" | "\u25cf" | "\u25aa" | "\u25a1" | "\u25a3" | "\u2750" | "\u274f" | "\u25c6" | "\u25c7" | "\u25c8" | null = null
+  if (diamond) mark = cl.length >= 2 && core ? "\u25c8" : cl.length === 1 && fill >= 0.4 ? "\u25c6" : cl.length === 1 ? "\u25c7" : null
+  if (mark) return { mark, covers: firstX <= x1 + ch * 0.3 }
   if (shadow && rel >= 0.6 && rel <= 0.92) mark = shadow
   else if (hollowSquare && rel >= 0.6 && rel <= squareMax) mark = "\u25a1"
   else if (filledSquare && rel >= 0.6 && rel <= 0.92) mark = "\u25a3"

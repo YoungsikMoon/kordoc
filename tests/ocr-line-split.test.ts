@@ -557,3 +557,27 @@ describe("gapGlyphs — 반각 홑낫표 ｢", () => {
     assert.ok(gapGlyphs(g, W, H, inkStats(g)).glyphs.some((x) => x.mark === "「"))
   })
 })
+
+describe("leadingBullet — 마름모 ◆ ◇ ◈", () => {
+  /** 마름모 — 중심 (cx, cy), 반지름 r, 두께 t (t ≥ r 이면 속 찬 마름모) */
+  function rhomb(g: Uint8Array, w: number, cx: number, cy: number, r: number, t: number) {
+    for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) {
+      const d = Math.abs(x - cx) + Math.abs(y - cy)
+      if (d <= r && d >= r - t) g[y * w + x] = 0
+    }
+  }
+  const W = 120, H = 40
+  const page = (draw: (g: Uint8Array) => void) => { const g = canvas(W, H); draw(g); rect(g, W, 60, 6, 110, 34); return g }
+  it("속 찬 ◆ · 속 빈 ◇ · 속 찬 마름모를 품은 ◈", () => {
+    const solid = page(g => rhomb(g, W, 20, 20, 11, 11))
+    assert.deepEqual(leadingBullet(solid, W, H, inkStats(solid), 50), { mark: "◆", covers: false })
+    const hollow = page(g => rhomb(g, W, 20, 20, 11, 2))
+    assert.equal(leadingBullet(hollow, W, H, inkStats(hollow), 50)?.mark, "◇")
+    const nested = page(g => { rhomb(g, W, 20, 20, 11, 2); rhomb(g, W, 20, 20, 4, 4) })
+    assert.equal(leadingBullet(nested, W, H, inkStats(nested), 50)?.mark, "◈")
+  })
+  it("원은 마름모가 아니다", () => {
+    const g = page(g => { for (let y = 9; y <= 31; y++) for (let x = 9; x <= 31; x++) if (Math.hypot(x - 20, y - 20) <= 11) g[y * W + x] = 0 })
+    assert.ok(!["◆", "◇", "◈"].includes(leadingBullet(g, W, H, inkStats(g), 50)?.mark ?? ""))
+  })
+})
