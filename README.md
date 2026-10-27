@@ -39,7 +39,7 @@ CLI는 설치 없이 `npx kordoc`으로 실행할 수 있습니다. PDF·OCR 의
 npx -y kordoc setup
 ```
 
-Claude Desktop·Claude Code·Cursor·Codex 등 설치된 클라이언트에 MCP를 등록합니다. 공식 MCP 레지스트리에도 [`io.github.chrisryugj/kordoc`](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.chrisryugj/kordoc)으로 등재돼 있습니다. 클라이언트를 재시작하면 파싱·비교·생성·검수·렌더 등 **18개 도구**를 사용할 수 있습니다.
+Claude Desktop·Claude Code·Cursor·Codex 등 설치된 클라이언트에 MCP를 등록합니다. 공식 MCP 레지스트리에도 [`io.github.chrisryugj/kordoc`](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.chrisryugj/kordoc)으로 등재돼 있습니다. 클라이언트를 재시작하면 파싱·비교·생성·검수·렌더 등 **20개 도구**를 사용할 수 있습니다.
 
 VS Code·Cursor는 버튼 한 번으로 등록됩니다.
 
@@ -64,6 +64,8 @@ npx kordoc *.pdf --jobs 4 -d ./결과
 npx kordoc 문서.pdf --format json --pages 1-3
 npx kordoc 스캔본.pdf --ocr -o 스캔본.md
 npx kordoc generate 보고서.md --preset 보고서 -o 보고서.hwpx
+npx kordoc pack build 보고서1.hwpx 보고서2.hwpx 보고서3.hwpx --name 광양시 -o 광양시.kpack   # 기관팩 (docs/agency-pack.md)
+npx kordoc generate 새보고서.md --pack 광양시.kpack -o 새보고서.hwpx
 npx kordoc fill --template gian -j 값.json -o 기안문.hwpx
 npx kordoc lint 보고서.hwpx --gate --preset 보고서
 ```
@@ -97,6 +99,7 @@ await writeFile("보고서.hwpx", Buffer.from(hwpx))
 | 읽기 | 문서 → Markdown·IR·쪽별 본문·RAG 청크, 로컬 OCR |
 | 비교·편집 | 블록·셀 단위 비교, HWPX·HWP 서식 보존 패치, 견본 서식 그대로 새 내용 쓰기 |
 | 작성 | Markdown → HWPX, 공문서 프리셋·부서 서식 견본(`--template`), 표·수식·차트 |
+| 기관팩 | 우리 기관 문서 몇 건으로 서식 묶음(`.kpack`)을 만들어 그 서식대로 새 문서 — [기관팩](docs/agency-pack.md) |
 | 양식 | 필드·누름틀 채우기, 표준 기안문 2종, 도장 날인 |
 | 검수 | 표기법·공공언어, 구성·AI 문체 게이트, 예산 산출근거 검산, 열린 문서 블록 단위 검수(`lint-blocks`) |
 | 보기·보안 | HWPX·HWP 미리보기·영역 추출, 개인정보 마스킹 |

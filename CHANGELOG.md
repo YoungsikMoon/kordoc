@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- 기관팩(`.kpack`) — 기관 문서(HWPX) 몇 건으로 그 기관 서식 묶음을 만들고 그 서식대로 새 문서를 만든다. kordoc 에 기관 서식을 더 넣지 않고 사용자가 자기 문서로 만든다. `kordoc pack build·info`, `generate --pack`, MCP `build_agency_pack`·`agency_pack_info`·`generate_document pack_path`, API `buildAgencyPack`·`loadAgencyPack`·`packTemplate`. 대표 견본은 역할별 다수결로 후보를 추리고 교차 재현(다른 견본 글을 후보로 다시 만들어 대조)으로 고른다. 팩 견본은 원문 글·작성자 메타·결재선 이름·전화·직위 앞 부서 이름을 비운 판이고, 비운 뒤 다시 읽어 원 견본과 같은지 자기 검사한다. 팩은 코드 없는 zip(`pack.json`·`guide.md`·`kinds/*.hwpx`)이고 읽을 때 신뢰하지 않는 파일로 검사한다. 처음 보는 문서 재현(하나 빼고 만든 팩): 서울 방침서 68.3% → 73.9%, 광양시 보고서 1안 77.1% → 94.5%, 광양시 공고문 58.3% → 70.6%(기본 보고서 프리셋 대비). 설명서 docs/agency-pack.md, 재현 bench/pack-repro.mjs.
+
+### Fixed
+
+- PDF: ToUnicode 에 빠진 CID 대체 공백 글리프(Microsoft Print To PDF·Noto Sans KR 의 locl 치환 공백)가 "堺" 로 나오던 것을 공백으로 (#174, @yuhyun00). PDF 코퍼스 문서별 변화 0.
+- 견본 모드(`generate --template`): 장 띠 번호를 견본 번호 칸 꼴(1·2·3 / 가·나·다 / Ⅰ·Ⅱ)대로.
+- 견본 모드(`generate --template`): 역할 원형을 그 역할의 첫 문단이 아니라 가장 많이 쓴 서식의 문단으로 고른다(비기면 음영 없는 글자 모양 → 흔한 문단 모양) — 첫 줄에만 칠한 형광펜·강조가 모든 같은 부호 줄로 퍼졌다(광양 공고문 첫 ❍ 줄). 서울 방침서 자기 견본 재현 77.3% → 79.5%.
+- 견본 모드(`generate --template`): 표지·점검표를 앞 구역에, 본문을 다음 구역에 둔 견본(결재 문서에 흔하다)에서 첫 구역만 훑어 제목 원형 하나만 잡고 □·ㅇ·-·요약을 모두 바탕글 10pt 로 만들던 것 — 역할 원형이 가장 많은 구역을 본문으로 고른다. 서울 방침서 자기 견본 재현의 글꼴·크기·굵기 일치 18% → 78~97%. 깨진 뒤 구역은 건너뛴다.
+
 ## [4.24.12] - 2026-10-27
 
 ### Fixed

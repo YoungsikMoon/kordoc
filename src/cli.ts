@@ -6,6 +6,7 @@ import { convertFiles } from "./cli/convert.js"
 import { assertDistinctStems, convertParallel, registerBatchWorker } from "./cli/batch.js"
 import { registerDocCommands } from "./cli/commands-docs.js"
 import { registerGenerateCommands } from "./cli/commands-generate.js"
+import { registerPackCommands } from "./cli/commands-pack.js"
 import { registerRenderCommands } from "./cli/commands-render.js"
 import { registerSystemCommands } from "./cli/commands-system.js"
 import { registerWorkerCommands } from "./cli/commands-worker.js"
@@ -90,6 +91,7 @@ program
 
 registerDocCommands(program)
 registerGenerateCommands(program)
+registerPackCommands(program)
 registerRenderCommands(program)
 registerSystemCommands(program)
 registerWorkerCommands(program)

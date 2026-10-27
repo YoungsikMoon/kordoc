@@ -14,7 +14,7 @@ All you need is Node.js 20+ (macOS / Linux / Windows).
 npx -y kordoc setup
 ```
 
-Pick your installed AI client (Claude Desktop · Cursor · Claude Code · Windsurf · VS Code · Gemini CLI · Zed · Antigravity · Codex) and the settings are written for you. Restart it and the [18 document tools](#-mcp-server) are on.
+Pick your installed AI client (Claude Desktop · Cursor · Claude Code · Windsurf · VS Code · Gemini CLI · Zed · Antigravity · Codex) and the settings are written for you. Restart it and the [20 document tools](#-mcp-server) are on.
 
 ### Claude Code plugin
 
@@ -361,6 +361,9 @@ npx kordoc profile agency-form.hwpx                                 # table form
 npx kordoc levels agency-sample.hwpx                                # per-marker-level font/size/bold → generate --levels
 npx kordoc generate report.md -o report.hwpx --levels-from agency-sample.hwpx  # apply a sample's level styles
 npx kordoc generate report.md -o report.hwpx --preset report --agency 국세청  # central-ministry house style (measured on 2,670 press releases, 52 agencies + 공통)
+npx kordoc pack build report1.hwpx report2.hwpx report3.hwpx --name Gwangyang -o gwangyang.kpack  # agency pack from your own documents (docs/agency-pack-en.md)
+npx kordoc pack info gwangyang.kpack --guide                        # pack summary and writing guide
+npx kordoc generate new.md -o new.hwpx --pack gwangyang.kpack          # new document in the pack's style (--pack-kind press …)
 
 # PII masking
 npx kordoc redact complaint.hwpx -o redacted.hwpx                   # format-preserving masking + re-scan (exit 2 if anything remains)
@@ -443,7 +446,7 @@ codex mcp add kordoc -- npx -y kordoc mcp          # Codex
 
 On Windows, if Claude Desktop can't find `.cmd`, use `"command": "cmd", "args": ["/c", "npx", "-y", "kordoc", "mcp"]`.
 
-**18 tools**
+**20 tools**
 
 | Tool | Description |
 |------|-------------|
@@ -458,7 +461,9 @@ On Windows, if Claude Desktop can't find `.cmd`, use `"command": "cmd", "args": 
 | `fill_form` | fill a form (HWPX format-preserving, format/uniqueness guards, built-in `template`, values from a JSON `fields_file` — values stay out of the conversation and the reply shows only their lengths) |
 | `patch_document` | apply edited Markdown back into the original HWPX/HWP, format preserved |
 | `extract_profile` | table format profile JSON from a reference HWPX — reuse via `generate_document`'s `profile_path` |
-| `generate_document` | Markdown (tables/equations/charts) → HWPX, official-document presets (table total row goes right under the header by default — `total_row`) |
+| `generate_document` | Markdown (tables/equations/charts) → HWPX, official-document presets (table total row goes right under the header by default — `total_row`), department template `template_path`, agency pack `pack_path` |
+| `build_agency_pack` | a few agency documents (HWPX) → agency pack (.kpack): picks a representative template, strips original text, writes a writing guide ([agency packs](agency-pack-en.md)) |
+| `agency_pack_info` | agency pack summary and writing guide — read it before writing a manuscript for the pack |
 | `lint_document` | official-document review — notation always, plus opt-in style/slop/logic/number/budget checks (calculation basis, table totals, foreign currency, increase basis); each finding has line and column |
 | `place_seal` | float a stamp/signature image over an anchor phrase |
 | `render_document` | render HWPX/HWP as typeset to PNG/JPEG (inline) or SVG/HTML/PDF files — lets the AI visually check generated/edited output |
@@ -508,6 +513,7 @@ To tell ZIP formats apart, call `await detectZipFormat(buffer)` when `detectForm
 |----------|-------------|
 | `markdownToHwpx(markdown, options?)` | Markdown → HWPX (theme, format profile, page options, official-document presets) |
 | `hwpxToProfile(buffer)` | reference HWPX → table format profile JSON (reuse via `markdownToHwpx(md, { profile })`) |
+| `buildAgencyPack(name, samples, into?)` · `loadAgencyPack(buf)` · `packTemplate(pack, kind?)` | build / read an agency pack and get the template for a document kind — `markdownToHwpx(md, { template: packTemplate(pack) })` ([agency packs](agency-pack-en.md)) |
 | `markdownToPdf(markdown, options?)` / `blocksToPdf(blocks, options?)` | Markdown / IRBlock[] → PDF (install `puppeteer-core` separately) |
 | `renderHtml(blocks, options?)` | IRBlock[] → print-ready HTML (no puppeteer; raw HTML passes only allowed tags, plus CSP) |
 | `renderHwpxToSvg(buffer, options?)` | HWPX → layout-preserving SVG — multi-page, highlights, shapes; `reflow` when cache-less |

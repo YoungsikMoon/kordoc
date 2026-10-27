@@ -14,7 +14,7 @@ Node.js 20+ 만 있으면 됩니다 (macOS / Linux / Windows).
 npx -y kordoc setup
 ```
 
-설치된 AI 클라이언트(Claude Desktop · Cursor · Claude Code · Windsurf · VS Code · Gemini CLI · Zed · Antigravity · Codex)를 골라 설정을 자동으로 넣습니다. 재시작하면 [18개 문서 도구](#-mcp-서버)가 켜집니다.
+설치된 AI 클라이언트(Claude Desktop · Cursor · Claude Code · Windsurf · VS Code · Gemini CLI · Zed · Antigravity · Codex)를 골라 설정을 자동으로 넣습니다. 재시작하면 [20개 문서 도구](#-mcp-서버)가 켜집니다.
 
 ### Claude Code 플러그인
 
@@ -368,6 +368,9 @@ npx kordoc levels 기관견본.hwpx                                     # 항목
 npx kordoc generate 보고서.md -o 보고서.hwpx --levels-from 기관견본.hwpx  # 견본 단계별 서식 바로 적용
 npx kordoc generate 본문.md -o 새문서.hwpx --template 부서서식.hwpx     # 부서 견본의 제목표·담당 줄·요약 상자·□○-·※·표·참고 띠 서식으로 새 내용
 npx kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서 --agency 국세청  # 중앙부처 기관 서식 (보도자료 2,670건 실측, 52곳·공통)
+npx kordoc pack build 보고서1.hwpx 보고서2.hwpx 보고서3.hwpx --name 광양시 -o 광양시.kpack  # 기관팩 — 우리 기관 문서로 서식 묶음 (docs/agency-pack.md)
+npx kordoc pack info 광양시.kpack --guide                           # 팩 요약·작성 요령
+npx kordoc generate 새보고서.md -o 새보고서.hwpx --pack 광양시.kpack       # 팩 서식으로 새 문서 (--pack-kind press …)
 
 # 개인정보 마스킹
 npx kordoc redact 민원서류.hwpx -o 마스킹.hwpx                      # 서식 보존 마스킹 + 잔존 재검사 (남으면 exit 2)
@@ -450,7 +453,7 @@ codex mcp add kordoc -- npx -y kordoc mcp          # Codex
 
 Windows 에서 Claude Desktop 이 `.cmd` 를 못 찾으면 `"command": "cmd", "args": ["/c", "npx", "-y", "kordoc", "mcp"]`.
 
-**18개 도구**
+**20개 도구**
 
 | 도구 | 설명 |
 |------|------|
@@ -465,7 +468,9 @@ Windows 에서 Claude Desktop 이 `.cmd` 를 못 찾으면 `"command": "cmd", "a
 | `fill_form` | 양식에 값 채우기 (HWPX 서식 보존, 서식·유일성 가드, 내장 `template`, 값 JSON 파일 `fields_file` — 값이 대화에 안 남고 응답은 글자 수만) |
 | `patch_document` | 편집한 Markdown 을 원본 HWPX/HWP 에 서식 보존 반영 |
 | `extract_profile` | 참조 HWPX 의 표 서식 프로필 JSON — `generate_document` 의 `profile_path` 로 재현 |
-| `generate_document` | Markdown(표·수식·차트) → HWPX, 공문서 프리셋 (표 합계 행은 기본 머리행 바로 아래 — `total_row`) |
+| `generate_document` | Markdown(표·수식·차트) → HWPX, 공문서 프리셋 (표 합계 행은 기본 머리행 바로 아래 — `total_row`), 부서 견본 `template_path`·기관팩 `pack_path` |
+| `build_agency_pack` | 기관 문서(HWPX) 몇 건 → 기관팩(.kpack) — 대표 견본 고르기·원문 비우기·작성 요령 ([기관팩](agency-pack.md)) |
+| `agency_pack_info` | 기관팩 요약·작성 요령 — 팩으로 원고를 쓰기 전에 읽는다 |
 | `lint_document` | 공문서 검수 — 표기법 + 문체·윤문·구성·수치 대조·예산(산출근거 검산·표 합계·외화·증감 기준) 옵트인. 지적마다 줄·글자 위치 |
 | `place_seal` | 도장/서명 이미지를 앵커 문구 위에 부유 배치 |
 | `render_document` | HWPX·HWP 를 조판 그대로 PNG/JPEG(응답 이미지)·SVG/HTML/PDF(파일)로 — 생성·수정 결과를 AI 가 눈으로 검증 |
@@ -515,6 +520,7 @@ ZIP 종류를 가르려면 `detectFormat()` 이 `hwpx` 일 때 `await detectZipF
 |------|------|
 | `markdownToHwpx(markdown, options?)` | Markdown → HWPX (테마·서식 프로필·쪽 옵션·공문서 프리셋) |
 | `hwpxToProfile(buffer)` | 참조 HWPX → 표 서식 프로필 JSON (`markdownToHwpx(md, { profile })` 로 재현) |
+| `buildAgencyPack(name, samples, into?)` · `loadAgencyPack(buf)` · `packTemplate(pack, kind?)` | 기관팩 만들기·읽기·종류별 견본 — `markdownToHwpx(md, { template: packTemplate(pack) })` ([기관팩](agency-pack.md)) |
 | `markdownToPdf(markdown, options?)` / `blocksToPdf(blocks, options?)` | Markdown·IRBlock[] → PDF (`puppeteer-core` 별도 설치) |
 | `renderHtml(blocks, options?)` | IRBlock[] → 인쇄용 HTML (puppeteer 불필요, 원문 HTML 은 허용 태그만 통과 + CSP) |
 | `renderHwpxToSvg(buffer, options?)` | HWPX → 레이아웃 보존 SVG — 다페이지·형광펜·도형, 캐시 없으면 `reflow` |

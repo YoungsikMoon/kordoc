@@ -11,6 +11,7 @@ import { validateHwpx } from "../src/validate.js"
 import { scanTemplate } from "../src/hwpx/gen-from-template.js"
 import { lineRole } from "../src/hwpx/template-scan.js"
 import { registerGenerateTools } from "../src/mcp/tools-generate.js"
+import { topLevelParagraphs } from "../src/roundtrip/structure-edit.js"
 
 const TEMPLATE_MD = `# 견본 사업 추진계획
 
@@ -239,7 +240,28 @@ describe("generate --template (부서 서식 견본)", () => {
     const rdf = await entry(buf, "META-INF/container.rdf")
     assert.doesNotMatch(rdf, /section1/, "패키지 목록(rdf)도 뺀 구역을 가리키지 않는다")
     assert.match(rdf, /Contents\/section0\.xml/)
-    assert.ok(w.some((x) => x.includes("첫 구역")))
+    assert.ok(w.some((x) => x.includes("1번째 구역")))
+  })
+
+  it("표지 구역 + 본문 구역 견본 — 역할 원형이 많은 본문 구역을 훑는다 (결재 문서 표지·점검표 다음 본문)", async () => {
+    // 표지 구역: 구역 정의 + 제목 한 줄. 본문 구역: 합성 견본 본문 전체
+    const tops = topLevelParagraphs(tplSec)
+    const cover = tplSec.slice(0, tops[0].end) + tplSec.slice(tops.at(-1)!.end)
+    const z = await JSZip.loadAsync(tpl)
+    z.file("Contents/section0.xml", cover)
+    z.file("Contents/section1.xml", tplSec)
+    let hpf = await z.file("Contents/content.hpf")!.async("text")
+    hpf = hpf.replace(/(<opf:item\b[^>]*\bid="section0"[^>]*\/>)/, `$1<opf:item id="section1" href="Contents/section1.xml" media-type="application/xml"/>`)
+      .replace(/(<opf:itemref\b[^>]*\bidref="section0"[^>]*\/>)/, `$1<opf:itemref idref="section1" linear="yes"/>`)
+    z.file("Contents/content.hpf", hpf)
+    z.file("Contents/header.xml", tplHead.replace(/\bsecCnt="\d+"/, "secCnt=\"2\""))
+    const w: string[] = []
+    const buf = await markdownToHwpx(NEW_MD, { template: await z.generateAsync({ type: "uint8array" }), warnings: w })
+    assert.ok((await validateHwpx(buf)).ok)
+    assert.ok(w.some((x) => x.includes("2번째 구역")), w.join(" / "))
+    assert.ok(!w.some((x) => /서식이 없어/.test(x) && /□ 항목/.test(x)), "□ 원형을 본문 구역에서 찾는다")
+    // 첫 구역만 훑던 때와 달리 단일 구역 견본과 같은 본문이 나온다
+    assert.equal(await entry(buf, "Contents/section0.xml"), outSec)
   })
 
   it("서식 옵션과 함께 쓰면 오류 (라이브러리·MCP)", async () => {

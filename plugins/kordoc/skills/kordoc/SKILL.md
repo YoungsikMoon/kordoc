@@ -28,9 +28,9 @@ npx -y kordoc@4.24.12 <command> ...
 
 첫 호출만 패키지 다운로드로 느리고 이후는 캐시. 상시 사용 환경이면 MCP 서버로 붙일 수도 있다
 (사용자가 터미널에서 직접 `npx -y kordoc@4.24.12 setup` 을 실행한다. 설치된 모든 편집기에 등록하는 대화형 마법사라 에이전트가 대신 실행하지 않는다).
-MCP 도구 18종: `parse_document`, `parse_table`, `parse_pages`, `parse_metadata`, `parse_chunks`, `parse_form`,
+MCP 도구 20종: `parse_document`, `parse_table`, `parse_pages`, `parse_metadata`, `parse_chunks`, `parse_form`,
 `fill_form`, `place_seal`, `patch_document`, `generate_document`, `lint_document`, `compare_documents`, `detect_format`,
-`render_document`, `crop_regions`, `extract_tables`, `extract_profile`, `redact_document`.
+`render_document`, `crop_regions`, `extract_tables`, `extract_profile`, `redact_document`, `build_agency_pack`, `agency_pack_info`.
 
 ## 명령 요약
 
@@ -45,6 +45,8 @@ MCP 도구 18종: `parse_document`, `parse_table`, `parse_pages`, `parse_metadat
 | 공문서 생성 | `npx -y kordoc@4.24.12 generate 초안.md -o 결과.hwpx --preset 보고서` |
 | 편집 왕복 패치 | `npx -y kordoc@4.24.12 patch 원본.hwpx 편집.md -o 결과.hwpx` |
 | 서식 베끼기 (견본 서식으로 새 문서) | 견본을 `--keep-layout-tables` 로 읽어 내용만 새로 쓴 뒤 `patch 견본.hwpx 새문서.md -o 새문서.hwpx` (아래 4-1) |
+| 기관팩 만들기 (우리 기관 문서 여러 건) | `npx -y kordoc@4.24.12 pack build 보고서1.hwpx 보고서2.hwpx 보고서3.hwpx --name 광양시 -o 광양시.kpack` (아래 4-2) |
+| 기관팩으로 새 문서 | `npx -y kordoc@4.24.12 pack info 광양시.kpack --guide` → 요령대로 원고 → `generate 원고.md --pack 광양시.kpack -o 결과.hwpx` |
 | HWPX 구조 검증 | `npx -y kordoc@4.24.12 validate 결과.hwpx` |
 | 조판 SVG 렌더 | `npx -y kordoc@4.24.12 render 문서.hwpx -o 미리보기.svg` |
 | 도장/서명 배치 | `npx -y kordoc@4.24.12 seal 문서.hwpx --image 도장.png --anchor "(인)" -o 결과.hwpx` |
@@ -179,6 +181,26 @@ npx -y kordoc@4.24.12 render 새문서.hwpx --format png -d ./미리보기   # �
 - 사람 이름·문서번호·날짜는 지어내지 말고 `○○○` 로 둔다. 가림 처리된 `****` 줄은 지우거나 새 내용으로 바꾼다.
 - 결과의 "미적용" 항목을 확인하고, 렌더해서 견본과 나란히 비교한 뒤 전달한다.
 - HWP(5.x) 견본은 문단 추가·삭제가 안 된다. 줄 수를 견본에 맞추거나, 한컴에서 HWPX 로 저장한 견본을 쓴다.
+
+### 4-2) 기관팩 — 우리 기관 서식으로 계속 쓰기
+
+kordoc 에 없는 기관(지자체·공공기관) 서식으로 **앞으로 계속** 문서를 써야 하면, 그 기관 문서 여러 건으로 기관팩(.kpack)을 만든다.
+견본 한 건으로 한 문서만 쓰는 일은 4-1(patch) 또는 `generate --template` 이다.
+
+```bash
+npx -y kordoc@4.24.12 pack build 보고서1.hwpx 보고서2.hwpx 보고서3.hwpx --name 광양시 -o 광양시.kpack   # ① 같은 종류 3~10건 (MCP: build_agency_pack)
+npx -y kordoc@4.24.12 pack info 광양시.kpack --guide                                          # ② 작성 요령 읽기 (MCP: agency_pack_info)
+npx -y kordoc@4.24.12 generate 새보고서.md --pack 광양시.kpack -o 새보고서.hwpx                 # ③ 요령의 원고 예 꼴로 쓴 원고 (MCP: generate_document pack_path)
+npx -y kordoc@4.24.12 render 새보고서.hwpx --format png -d ./미리보기                           # ④ 눈으로 확인
+```
+
+지킬 것:
+- 견본은 **같은 종류끼리**(보고서끼리, 보도자료끼리). 다른 종류는 `--kind press --into 광양시.kpack` 으로 따로 더한다. HWP 는 한글에서 HWPX 로 저장해 달라고 한다.
+- 만들기 결과의 경고(다른 서식으로 보이는 견본·비운 견본이 다르게 읽힘·남은 글·그림)를 **사용자에게 그대로 전한다**.
+- 원고는 `guide.md` 의 원고 예 꼴(제목 → 담당 줄 → `>` 요약 → `##` 장 → □ㅇ-· → ※ → 표)대로. 그림·각주는 들어가지 않는다.
+- `--pack` 은 `--preset`·글꼴·쪽 옵션과 함께 못 쓴다(서식은 팩이 정한다).
+- 표 하나짜리 신청서·서식은 팩이 아니라 `fill`(fill_form)이다.
+- 팩에는 원문 글·작성자·결재선 이름·전화가 들지 않지만 로고·머리말은 든다 — 남에게 줄 때 확인하라고 알린다.
 
 ### 5) 도장/서명 배치 (seal)
 

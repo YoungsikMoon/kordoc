@@ -3,7 +3,7 @@
 import { z } from "zod"
 import { readFile, mkdir } from "fs/promises"
 import { dirname } from "path"
-import { markdownToHwpx, unknownFontWarnings, usesGaejosikMunche, PRESET_ALIAS, incompatibleGongmunWarnings, gongmunLintWarnings, muncheLintWarnings, slopLintWarnings, logicLintWarnings, usesLogicStructure, gongmunGate, formatGateFinding } from "../index.js"
+import { markdownToHwpx, buildAgencyPack, loadAgencyPack, packTemplate, resolvePackKind, packRoleWarnings, packSummary, unknownFontWarnings, usesGaejosikMunche, PRESET_ALIAS, incompatibleGongmunWarnings, gongmunLintWarnings, muncheLintWarnings, slopLintWarnings, logicLintWarnings, usesLogicStructure, gongmunGate, formatGateFinding } from "../index.js"
 import type { GongmunOptions } from "../index.js"
 import { buildGongmunOptions, BODY_FONTS, H2_MARKERS, BULLET2_CHARS, TOTAL_ROWS, FONT_ROLE_KEYS, SIZE_KEYS, DOC_HEAD_KEYS, DOC_FOOT_KEYS, DOC_INFO_KEYS, NOTICE_HEAD_KEYS, PRESS_CONTACT_KEYS, BODY_PT_RANGE, LINE_SPACING_RANGE, SIZE_PT_RANGE, APPROVAL_MAX, LEVEL_STYLE_KEYS, templateConflictMessage } from "../hwpx/gongmun-surface.js"
 import { assertWithinRoot } from "../shared/offline.js"
@@ -50,6 +50,8 @@ export function registerGenerateTools(server: McpServer): void {
       output_path: z.string().min(1).describe("출력 HWPX 파일의 절대 경로 (.hwpx 권장)"),
       profile_path: z.string().optional().describe("서식 프로필 JSON 경로 (extract_profile로 추출) — 참조 문서의 표 테두리·음영·열폭·셀 글꼴을 재현. 표 행·열 수와 첫 셀 텍스트가 일치하는 표에만 적용"),
       template_path: z.string().optional().describe("부서 서식 견본 HWPX 절대 경로 — 견본의 쪽 설정·글꼴·제목표·담당 줄(☎)·요약 상자(>)·□○-·※ 문단·데이터 표·참고N 띠 서식을 그대로 쓰고 내용만 markdown 으로 새로 짠다(견본 글은 남지 않음). 견본과 내용 구조가 달라도 된다 — 견본을 고쳐 쓰는(줄·칸 그대로) 일은 patch_document. preset·서식·쪽·image_dir·profile_path 와 함께 못 씀"),
+      pack_path: z.string().optional().describe("기관팩(.kpack) 절대 경로 — build_agency_pack 으로 만든 그 기관 서식 묶음. template_path 대신 팩의 견본으로 생성(규칙·제약은 template_path 와 같음). 원고는 agency_pack_info 의 작성 요령대로 쓸 것"),
+      pack_kind: z.string().optional().describe("기관팩 안 문서 종류 (기본: 종류가 하나면 그것, 여럿이면 report)"),
       // 값 집합·범위는 gongmun-surface SSOT에서 파생 (CLI와 드리프트 불가 — v4.0.4 영역1-1)
       preset: z.enum(Object.keys(PRESET_ALIAS) as [string, ...string[]]).optional()
         .describe("공문서 프리셋 — 지정 시 한국 행정 공문서 표준 서식 적용. '개조식'=정부 표준 개조식 보고서(표지·목차·로마숫자 장 헤더 자동 + □○-※ 부호별 폰트), '업무보고'=중앙부처 업무보고(##=Ⅰ 장 띠, ###=파란 숫자칸 절, ####=남색 소제목 박스, #####=① 하늘색 항목 띠, > ▪…=연노랑 성과 요약박스, ## 별첨 …=별첨 띠, ❶⇒ 부호 보존, 함초롬바탕 15·각주 맑은 고딕 12), '서울방침'=서울시 방침서(# 제목 뒤 '- 부제 -' 줄=파랑 부제·☎ 줄=담당자 행·> =요약박스, ##=[Ⅰ] 장 상자, ###=파란 번호 절 띠, ####=❶ 과제 소제목, □ HY견고딕 17·ㅇ 한컴돋움 15 굵게·- 휴먼명조 14·▸ 13, 줄간격 200%), '보도자료'=머리박스+제목 25pt+□→ㅇ→*(각주) 체계. 미지정 시 범용 마크다운 변환"),
@@ -108,10 +110,11 @@ export function registerGenerateTools(server: McpServer): void {
       inline_math: z.boolean().optional().describe("본문·표 셀의 인라인 수식 $…$ 를 한글 수식 개체로 생성 (블록 $$…$$ 는 늘 수식). 미지정 시 글자 그대로 — 가격 표기 같은 일반 $ 오인 방지. 켜도 짝이 맞는 $…$ 만(공백으로 시작·끝나거나 \\$ 이스케이프면 제외)"),
       gate: z.boolean().optional().describe("공문서 게이트 — 표기법·문체 error 와 윤문(생성형 AI 문체)·구성(왜→무엇→어떻게, 문제점↔방안 짝, 배경 사실·기대효과 목표치) 지적이 하나라도 있으면 파일을 만들지 않고 지적 목록을 돌려준다. 결재용 원고는 켜고, 지적을 고쳐 쓴 뒤 다시 호출"),
     },
-    async ({ markdown, output_path, profile_path, template_path, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, chapter_fit, h2_marker, band_color, band_text_color, summary, doc_info, checklist, dept, cover_label, fonts, sizes, levels, bullet2, agency, suppress_single, total_row, doc_head, doc_foot, report_info, notice_head, press, paper, landscape, columns, header, footer, image_dir, inline_math, gate }) => {
+    async ({ markdown, output_path, profile_path, template_path, pack_path, pack_kind, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, chapter_fit, h2_marker, band_color, band_text_color, summary, doc_info, checklist, dept, cover_label, fonts, sizes, levels, bullet2, agency, suppress_single, total_row, doc_head, doc_foot, report_info, notice_head, press, paper, landscape, columns, header, footer, image_dir, inline_math, gate }) => {
       try {
         // 부서 서식 견본 — 서식은 견본이 정한다. 함께 준 서식 옵션은 조용히 버리지 않고 오류
-        if (template_path) {
+        if (template_path && pack_path) return { content: [{ type: "text", text: "오류: template_path 와 pack_path 는 함께 쓸 수 없습니다 — 하나만 주세요" }], isError: true }
+        if (template_path || pack_path) {
           const given: Record<string, unknown> = { profile_path, preset, font, body_pt, line_spacing, org, date, toc, cover, approval, page_numbers, end_mark, body_title_box, chapter_fit, h2_marker, band_color, band_text_color, summary, doc_info, checklist, dept, cover_label, fonts, sizes, levels, bullet2, agency, suppress_single, doc_head, doc_foot, report_info, notice_head, press, paper, landscape, columns, header, footer, image_dir, inline_math }
           const clash = Object.keys(given).filter((k) => given[k] !== undefined)
           if (clash.length) return { content: [{ type: "text", text: `오류: ${templateConflictMessage(clash)}` }], isError: true }
@@ -125,17 +128,20 @@ export function registerGenerateTools(server: McpServer): void {
               }
             }
           }
-          const { buffer: tpl, resolved: tplPath } = await readValidatedFile(template_path, undefined, new Set([".hwpx"]))
+          const { buffer: src, resolved: tplPath } = await readValidatedFile((template_path ?? pack_path)!, undefined, new Set([pack_path ? ".kpack" : ".hwpx"]))
+          const pack = pack_path ? await loadAgencyPack(src) : null
+          const kind = pack ? resolvePackKind(pack, pack_kind) : null
+          const tpl = pack ? packTemplate(pack, kind!) : src
           if (await isSameFile(out, tplPath)) {
             return { content: [{ type: "text", text: "output_path가 견본(template_path)과 같습니다. 견본을 덮어쓰지 않습니다. 다른 경로를 지정하세요." }], isError: true }
           }
-          const warnings: string[] = []
+          const warnings: string[] = pack ? packRoleWarnings(pack.manifest.kinds[kind!], markdown) : []
           const buf = await markdownToHwpx(markdown, { template: tpl, warnings, ...(total_row ? { totalRow: total_row } : {}) })
           await mkdir(dirname(out), { recursive: true })
           await writeOutputFile(out, Buffer.from(buf))
           const warns = [...gongmunLintWarnings(markdown, 5), ...muncheLintWarnings(markdown, 5), ...slopLintWarnings(markdown, 5), ...warnings]
           return {
-            content: [{ type: "text", text: `✓ HWPX 생성 (견본 서식) → ${out}\n크기: ${(buf.byteLength / 1024).toFixed(1)}KB${warns.length ? `\n⚠ ${warns.join("\n⚠ ")}` : ""}` }],
+            content: [{ type: "text", text: `✓ HWPX 생성 (${pack_path ? "기관팩" : "견본"} 서식) → ${out}\n크기: ${(buf.byteLength / 1024).toFixed(1)}KB${warns.length ? `\n⚠ ${warns.join("\n⚠ ")}` : ""}` }],
           }
         }
         // 조립은 gongmun-surface SSOT(buildGongmunOptions) — CLI와 의미론 공유 (v4.0.4)
@@ -220,5 +226,51 @@ export function registerGenerateTools(server: McpServer): void {
         }
       }
     }
+  )
+
+  // ─── 도구: build_agency_pack · agency_pack_info ───────────
+
+  server.tool(
+    "build_agency_pack",
+    "기관팩 만들기 — 사용자의 기관 문서(HWPX) 몇 건으로 그 기관 서식 묶음(.kpack)을 만든다. kordoc 에 없는 기관(지자체·공공기관) 서식으로 계속 문서를 써야 할 때 쓴다. 같은 종류 문서(보고서끼리, 보도자료끼리)를 kind 하나로 묶어 2건 이상 주면 역할(□·ㅇ·-·제목표·요약 상자 …)별 다수결 서식에 가장 맞는 견본을 대표로 고른다. 원문 글·작성자 정보·결재선 이름·전화는 비우고 서식·틀·로고만 담는다. 결과로 요약과 작성 요령(guide)을 돌려준다 — 이후 generate_document(pack_path) 원고는 그 요령대로 쓴다. 결과에 '다른 서식으로 보이는 견본'·'남은 글' 경고가 있으면 사용자에게 알릴 것",
+    {
+      sample_paths: z.array(z.string()).min(1).max(50).describe("견본 HWPX 절대 경로 목록 — 같은 종류 문서. HWP 는 한글에서 .hwpx 로 저장해 달라고 할 것"),
+      name: z.string().min(1).max(60).describe("기관 이름 (예: 광양시)"),
+      kind: z.string().optional().describe("문서 종류 이름 (기본 report — 보도자료는 press 처럼 종류마다 따로 호출하고 into_path 로 더한다)"),
+      output_path: z.string().min(1).describe("출력 .kpack 절대 경로"),
+      into_path: z.string().optional().describe("이미 있는 .kpack 에 이 종류를 더할 때 그 경로 (같은 종류면 바꾼다)"),
+    },
+    async ({ sample_paths, name, kind, output_path, into_path }) => {
+      try {
+        const out = safeOutputPath(output_path, new Set([".kpack"]))
+        const samples = []
+        for (const p of sample_paths) {
+          const { buffer, resolved } = await readValidatedFile(p, undefined, new Set([".hwpx"]))
+          if (await isSameFile(out, resolved)) return { content: [{ type: "text", text: "output_path 가 견본과 같습니다" }], isError: true }
+          samples.push({ data: new Uint8Array(buffer), kind: kind ?? "report" })
+        }
+        const into = into_path ? await loadAgencyPack((await readValidatedFile(into_path, undefined, new Set([".kpack"]))).buffer) : undefined
+        const { pack, manifest, guide } = await buildAgencyPack(name, samples, into)
+        await mkdir(dirname(out), { recursive: true })
+        await writeOutputFile(out, pack)
+        return { content: [{ type: "text", text: `✓ 기관팩 → ${out}\n${packSummary(manifest)}\n\n${guide}` }] }
+      } catch (err) {
+        return { content: [{ type: "text", text: `오류: ${describeError(err)}` }], isError: true }
+      }
+    },
+  )
+
+  server.tool(
+    "agency_pack_info",
+    "기관팩(.kpack) 요약과 작성 요령 보기 — 사용자가 기관팩을 주며 그 서식으로 문서를 써 달라고 하면 먼저 이 도구로 작성 요령을 읽고, 그 규칙대로 원고를 써서 generate_document(pack_path) 로 만든다",
+    { pack_path: z.string().min(1).describe(".kpack 절대 경로") },
+    async ({ pack_path }) => {
+      try {
+        const p = await loadAgencyPack((await readValidatedFile(pack_path, undefined, new Set([".kpack"]))).buffer)
+        return { content: [{ type: "text", text: `${packSummary(p.manifest)}\n\n${p.guide}` }] }
+      } catch (err) {
+        return { content: [{ type: "text", text: `오류: ${describeError(err)}` }], isError: true }
+      }
+    },
   )
 }

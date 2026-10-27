@@ -228,8 +228,14 @@ function chapterPara(ctx: EmitCtx, node: Extract<OutlineNode, { kind: "chapter" 
   }
   const chap = protos.get("chapter")
   if (chap) {
-    if (!node.label && node.index > ROMAN.length) ctx.notes.add(`template: 장이 ${ROMAN.length}개를 넘어 번호(Ⅰ~Ⅻ)가 다시 돕니다 — ## 제목에 번호를 직접 쓰세요`)
-    return { xml: resetBreaks(bandXml(chap, node.label ?? ROMAN[(node.index - 1) % ROMAN.length], text)), shift: false, band: false }
+    // 번호 꼴은 견본 장 띠 번호 칸을 따른다 — 숫자(1·2·3)·가나다·로마 숫자(기본)
+    const el = hostTable(chap)
+    const first = el ? tableInfo(chap, el, new Map()).cells.find((c) => c.row === 0 && c.col === 0)?.text.trim() ?? "" : ""
+    const auto = /^[\[［(]?\d/.test(first) ? String(node.index)
+      : /^[\[［(]?[가-하]/.test(first) ? "가나다라마바사아자차카타파하"[(node.index - 1) % 14]
+      : ROMAN[(node.index - 1) % ROMAN.length]
+    if (!node.label && auto === ROMAN[(node.index - 1) % ROMAN.length] && node.index > ROMAN.length) ctx.notes.add(`template: 장이 ${ROMAN.length}개를 넘어 번호(Ⅰ~Ⅻ)가 다시 돕니다 — ## 제목에 번호를 직접 쓰세요`)
+    return { xml: resetBreaks(bandXml(chap, node.label ?? auto, text)), shift: false, band: false }
   }
   return { xml: levelPara(ctx, 0, text), shift: true, band: false }
 }
@@ -633,12 +639,28 @@ function appendHeader(ctx: EmitCtx): string {
 }
 
 /**
+ * 본문 구역 고르기 — 역할 원형을 가장 많이 갖춘 구역(같으면 앞 구역). 결재 문서는 표지·점검표·목차를 앞 구역에, 본문을
+ * 다음 구역에 두는 일이 흔하다(서울 방침서 16건 중 다수 3구역). 첫 구역만 훑으면 표지 제목 하나만 원형으로 잡혀 □·○·-·요약이
+ * 모두 바탕글로 나왔다
+ */
+export function pickBodySection(sectionXmls: string[], headerXml: string): { index: number; xml: string; scan: TemplateScan } {
+  let best = { index: 0, xml: sectionXmls[0], scan: scanTemplate(sectionXmls[0], headerXml) }
+  for (let i = 1; i < sectionXmls.length; i++) {
+    if (!sectionXmls[i]) continue
+    let scan: TemplateScan
+    try { scan = scanTemplate(sectionXmls[i], headerXml) } catch { continue }
+    if (scan.protos.size > best.scan.protos.size) best = { index: i, xml: sectionXmls[i], scan }
+  }
+  return best
+}
+
+/**
  * 마크다운 + 견본 HWPX → HWPX. markdownToHwpx({ template }) 의 구현.
  */
 export async function markdownToHwpxFromTemplate(markdown: string, template: Uint8Array | ArrayBuffer, warnings: string[] = [], totalRow?: TotalRowPosition): Promise<ArrayBuffer> {
   const tz = await loadTemplateZip(template)
-  const { sectionXml, headerXml, sections } = tz
-  const scan = scanTemplate(sectionXml, headerXml)
+  const { headerXml, sections } = tz
+  const { index: bodyIdx, xml: sectionXml, scan } = pickBodySection(tz.sectionXmls, headerXml)
 
   const pasted = cleanPastedMarkdown(markdown)
   if (pasted.removed > 0) warnings.push(`붙여넣기 흔적 ${pasted.removed}개 정리 (보이지 않는 글자·인용 표시·이스케이프된 굵게)`)
@@ -694,7 +716,7 @@ export async function markdownToHwpxFromTemplate(markdown: string, template: Uin
 
   let newHeader = appendHeader(ctx)
   if (sections.length > 1) {
-    warnings.push(`template: 견본의 구역 ${sections.length}개 중 첫 구역 서식만 씁니다`)
+    warnings.push(`template: 견본의 구역 ${sections.length}개 중 ${bodyIdx + 1}번째 구역(본문) 서식만 씁니다`)
     newHeader = newHeader.replace(/(<(?:\w+:)?head\b[^>]{0,4096}?\bsecCnt=")\d+"/, (_, open: string) => `${open}1"`)
   }
   const title = blocks.find((b) => b.type === "heading" && (b.level ?? 1) === 1)?.text ?? null

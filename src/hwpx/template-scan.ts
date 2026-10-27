@@ -390,7 +390,22 @@ export function paraAligns(headerXml: string): Map<string, string> {
   return out
 }
 
-interface ParaInfo { xml: string; tbl: TableInfo | null; plain: string; role: RoleKey | null; maxH: number; drawing: boolean; objs: number }
+interface ParaInfo { xml: string; tbl: TableInfo | null; plain: string; role: RoleKey | null; maxH: number; drawing: boolean; objs: number; style: string }
+
+/** 문단 서식 열쇠 — 문단 모양 + 새 글이 입을 글자 모양(fillParagraph 와 같이 부호 뒤 글이 가장 많은 run) */
+function styleKey(xml: string, m: ParaModel): string {
+  const plain = paraPlain(m)
+  let prefix = /^[\s　]*/.exec(plain)![0].length
+  const cp = plain.codePointAt(prefix)
+  if (cp !== undefined && isMarkerChar(mapPuaText(String.fromCodePoint(cp)))) prefix += String.fromCodePoint(cp).length + /^[\s　]*/.exec(plain.slice(prefix + String.fromCodePoint(cp).length))![0].length
+  let best = "", bestN = 0, pos = 0
+  for (const r of m.runs) {
+    let n = 0
+    for (const part of r.parts) for (const tok of part.toks) for (let i = 0; i < tok.s.length; i++, pos++) if (pos >= prefix && tok.xml === null && /\S/.test(tok.s[i])) n++
+    if (n > bestN) { bestN = n; best = r.charPr }
+  }
+  return `${/\bparaPrIDRef="(\d+)"/.exec(xml.slice(m.el.start, m.el.openEnd))?.[1] ?? "0"}/${best || m.runs.at(-1)?.charPr || "0"}`
+}
 
 /** 그림·도형 개체 (표 아닌 것) — 이런 문단은 원형으로 쓰지 않는다 */
 const DRAWING = new Set(["pic", "rect", "ellipse", "arc", "polygon", "curve", "line", "connectLine", "container", "textart", "ole", "equation", "chart", "video"])
@@ -419,7 +434,7 @@ export function scanTemplate(sectionXml: string, headerXml: string): TemplateSca
   const infos: ParaInfo[] = topLevelParagraphs(sectionXml).map(({ start, end }, idx) => {
     const frag = sectionXml.slice(start, end)
     const p = elementAt(frag, 0)
-    if (!p) return { xml: "", tbl: null, plain: "", role: null, maxH: 0, drawing: true, objs: 1 }
+    if (!p) return { xml: "", tbl: null, plain: "", role: null, maxH: 0, drawing: true, objs: 1, style: "" }
     const cut: SpliceEdit[] = []
     for (const r of childBy(frag, p, "run")) {
       for (const c of childElements(frag, r)) {
@@ -448,7 +463,7 @@ export function scanTemplate(sectionXml: string, headerXml: string): TemplateSca
     const tbls = objs.filter((o) => o.name === "tbl")
     const tbl = tbls.length === 1 && !plain.trim() && objs.length === 1 ? tableInfo(xml, tbls[0].el, heights) : null
     return {
-      xml, tbl, plain, objs: objs.length,
+      xml, tbl, plain, objs: objs.length, style: styleKey(xml, model),
       role: objs.length ? null : lineRole(plain),
       maxH: tbl ? maxOf(tbl.cells.filter((c) => !CONTACT_RE.test(c.text)).map((c) => c.maxH)) : paraMaxH(model, heights),
       drawing: objs.some((o) => DRAWING.has(o.name)) || tbls.length > 1,
@@ -484,6 +499,7 @@ export function scanTemplate(sectionXml: string, headerXml: string): TemplateSca
   if (contactIdx >= 0) set("contact", contactIdx)
 
   const dataTables: number[] = []
+  const byRole = new Map<RoleKey, number[]>()
   let firstBand = -1
   let bandItem: RoleKey | null = null
   infos.forEach((x, i) => {
@@ -496,10 +512,28 @@ export function scanTemplate(sectionXml: string, headerXml: string): TemplateSca
     }
     if (x.objs) return
     if (x.role) {
-      set(x.role, i)
+      ;(byRole.get(x.role) ?? byRole.set(x.role, []).get(x.role)!).push(i)
       if (firstBand >= 0 && !bandItem) bandItem = x.role
-    } else if (x.plain.trim() && i >= bodyStart) set("body", i)
+    } else if (x.plain.trim() && i >= bodyStart) (byRole.get("body") ?? byRole.set("body", []).get("body")!).push(i)
   })
+  // 항목·본문 원형은 그 역할에서 가장 많이 쓴 서식의 첫 문단 — 첫 문단만 쓰면 한 줄짜리 강조(형광펜·색)가 역할 서식으로 굳었다
+  // (광양 공고문 첫 ㅇ 줄의 노란 형광펜이 모든 ㅇ 줄로). 같으면 앞 문단
+  // 비기면 문서에서 더 흔한 문단 모양 → 음영 없는 글자 모양 → 더 많이 쓰인 글자 모양 쪽 — 강조 글자 모양(형광펜)은 드물게 쓰인다
+  // (※ 두 줄 중 첫 줄만 형광펜)
+  const charUse = new Map<string, number>(), paraUse = new Map<string, number>()
+  for (const m of sectionXml.matchAll(/\bcharPrIDRef="(\d{1,10})"/g)) charUse.set(m[1], (charUse.get(m[1]) ?? 0) + 1)
+  for (const m of sectionXml.matchAll(/\bparaPrIDRef="(\d{1,10})"/g)) paraUse.set(m[1], (paraUse.get(m[1]) ?? 0) + 1)
+  const use = (i: number) => charUse.get(infos[i].style.split("/")[1]) ?? 0
+  const puse = (i: number) => paraUse.get(infos[i].style.split("/")[0]) ?? 0
+  // 음영(형광펜) 글자 모양은 강조라 비기면 뒤로 — 늘 형광펜을 쓰는 역할이면 문단 수가 더 많아 그쪽이 뽑힌다
+  const shaded = new Set([...headerXml.matchAll(/<hh:charPr\b[^>]{0,4096}>/g)].filter((m) => !/\bshadeColor="(?:none|#FFFFFF)?"/i.test(m[0]) && /\bshadeColor="/.test(m[0])).map((m) => /\bid="(\d{1,10})"/.exec(m[0])?.[1] ?? ""))
+  const plainCh = (i: number) => (shaded.has(infos[i].style.split("/")[1]) ? 0 : 1)
+  for (const [role, idxs] of byRole) {
+    const count = new Map<string, number>()
+    for (const i of idxs) count.set(infos[i].style, (count.get(infos[i].style) ?? 0) + 1)
+    // 너무 큰 문단은 set 이 건너뛴다 — 다음 후보로
+    for (const i of [...idxs].sort((a, b) => count.get(infos[b].style)! - count.get(infos[a].style)! || plainCh(b) - plainCh(a) || puse(b) - puse(a) || use(b) - use(a) || a - b)) { set(role, i); if (protos.has(role)) break }
+  }
   // 데이터 표 원형 — 머리행이 병합 없이 꽉 찬 3행 이상 표를 먼저 (상자형 2×2 안내 틀을 피한다)
   const clean = dataTables.find((i) => {
     const t = infos[i].tbl!

@@ -62,6 +62,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/hwpx/lint-blocks.ts` | 블록 단위 검수 `lintBlocks` — 문단·표 칸 블록(id·글·표 위치)을 검수 입력 줄로 펼치고 지적을 블록 id·블록 안 위치로 되짚는다. CLI `lint-blocks`, MCP `lint_document` `blocks`, 워커 `lint_blocks`, Python SDK `lint_blocks()` 가 함께 씀 |
 | `src/hwpx/number-lint.ts` | 본문 수치 ↔ 표 수치 대조(`lint --numbers`, v4.20.0) — 표 앞뒤 3블록 본문의 수치 가운데 그 표에 같은 단위가 있는 것만, 기준값(이상·목표 …) 제외. 찾기는 앞뒤 10블록 표, 소수·세 자리 이상 수는 단위 없는 칸과도 같은 수. 확인 목록(exit 코드 무관) |
 | `src/hwpx/level-styles.ts` | 견본 HWPX 항목부호 단계별 서식 추출(`kordoc levels`·`generate --levels-from`·`lint --styles`, v4.20.0) — 부호는 outline.parseLeadingMarker, 서식은 부호 뒤 첫 글자의 글자 모양(fontRef hangul → 글꼴 목록). 데이터 표(칸 여럿) 안 문단 제외, 대표값은 표본 3개 이상·한 값 60% 이상 |
+| `src/hwpx/agency-pack.ts` | 기관팩(.kpack) — 사용자 기관 문서(HWPX) 몇 건에서 대표 견본(역할별 다수결 후보 → 교차 재현)을 골라 원문 글·작성자·결재선 사람 정보를 비운 판 + 작성 요령을 담는 코드 없는 zip. 생성은 견본 모드(gen-from-template) 그대로. 설명서 docs/agency-pack.md, 재현 벤치 bench/pack-repro.mjs |
 | `src/hwpx/agency.ts` · `agency-styles.ts` | 기관 서식 `agency` — 중앙행정기관 보도자료 2,670건 실측(UpstageAI/korean-report-hwpx, MIT)을 levels·bullet2·fonts·띠 색 기본값으로 깔고 명시 옵션이 이긴다. 데이터는 scripts/build-agency-styles.mjs 생성물 (gongmunseo-engine-spec.md (m)장) |
 | `src/hwpx/paste-clean.ts` | 생성형 AI 붙여넣기 흔적 정리(generate 입구, v4.20.0) — 보이지 않는 글자·† 인용 표시·양쪽 이스케이프 굵게(별표 런·태그 낀 짝 제외)만. 숫자 각주 [1]·NBSP·【붙임】·일부러 쓴 `\*`·코드 펜스는 그대로(실문서 마크다운 454줄에 [1] 이 정상 내용) |
 | `src/roundtrip/integrity.ts` | HWPX 패치 무결성 검사(v4.20.0) — 교체 안 한 엔트리 압축 바이트 그대로·교체 XML 엄격 파싱(원본부터 오류인 엔트리 제외)·글만 고친 섹션 태그 보존. 깨지면 patchHwpx 가 실패를 돌려준다 |
@@ -170,7 +171,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/page-markdown.ts` | 페이지별 마크다운 사영 (#68) — `IRBlock.pageNumber` 로 갈라 페이지마다 `blocksToMarkdown()`. `parse()` 가 `ParseSuccess.pages` 로 붙인다 |
 | `src/watch.ts` | 디렉토리 감시 모드 + Webhook 알림 |
 | `src/cli.ts` | Commander 기반 CLI 진입점(루트 파싱 명령). 하위 명령은 `src/cli/commands-{docs,generate,render,system,worker}.ts` (등록 순서 = 도움말 순서) |
-| `src/mcp.ts` | MCP 서버 진입점 (Claude/Cursor 연동, 18개 도구). 도구는 `src/mcp/tools-{parse,form,render,generate,lint}.ts`, 경로 검증·파일 읽기는 `src/mcp/shared.ts` (테스트용 헬퍼 재수출) |
+| `src/mcp.ts` | MCP 서버 진입점 (Claude/Cursor 연동, 20개 도구). 도구는 `src/mcp/tools-{parse,form,render,generate,lint}.ts`, 경로 검증·파일 읽기는 `src/mcp/shared.ts` (테스트용 헬퍼 재수출) |
 | `src/print/renderer.ts` | 인쇄용 Chromium 공용 기동 `launchLockedPage`: JavaScript 끔·data:/about: 외 요청 차단·기동 한도 90초. 렌더 PDF도 공유 |
 | `src/render/rasterize.ts` | SVG → PNG 래스터 (sharp optional, render_document MCP용) + `rasterizePageSvg` 페이지 단위 png/jpeg(실배율 보고) |
 | `src/redact.ts` | PII 탐지·마스킹 엔진: 정규화·겹침 처리·마크다운 표 머리글 문맥(선형 시간). 룰 정의는 `redact-rules.ts`(번호형)·`redact-name-address.ts`(인명·주소) |

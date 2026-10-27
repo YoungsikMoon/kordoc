@@ -20,9 +20,10 @@ const MAX_XML = 32 * 1024 * 1024
 
 export interface TemplateZip {
   zip: JSZip
-  /** 구역 파일 경로 (첫 구역만 쓴다) */
+  /** 구역 파일 경로 */
   sections: string[]
-  sectionXml: string
+  /** 구역마다 XML (sections 순서, 깨진 뒤 구역은 빈 글) — 생성은 그중 본문 구역 하나만 쓴다(gen-from-template pickBodySection) */
+  sectionXmls: string[]
   headerXml: string
   /** 바탕쪽 XML (개체 id·그림 참조 계산용) */
   masterXmls: string[]
@@ -67,13 +68,20 @@ export async function loadTemplateZip(template: Uint8Array | ArrayBuffer): Promi
   if (!sections.length || !zip.file(sections[0]) || !zip.file("Contents/header.xml")) {
     throw new KordocError("견본 HWPX 에 Contents/header.xml 또는 section0.xml 이 없습니다")
   }
-  const sectionXml = await readText(zip, sections[0], budget)
+  const sectionXmls: string[] = []
+  for (const [i, name] of sections.entries()) {
+    if (!zip.file(name)) throw new KordocError(`견본 HWPX 에 ${name} 이 없습니다`)
+    const xml = await readText(zip, name, budget)
+    // 첫 구역이 깨졌으면 멈춘다. 뒤 구역(붙임 등)이 깨졌으면 그 구역만 빼고 쓴다 — 종전엔 첫 구역만 읽어 그런 견본도 받았다
+    if (i === 0) assertWellFormed(xml, name)
+    else try { assertWellFormed(xml, name) } catch { sectionXmls.push(""); continue }
+    sectionXmls.push(xml)
+  }
   const headerXml = await readText(zip, "Contents/header.xml", budget)
-  assertWellFormed(sectionXml, sections[0])
   assertWellFormed(headerXml, "header.xml")
   const masterXmls: string[] = []
   for (const name of names) if (/^Contents\/masterpage\d*\.xml$/i.test(name)) masterXmls.push(await readText(zip, name, budget))
-  return { zip, sections, sectionXml, headerXml, masterXmls, budget }
+  return { zip, sections, sectionXmls, headerXml, masterXmls, budget }
 }
 
 export interface PackInput { newSection: string; headerXml: string; title: string | null; prvText: string }
