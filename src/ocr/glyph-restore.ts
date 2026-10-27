@@ -19,6 +19,7 @@ export function restoreGlyphs(rgba: Uint8Array, pageW: number, box: Box, text: s
   const gray = grayCrop(rgba, pageW, box)
   const c: Ctx = { chars, cx: i => (steps[i] + 0.5) * stepPx, gray, w: box.w, h: box.h, ink: inkStats(gray) }
   if (/[[\]]/.test(text)) brackets(c)
+  if (text.includes("'")) cornerQuotes(c)
   if (/['"]/.test(text)) quotes(c)
   if (/(^|\D)[1-9](\D|$)/.test(text)) circled(c)
   if (text.includes("*")) stars(c)
@@ -85,6 +86,24 @@ function cornerCommas({ chars, cx, gray, w, h, ink }: Ctx) {
       const f = bracketFeatures(gray, w, h, ink, cx(i))
       if (f && bracketShape(f, true) === "\u300d") { chars[i] = "\u300d"; open-- }
     }
+  }
+}
+
+/**
+ * 따옴표로 읽은 여는 홑낫표 — 뒤가 한글인 곧은 ' 자리 잉크가 「 꼴(윗변 꽉 참·곧은 왼 줄기)이고 글자 높이의 45% 이상이면 「 로
+ * ("01 본'국가교통통계 해설편,은" → "본「국가교통통계 해설편」은", 교통 통계 해설). 큰 글씨 여는 따옴표도 곧고 길어 「 꼴로 잡히니
+ * 같은 줄 뒤에 짝(」 또는 」 꼴 쉼표)이 있을 때만. 짝 쉼표는 cornerCommas 가 」 로 바꾼다
+ */
+function cornerQuotes({ chars, cx, gray, w, h, ink }: Ctx) {
+  for (let i = 0; i < chars.length; i++) {
+    if (chars[i] !== "'" || !/^[가-힣]/.test(chars[i + 1] ?? "")) continue
+    const f = bracketFeatures(gray, w, h, ink, cx(i))
+    if (!f || f.ch < f.charH * 0.45 || bracketShape(f, false) !== "\u300c") continue
+    // 짝 증거 — 뒤에 」 나 」 꼴 쉼표가 있어야 한다(큰 글씨 여는 따옴표도 곧고 길어 혼자서는 「 꼴로 잡혔다)
+    // 그 사이에 따옴표가 있으면 따옴표 짝이다("‘규정’은 「행정 … 규정」" 의 ‘ 가 뒤 」 를 짝으로 잡았다)
+    const rest = chars.slice(i + 1), end = rest.findIndex(c => c === "'" || c === "\u300d" || c === ",")
+    const pair = end >= 0 && rest[end] !== "'" && (rest[end] === "\u300d" || (() => { const g = bracketFeatures(gray, w, h, ink, cx(i + 1 + end)); return !!g && bracketShape(g, true) === "\u300d" })())
+    if (pair) chars[i] = "\u300c"
   }
 }
 
