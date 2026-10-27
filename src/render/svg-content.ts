@@ -483,7 +483,10 @@ export function drawPara(p: Element, ox: number, oy: number, areaW: number, ctx:
       // 그림자 있는 사진은 그림자까지 든 높이로 줄을 짠다 — 줄 높이가 사진보다 크고 기준선이 그 85% 면 사진은 줄 맨 위(같은 판 한컴 PDF:
       // 그림자 거리 300 인 34978 사진의 줄 35962·기준선 30568 = 0.85 × 35962, 사진 위가 줄 위)
       const shadowed = o.tag === "pic" && !!findChildByLocalName(findChildByLocalName(o.el, "effects") ?? o.el, "shadow") && plan.seg.textheight > o.height && Math.abs(plan.seg.baseline - Math.round(plan.seg.textheight * 0.85)) <= 2
-      const eqAsc = o.tag === "equation" && Number(o.el.getAttribute("baseLine")) > 0 ? Math.round(o.height * Number(o.el.getAttribute("baseLine")) / 100) : shadowed ? Math.round(plan.seg.textheight * 0.85) : o.tag === "pic" ? Math.round(o.height * 0.85) : o.height
+      // 표는 그려질 높이(칸 글로 자란 실효 높이)로 얹는다 — reflow 가 그 높이로 줄을 짜는데 저장 sz 로 얹으면 자란 만큼 아래로 내려가
+      // 위에 빈 자리가 생기고 뒤 문단과 겹쳤다(패치로 칸 글만 늘어난 표, sz 10601 → 그려진 표 20534)
+      const eqAsc = o.tag === "equation" && Number(o.el.getAttribute("baseLine")) > 0 ? Math.round(o.height * Number(o.el.getAttribute("baseLine")) / 100) : shadowed ? Math.round(plan.seg.textheight * 0.85) : o.tag === "pic" ? Math.round(o.height * 0.85)
+        : o.tag === "tbl" ? Math.max(o.height, measureTableHeight(o.el, ctx.extentMemo)) : o.height
       // 바깥 여백: 개체(+아래 여백)는 기준선 위에 얹되 줄 위 + 위 여백보다 위로는 안 간다(한컴 PDF: 줄을 채우는 인라인 표 = 줄 위 + outMargin 위)
       const iom = findChildByLocalName(o.el, "outMargin"), iomT = num(iom, "top"), iomB = num(iom, "bottom")
       const yTop = oy + plan.seg.vertpos + Math.max(iomT, plan.seg.baseline - eqAsc - iomB - captionExtra(o.el))

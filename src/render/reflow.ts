@@ -741,6 +741,22 @@ function carryZones(zones: WrapZone[], bodyH: number, oneColumn: boolean): void 
   zones.push(...moved)
 }
 
+/** 자란 표로 볼 높이 차(HWPUNIT) — 다시 짠 칸 줄과 한컴 줄의 글꼴 근사 차이보다 크고 한 줄보다 작게 */
+const STALE_SLACK = 500
+
+/** 문단에 든 글자처럼 취급 표 중 캐시 없는 칸 문단이 있는 표 — 칸 글을 다시 짜므로 저장 높이보다 자랄 수 있다 */
+function regrownInlineTables(p: Element): Element[] {
+  const out: Element[] = []
+  for (const run of elements(p)) {
+    if (ln(run) !== "run") continue
+    for (const o of elements(run)) {
+      if (ln(o) !== "tbl" || findChildByLocalName(o, "pos")?.getAttribute("treatAsChar") !== "1") continue
+      if (Array.from(o.getElementsByTagName("*") as unknown as Element[]).some(e => ln(e) === "p" && !findChildByLocalName(e, "linesegarray"))) out.push(o)
+    }
+  }
+  return out
+}
+
 function pageTopBand(p: Element): [number, number] {
   let top = Infinity, bot = 0
   for (const run of elements(p)) {
@@ -869,6 +885,8 @@ function reflowBlockFlow(
   // 칸 안 다단 — 단 폭으로 채우고, 단 나누기 문단은 다음 단 맨 위(한컴 저장본: 2단 칸의 단 나누기 문단 vertpos 0, 줄 폭 19420)
   const cellW = areaW
   let cellCols = 1, cellCol = 0
+  /** 칸 글로 자란 표를 지났다 — 뒤 문단의 저장 자리는 모두 옛 표 높이 기준이라 흐름 끝까지 다시 짠다 */
+  let staleRest = false
   for (const p of elements(container)) {
     if (ln(p) !== "p") continue
     if (bodyFlow) { const colW = columnWidthIn(p, counter.bodyW!); if (colW !== undefined) areaW = colW }
@@ -879,6 +897,7 @@ function reflowBlockFlow(
     }
     // 문단 안 표 셀을 먼저 셀 로컬 좌표로 reflow (본문 세로 흐름과 무관) —
     // reflowPara의 표 실효높이 측정이 셀 lineseg를 읽으므로 호스트 문단보다 앞서야 한다
+    const regrown = regrownInlineTables(p)
     reflowTablesIn(p, doc, styles, mode, counter, reflowBlockFlow)
     reflowSubListsIn(p, doc, styles, mode, counter, reflowBlockFlow, bodyFlow ? areaW : undefined)
     const g = styles.paraGeom.get(p.getAttribute("paraPrIDRef") ?? "")
@@ -887,6 +906,12 @@ function reflowBlockFlow(
     floatFloor = 0
     // 쪽 위에 붙은 위아래 배치 개체(vertRelTo=PAGE·vertAlign=TOP, 두문 결재표 등)는 그 아래부터 글을 놓는다(한컴 저장본: 첫 줄 vertpos 17304 = 표 바닥)
     if (bodyH > 0) { const [top, bot] = pageTopBand(p); if (bot > 0 && top <= startV && startV < bot) startV = bot }
+    // 낡은 조판 캐시 — 한컴은 열 때 늘 다시 짜서 칸 글이 늘어난 표는 행이 자라고 뒤 문단이 밀린다. 캐시를 믿으면 옛 자리에 그려 자란 표와
+    // 겹쳤다(패치로 칸 글만 늘린 표). 칸 글을 다시 짠 글자처럼 취급 표가 저장 높이보다 자라면 그 문단부터 흐름 끝까지 캐시를 버리고 다시 짠다
+    // (뒤 문단 하나만 버리면 밀려 넘어간 쪽에서 다음 캐시 문단을 새 쪽 첫 줄로 보고 옛 자리, 쪽 아래에 그렸다)
+    staleRest ||= regrown.some(t => measureTableHeight(t, geomMemo(styles)) > num(findChildByLocalName(t, "sz"), "height") + STALE_SLACK)
+    const lsaC = staleRest ? findChildByLocalName(p, "linesegarray") : null
+    if (lsaC) p.removeChild(lsaC)
     const numsBefore: NumberCounters = new Map([...(counter.nums ?? [])].map(([k, v]) => [k, v.slice()]))
     const zonesBefore = zones.length
     let res = reflowPara(p, doc, styles, areaW, startV, mode, zones, counter.nums, bodyH > 0, bodyH)

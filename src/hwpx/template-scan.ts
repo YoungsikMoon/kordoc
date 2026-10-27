@@ -17,6 +17,7 @@ import { findElementEnd, applySplices, type SpliceEdit } from "../roundtrip/sour
 import { topLevelParagraphs, markerClass } from "../roundtrip/structure-edit.js"
 import { mapPuaText } from "../shared/pua.js"
 import { escapeTextXml } from "./gen-ids.js"
+import { isColorEmphasis } from "./styles.js"
 
 // ─── XML 원자 ─────────────────────────────────────────
 
@@ -569,7 +570,7 @@ export function scanTemplate(sectionXml: string, headerXml: string): TemplateSca
   if (!protos.has("table")) for (const i of dataTables) set("table", i)
 
   const emphasis = new Set([...headerXml.matchAll(/<hh:charPr\b[^>]{0,4096}>/g)]
-    .filter((m) => /\bshadeColor="(?!none"|#FFFFFF")[^"]+"/i.test(m[0]) || /\btextColor="(?!#000000"|none")[^"]+"/i.test(m[0]))
+    .filter((m) => isColorEmphasis(m[0]))
     .map((m) => /\bid="(\d{1,10})"/.exec(m[0])?.[1] ?? ""))
   return { protos, head: secPr + ctrls.join(""), headCharPr, contactInTitle, headBox, emphasis, bandItem, heights, aligns: paraAligns(headerXml) }
 }
