@@ -68,3 +68,20 @@ describe("줄 머리 도형 ○ 뒤 라틴 대문자 약어", () => {
     assert.equal(restoreGlyphs(ringPage(4), W, box, "OICT가", [1, 2.8, 3.7, 4.8, 6.6], 10), "OICT가")
   })
 })
+
+describe("고리만 든 칸", () => {
+  function cellPage(inner: boolean): Uint8Array {
+    const rgba = new Uint8Array(W * H * 4).fill(255)
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const d = Math.hypot(x + 0.5 - 40, y + 0.5 - 18)
+      if ((d <= 12 && d > 11) || (inner && d <= 6 && d > 5)) { const p = (y * W + x) * 4; rgba[p] = rgba[p + 1] = rgba[p + 2] = 0 }
+    }
+    return rgba
+  }
+  it("가는 고리 하나만 든 칸의 O 는 ○", () => {
+    assert.equal(restoreGlyphs(cellPage(false), W, box, "O", [4], 10), "○")
+  })
+  it("이중 고리 ◎ 는 ○ 로 바꾸지 않는다", () => {
+    assert.notEqual(restoreGlyphs(cellPage(true), W, box, "O", [4], 10), "○")
+  })
+})

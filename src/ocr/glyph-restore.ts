@@ -3,7 +3,7 @@
  * 모델이 줄여·바꿔·빠뜨려 읽는 글자를 고친다(괄호 「」【】·여는 따옴표·원문자·로마 숫자·두 글자 사이에서 빠진 기호). 모양 판정은
  * line-split.ts, 여기는 글자열 배선만. 글자 배열은 CTC 글자와 1:1 로 두고 칸마다 바꿔 넣거나(빈 글·여러 글자 허용) 끝에 잇는다
  */
-import { bracketFeatures, bracketShape, circledAt, dashRatio, discAt, gapGlyphs, grayCrop, inkStats, quoteHead, ringBullet, romanStems, serifOne, starRun } from "./line-split.js"
+import { bracketFeatures, bracketShape, circledAt, dashRatio, discAt, gapGlyphs, grayCrop, inkStats, leadingBullet, quoteHead, ringBullet, romanStems, serifOne, starRun } from "./line-split.js"
 import type { InkStats } from "./line-split.js"
 import type { Box } from "./crop.js"
 
@@ -257,6 +257,15 @@ function ring({ chars, cx, gray, w, h, ink }: Ctx): boolean {
   // 뒤 글이 한글이거나 여는 괄호 뒤 한글("❍(정책) 민생성장"), 숫자 뒤 한글("ｏ4대보험" 을 모델은 "04대보험" 으로 읽는다 — 숫자 0 은
   // 세로로 길어 ringBullet 이 고리로 보지 않는다)
   const rest = chars.slice(k + 1).join("").trimStart()
+  // 고리만 든 칸("O"·"OO" — 서식 표의 해당 표시 ○, 한국어능력시험 계획 "×× | ○ | ○○") — 하나하나 도형 ○ 로 판정될 때만
+  const live = chars.map((c, i) => i).filter(i => chars[i].trim())
+  if (live.length <= 3 && live.every(i => /^[Oo]$/.test(chars[i]))) {
+    // 이중 고리 ◎ 도 바깥 고리가 가늘어 ○ 로 판정된다(함평 목차 ◎ 열) — leadingBullet 이 ◎ 로 보면 그쪽에 맡긴다
+    if (leadingBullet(gray, w, h, ink, cx(live[0]))?.mark === "\u25ce") return false
+    if (!live.every(i => ringBullet(gray, w, h, ink, cx(i)) === "\u25cb")) return false
+    for (const i of live) chars[i] = "\u25cb"
+    return true
+  }
   // 라틴 대문자 약어 앞("❍ ICT 융복합" → "OICT") — 라틴 O("OECD")와 섞이니 획이 가는 도형 ○ 로 판정될 때만 바꾸고 띄운다
   if (/^[A-Z]{2,}/.test(rest) && /^[Oo0]$/.test(chars[k])) {
     if (ringBullet(gray, w, h, ink, cx(k)) !== "\u25cb") return false
