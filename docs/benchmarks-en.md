@@ -2,6 +2,18 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.12: OCR · 2026-10-27
+
+Compared document by document against 4.24.11 with the same corpora and scorers for OCR, degraded-input OCR and ODL OCR (rounds 121, 127–130). The full suite was rerun to confirm PDF text, PDF tables, statute annexes, HWPX, round trip, generation and rendering are unchanged. One exception is listed in the CHANGELOG (measurement exceptions).
+
+| Metric | 4.24.11 | 4.24.12 |
+| --- | --- | --- |
+| OCR CER (fair · strict) | 0.03055 · 0.06215 | **0.02806 · 0.05913** |
+| OCR character recall · precision | 0.99121 · 0.99418 | **0.99141 · 0.99451** |
+| OCR table structure match · cell F1 | 25/67 · 0.5664 | **26/67 · 0.5759** |
+| Degraded-input OCR CER (clean · blur · JPEG · scan) | 0.0475 · 0.0630 · 0.0503 · 0.0730 | **0.0429 · 0.0586 · 0.0460 · 0.0726** |
+| PDF text · tables · statute annexes · ODL · HWPX · round trip · generation · rendering | — | unchanged |
+
 ## 4.24.11: OCR, rendering and generation · 2026-10-27
 
 Compared document by document against 4.24.10 on the same corpora and scorers: OCR, degraded inputs and ODL OCR (rounds 115, 116, 118, 119), rendered text and image positions and page counts (112), and generation fidelity and round trip (113). PDF text, table and annex code is unchanged. The two exceptions are listed in the changelog.
