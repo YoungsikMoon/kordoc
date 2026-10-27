@@ -177,3 +177,18 @@ describe("joinLeaderItems — 목차 한 줄 잇기", () => {
     assert.equal(joinLeaderItems([t1, t2, a, b, c, d], new Map()).length, 6)
   })
 })
+
+describe("joinLeaderItems — 리더 가장자리 점·쌍점 잡티", () => {
+  it("제목과 쪽번호 사이 따로 검출된 쌍점 박스를 지우고 잇는다", () => {
+    const t = { text: "○ 행정지원국", x: 0, y: 0, w: 100, h: 30, confidence: 0.9 }
+    const c = { text: ":", x: 110, y: 15, w: 6, h: 4, confidence: 0.9 }
+    const n = { text: "…419", x: 110, y: 2, w: 200, h: 28, confidence: 0.9 }
+    const out = joinLeaderItems([t, c, n], new Map([[n, { lead: true, trail: false }]]))
+    assert.deepEqual(out.map(o => o.text), ["○ 행정지원국 … 419"])
+  })
+  it("제목 끝에 물린 가운뎃점은 리더로 본다", () => {
+    const t = { text: "○보건소·", x: 0, y: 0, w: 100, h: 30, confidence: 0.9 }
+    const n = { text: "…561", x: 110, y: 2, w: 200, h: 28, confidence: 0.9 }
+    assert.deepEqual(joinLeaderItems([t, n], new Map([[n, { lead: true, trail: false }]])).map(o => o.text), ["○보건소 … 561"])
+  })
+})

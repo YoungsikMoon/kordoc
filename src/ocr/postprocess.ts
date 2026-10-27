@@ -110,7 +110,8 @@ export function joinLeaderItems<T extends Placed>(items: T[], ends: Map<T, { lea
   const sameLine = (a: T, b: T) => Math.abs(a.y + a.h / 2 - (b.y + b.h / 2)) <= Math.max(a.h, b.h) / 2
   const merge = (left: T, right: T): void => {
     const x2 = Math.max(left.x + left.w, right.x + right.w), y2 = Math.max(left.y + left.h, right.y + right.h)
-    left.text = left.text.replace(/\s*\u2026$/, "") + " \u2026 " + right.text.replace(/^\u2026\s*/, "")
+    // 리더 가장자리에 걸친 점·쌍점 조각은 리더의 일부다("행정지원국 : … 419", "보건소·• … 561")
+    left.text = left.text.replace(/[\s.:\u00b7\u2022\u2026]+$/u, "") + " \u2026 " + right.text.replace(/^[\s.:\u00b7\u2022\u2026]+/u, "")
     left.x = Math.min(left.x, right.x)
     left.y = Math.min(left.y, right.y)
     left.w = x2 - left.x
@@ -118,25 +119,30 @@ export function joinLeaderItems<T extends Placed>(items: T[], ends: Map<T, { lea
     left.confidence = Math.min(left.confidence, right.confidence)
     gone.add(right)
   }
+  // 리더 가장자리에 따로 검출된 점·쌍점 잡티 박스("행정지원국 [:] [… 419]")는 건너뛰고 지운다
+  const junk = (o: T) => /^[\s.:\u00b7\u2022\u2026]+$/u.test(o.text)
   const neighbor = (it: T, toLeft: boolean): T | null => {
     let best: T | null = null
     for (const o of items) {
-      if (o === it || gone.has(o) || !sameLine(o, it)) continue
+      if (o === it || gone.has(o) || !sameLine(o, it) || junk(o)) continue
       if (toLeft ? o.x + o.w > it.x + 2 : o.x < it.x + it.w - 2) continue
       if (!best || (toLeft ? o.x + o.w > best.x + best.w : o.x < best.x)) best = o
     }
     return best
   }
   // 오른쪽부터 — 쪽번호 쪽("… 12")을 왼쪽 이웃에 붙이고, 제목 쪽("제목 …")은 오른쪽 이웃을 당겨 붙인다
+  const dropJunkBetween = (left: T, right: T) => {
+    for (const o of items) if (!gone.has(o) && junk(o) && sameLine(o, left) && o.x + o.w / 2 >= left.x + left.w - left.h && o.x + o.w / 2 <= right.x + right.h) gone.add(o)
+  }
   for (const it of [...items].sort((a, b) => b.x - a.x)) {
     if (gone.has(it) || !ends.get(it)?.lead) continue
     const left = neighbor(it, true)
-    if (left) merge(left, it)
+    if (left) { dropJunkBetween(left, it); merge(left, it) }
   }
   for (const it of [...items].sort((a, b) => a.x - b.x)) {
     if (gone.has(it) || !ends.get(it)?.trail) continue
     const right = neighbor(it, false)
-    if (right) merge(it, right)
+    if (right) { dropJunkBetween(it, right); merge(it, right) }
   }
   // 리더 점을 못 찾은 목차 줄 — 잡음·흐림에 점이 덜 잡히면 몇 줄만 [제목][쪽번호] 두 아이템으로 남고, 이어진 줄들 사이의
   // 그 두 줄이 클러스터 표를 불러 목차 전체를 칸에 섞었다(archives-record-duty 잡음 σ12: 29줄 중 3줄). 같은 쪽에서 리더로
@@ -149,8 +155,7 @@ export function joinLeaderItems<T extends Placed>(items: T[], ends: Map<T, { lea
       if (toc.filter(t => Math.abs(t.x + t.w - x2) <= Math.max(t.h, it.h)).length < 2) continue
       const left = neighbor(it, true)
       if (!left || toc.includes(left)) continue
-      left.text = left.text.replace(/[\s.:\u00b7\u2026]+$/, "")
-      it.text = it.text.replace(/^[\s.:\u00b7\u2026]+/, "")
+      dropJunkBetween(left, it)
       merge(left, it)
     }
   }

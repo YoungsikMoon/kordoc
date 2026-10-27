@@ -370,11 +370,20 @@ export class OcrEngine {
       if (!j.parts.length) continue
       j.parts.sort((a, b) => a.x - b.x)
       let text = ""
-      for (const p of j.parts) text += (p.dotsBefore ? (text ? " \u2026 " : "\u2026") : text ? " " : "") + p.text
-      if (j.trailDots) text += " \u2026"
+      // 리더 점 무리 가장자리에 걸친 점·쌍점 조각은 리더의 일부다("행정지원국 : … 419", "추진방향· … 7")
+      const junk = /[\s.:\u00b7\u2022\u2024\u2025\u2026\u2219\u22c5\u318d]+$/u
+      for (const p of j.parts) {
+        if (p.dotsBefore) text = text.replace(junk, "")
+        const t = p.dotsBefore ? p.text.replace(/^[\s.:\u00b7\u2022\u2024\u2025\u2026\u2219\u22c5\u318d]+/u, "") : p.text
+        if (t) text += (p.dotsBefore ? (text ? " \u2026 " : "\u2026") : text ? " " : "") + t
+      }
+      if (j.trailDots) text = text.replace(junk, "") + " \u2026"
+      text = text.trim()
+      if (!text) continue
       const item = { text, ...this.itemBox(rgba, width, j.box, tuning), confidence: Math.min(...j.parts.map(p => p.confidence)) }
       items.push(item)
-      leaderEnds.set(item, { lead: j.parts[0].dotsBefore, trail: j.trailDots })
+      // 첫 조각이 점·쌍점 잡티였다 지워졌으면 박스는 리더로 시작한다
+      leaderEnds.set(item, { lead: text.startsWith("\u2026"), trail: j.trailDots })
     }
     if (leaderEnds.size) items = joinLeaderItems(items, leaderEnds)
     if (tuning.postprocess) restoreBulletItems(items)
