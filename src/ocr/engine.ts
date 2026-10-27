@@ -39,7 +39,7 @@ import {
 } from "./models.js"
 import { arrowGlyph, edgeTrim, leadingBullet, tallInkCount, grayCrop, inkBounds, inkStats, leaderRuns, leadingTriangle, leadingRing, splitRowBands } from "./line-split.js"
 import { restoreGlyphs, trimInklessEnds } from "./glyph-restore.js"
-import { isDotFragment, joinLeaderItems, restoreBulletItems, restoreSymbols } from "./postprocess.js"
+import { dropNestedFragments, isDotFragment, joinLeaderItems, restoreBulletItems, restoreSymbols } from "./postprocess.js"
 import { bandBoxes, splitBoxAtCellRules, splitBoxAtRowRules, lineCrop, type Box, REC_HEIGHT } from "./crop.js"
 import { disableOrtTelemetry } from "./runtime-env.js"
 import { findOcrTextGaps, rememberOcrTextGaps } from "./text-gaps.js"
@@ -391,6 +391,7 @@ export class OcrEngine {
       leaderEnds.set(item, { lead: text.startsWith("\u2026"), trail: j.trailDots })
     }
     if (leaderEnds.size) items = joinLeaderItems(items, leaderEnds)
+    if (tuning.postprocess) items = dropNestedFragments(items)
     if (tuning.postprocess) restoreBulletItems(items)
     items.sort((a, b) => (a.y - b.y) || (a.x - b.x))
     return items

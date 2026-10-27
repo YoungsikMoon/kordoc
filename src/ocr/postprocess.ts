@@ -163,6 +163,15 @@ export function joinLeaderItems<T extends Placed>(items: T[], ends: Map<T, { lea
 }
 
 /**
+ * 남의 박스 안에 통째로 든 작은 조각 — 검출기가 이미 읽은 글자의 획 하나를 따로 잡아 읽은 것("업" 아래 ㅂ → "D", "여건" 안 점 → "‘",
+ * 함평 목차). 박스가 다른 박스 안에(2px 여유) 들고 높이가 그 박스의 60% 이하이며 신뢰도가 더 낮으면 버린다
+ */
+export function dropNestedFragments<T extends { x: number; y: number; w: number; h: number; confidence: number }>(items: T[]): T[] {
+  const inside = (a: T, b: T) => a.x >= b.x - 2 && a.x + a.w <= b.x + b.w + 2 && a.y >= b.y - 2 && a.y + a.h <= b.y + b.h + 2
+  return items.filter(a => !items.some(b => b !== a && a.h <= b.h * 0.6 && a.confidence < b.confidence && inside(a, b)))
+}
+
+/**
  * 이웃 인지 ○ 복원 — 글머리 ○ 가 제 박스로 떨어져 "O" 한 글자로 읽힌 경우,
  * 같은 줄(세로 중심 차 < 높이 절반) 바로 오른쪽(글자 높이 3배 이내) 박스가 한글로 시작하면 ○.
  */

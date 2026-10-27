@@ -12,7 +12,7 @@
  */
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { dateCommas, dateDots, isDotFragment, joinDigitGroups, joinLeaderItems, restoreBulletItems, restoreSymbols, smartQuotes } from "../src/ocr/postprocess.js"
+import { dateCommas, dateDots, dropNestedFragments, isDotFragment, joinDigitGroups, joinLeaderItems, restoreBulletItems, restoreSymbols, smartQuotes } from "../src/ocr/postprocess.js"
 
 describe("restoreSymbols — 사전 밖 기호 복원", () => {
   it("줄 머리 O/o + 한글 → ○", () => {
@@ -190,5 +190,17 @@ describe("joinLeaderItems — 리더 가장자리 점·쌍점 잡티", () => {
     const t = { text: "○보건소·", x: 0, y: 0, w: 100, h: 30, confidence: 0.9 }
     const n = { text: "…561", x: 110, y: 2, w: 200, h: 28, confidence: 0.9 }
     assert.deepEqual(joinLeaderItems([t, n], new Map([[n, { lead: true, trail: false }]])).map(o => o.text), ["○보건소 … 561"])
+  })
+})
+
+describe("dropNestedFragments", () => {
+  const box = (text: string, x: number, y: number, w: number, h: number, confidence: number) => ({ text, x, y, w, h, confidence })
+  it("읽은 글자 상자 안 작은 획 조각(업 아래 ㅂ → D)은 버린다", () => {
+    const items = [box("업", 572, 1962, 39, 42, 0.999), box("D", 576, 1986, 35, 18, 0.62), box("기", 675, 1964, 37, 40, 0.999)]
+    assert.deepEqual(dropNestedFragments(items).map(i => i.text), ["업", "기"])
+  })
+  it("겹치기만 하거나 키가 비슷한 상자는 둔다", () => {
+    const items = [box("가나", 100, 100, 80, 40, 0.99), box("다", 170, 110, 30, 20, 0.5), box("라", 110, 102, 30, 36, 0.5)]
+    assert.deepEqual(dropNestedFragments(items).map(i => i.text), ["가나", "다", "라"])
   })
 })
