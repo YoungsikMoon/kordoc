@@ -204,3 +204,30 @@ describe("dropNestedFragments", () => {
     assert.deepEqual(dropNestedFragments(items).map(i => i.text), ["가나", "다", "라"])
   })
 })
+
+describe("dateDots — 물결 기간 앞 날짜 끝점", () => {
+  it("끝 날짜에 점이 있으면 앞 날짜에도 찍는다", () => {
+    assert.equal(dateDots("’26.4~’26.12."), "’26.4.~’26.12.")
+    assert.equal(dateDots("2025.3.1~2025.12.31."), "2025.3.1.~2025.12.31.")
+  })
+  it("붙임표 기간·끝점 없는 기간은 그대로", () => {
+    assert.equal(dateDots("2020.04.13 - 2020.11.30."), "2020.04.13 - 2020.11.30.")
+    assert.equal(dateDots("’26.4~’26.12"), "’26.4~’26.12")
+  })
+})
+
+describe("restoreSymbols — 전화 기호 ☎", () => {
+  it("괄호 뒤 홑 라틴 글자 + 붙임표 전화번호는 ☎", () => {
+    assert.equal(restoreSymbols("과장(a750-2730)"), "과장(☎750-2730)")
+    assert.equal(restoreSymbols("사무관(a 02-750-2740)"), "사무관(☎02-750-2740)")
+  })
+  it("괄호 속 낱말(G20)은 그대로", () => {
+    assert.equal(restoreSymbols("주요 20개국(G20) 글로벌"), "주요 20개국(G20) 글로벌")
+  })
+})
+
+describe("dateDots — 끝 날짜 가운데 점", () => {
+  it("끝 날짜가 일까지 가고 끝점이 없으면 앞 날짜도 그대로", () => {
+    assert.equal(dateDots("입법예고(’25.11.25~’26.1.5)"), "입법예고(’25.11.25~’26.1.5)")
+  })
+})
