@@ -1,7 +1,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
-import { glyphNameText, remapControlGlyphs, restoreNamedGlyphs } from "../src/pdf/glyph-names.js"
+import { glyphNameText, remapControlGlyphs, restoreNamedGlyphs, restoreUnmappedCidSpaces } from "../src/pdf/glyph-names.js"
 import { detectPanelGutters, orderByPanels } from "../src/pdf/two-column.js"
 import { splitSingleCellTables } from "../src/pdf/text-clean.js"
 import { bridgeSkippedRowVerticals } from "../src/pdf/vertical-bridge.js"
@@ -14,6 +14,35 @@ const h = (y: number, x1: number, x2: number): LineSegment => ({ x1, y1: y, x2, 
 const v = (x: number, y1: number, y2: number): LineSegment => ({ x1: x, y1, x2: x, y2, lineWidth: 0.5 })
 const item = (text: string, x: number, y: number, w = text.length * 5, fontName = "Body", fontSize = 9): NormItem =>
   ({ text, x, y, w, h: fontSize, fontSize, fontName, isHidden: false })
+
+describe("unmapped CID spaces", () => {
+  const g = (code: number, unicode: string, width: number) => ({ originalCharCode: code, unicode, width })
+  const raw = (str: string, fontName = "F1"): PdfTextItem => ({ str, transform: [10, 0, 0, 10, 0, 0], width: 50, height: 10, fontName })
+  const toUni: (string | undefined)[] = []
+  toUni[1] = " "; toUni[0x284c] = "가"; toUni[0x2850] = "간"
+  const cid = { composite: true, toUnicode: { _map: toUni } }
+
+  it("turns a space-width glyph missing from ToUnicode back into a space (Print To PDF \"堺\")", () => {
+    const items = [raw("가堺간 가"), raw("堺", "F2")]
+    const n = restoreUnmappedCidSpaces(items, [OPS.setFont, OPS.showText, OPS.setFont, OPS.showText],
+      [["F1", 10], [[g(0x284c, "가", 1000), g(0x583a, "堺", 280), g(0x2850, "간", 1000), g(1, " ", 227), g(0x284c, "가", 1000)]],
+        ["F2", 10], [[g(0x583a, "堺", 280)]]],
+      n => (n === "F1" ? cid : undefined))
+    assert.equal(n, 1)
+    assert.equal(items[0].str, "가 간 가")
+    assert.equal(items[1].str, "堺") // 단순 글꼴(composite 아님)은 손대지 않는다
+  })
+
+  it("leaves wide unmapped glyphs and fonts without a mapped space alone", () => {
+    const wide = [raw("가堺")]
+    restoreUnmappedCidSpaces(wide, [OPS.setFont, OPS.showText], [["F1", 10], [[g(0x284c, "가", 1000), g(0x583a, "堺", 1000), g(1, " ", 227)]]], () => cid)
+    assert.equal(wide[0].str, "가堺")
+    const noSpace = { composite: true, toUnicode: { _map: toUni.map((v, i) => (i === 1 ? undefined : v)) } }
+    const items = [raw("가堺")]
+    restoreUnmappedCidSpaces(items, [OPS.setFont, OPS.showText], [["F1", 10], [[g(0x284c, "가", 1000), g(0x583a, "堺", 280)]]], () => noSpace)
+    assert.equal(items[0].str, "가堺")
+  })
+})
 
 describe("glyph names", () => {
   it("maps suffixed, small-cap and ligature glyph names", () => {

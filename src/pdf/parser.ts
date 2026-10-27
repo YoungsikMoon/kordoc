@@ -36,7 +36,7 @@ import { restoreImageBullets } from "./image-bullets.js"
 import { detectRightArrowRegions } from "./flow-boxes.js"
 import { remapSymbolFontItems } from "./symbol-fonts.js"
 import { wrapEquationRuns } from "./equation-runs.js"
-import { remapControlGlyphs, restoreNamedGlyphs } from "./glyph-names.js"
+import { remapControlGlyphs, restoreNamedGlyphs, restoreUnmappedCidSpaces, type CidFontInfo } from "./glyph-names.js"
 import { occludedTextItems } from "./occluded-text.js"
 import { joinVerticalColumns } from "./vertical-text.js"
 import { restoreTrackedSpacing, markSyntheticSpaces, markTrailingSpaceGlyphs } from "./tracked-text.js"
@@ -264,6 +264,8 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         restoreNamedGlyphs(rawItems, rawOps.fnArray, rawOps.argsArray, differencesOf, n => fontObj(n)?.name)
         // 유니코드 없는 기호 글리프(U+F000)는 글꼴 윤곽 모양으로 되살린다 — 한컴 자동 글머리표 "▸"·"□"·겹화살괄호 (symbol-glyphs.ts)
         restoreUnmappedGlyphs(rawItems, rawOps.fnArray, rawOps.argsArray, n => fontObj(n) as { data?: Uint8Array } | null | undefined)
+        // ToUnicode 에 빠진 CID 대체 공백 글리프("堺" 로 찍히던 것)를 공백으로
+        restoreUnmappedCidSpaces(rawItems, rawOps.fnArray, rawOps.argsArray, n => fontObj(n) as CidFontInfo | null | undefined)
         // 자간 벌린 글("E M A I L") — 글리프 흐름의 진짜 공백으로 낱말 경계를 되살린다
         restoreTrackedSpacing(rawItems, rawOps.fnArray, rawOps.argsArray)
         // pdfjs 가 글자 틈으로 만든 공백 아이템 표시 — 균등배분 판정이 진짜 공백 글리프에서만 끊도록
