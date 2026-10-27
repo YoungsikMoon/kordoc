@@ -537,3 +537,13 @@ describe("gapGlyphs — 1px 길어진 작은 마침표와 작은 쉼표", () => 
     assert.ok(!gapGlyphs(g, W, H, inkStats(g)).glyphs.some((x) => x.mark === "."))
   })
 })
+
+describe("leadingBullet — 글자 높이만 한 □ 의 크기 상한(squareMax)", () => {
+  it("박스 안 기본 상한 0.92 는 글자만 한 □ 를 도형으로 보고 넘기고, 넓힌 상한 1.05 는 □ 로 본다", () => {
+    const w = 140, h = 50, g = canvas(w, h)
+    rect(g, w, 4, 4, 46, 5); rect(g, w, 4, 45, 46, 46); rect(g, w, 4, 4, 5, 46); rect(g, w, 45, 4, 46, 46)
+    for (const x0 of [80, 110]) { rect(g, w, x0, 8, x0 + 22, 10); rect(g, w, x0 + 10, 8, x0 + 12, 46) }
+    assert.equal(leadingBullet(g, w, h, inkStats(g), 80), null)
+    assert.deepEqual(leadingBullet(g, w, h, inkStats(g), 80, 1.05), { mark: "□", covers: false })
+  })
+})

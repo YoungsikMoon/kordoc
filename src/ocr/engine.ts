@@ -226,6 +226,29 @@ export class OcrEngine {
    * 반환 좌표는 입력 픽셀 기준. 라인은 위→아래, 좌→우 정렬.
    * @param stats 저신뢰(conf<0.5) 폐기 라인 카운트 출력 — 종전엔 무음 폐기라 관측 불가
    */
+  /**
+   * 박스 바깥 줄 머리 □ — 가는 테두리 □ 는 검출기가 글줄 박스에 넣지 않아 박스 왼쪽에 따로 남고 통째로 빠진다(장흥 계획 "□ 비전 및 목표",
+   * 함평 "□ 국내외 여건"). 한글 넷 이상 줄의 박스 왼쪽 높이 1.6배 띠에 다른 박스가 없고, 넓힌 crop 의 맨 앞 덩어리가 속 빈 □ 인데
+   * 박스 첫 글자에 걸치지 않으면 붙인다. 이 □ 는 글자 높이만큼 커(1.0배) 박스 안 판정 상한(0.92)을 1.05 로 푼다
+   */
+  private outerSquare(rgba: Uint8Array, width: number, it: OcrItem, items: OcrItem[]): void {
+    if (/^[◎●▪□■▣❐❏○ㅇ‣\u2022·]/.test(it.text) || (it.text.match(/[가-힣]/g) ?? []).length < 4) return
+    const ext = Math.round(it.h * 1.6), x = Math.max(0, it.x - ext)
+    if (it.x - x < it.h * 0.8) return
+    if (items.some(o => o !== it && o.x < it.x && o.x + o.w > x && o.y < it.y + it.h && o.y + o.h > it.y)) return
+    const box = { x, y: it.y, w: it.x + it.w - x, h: it.h }
+    const g = grayCrop(rgba, width, box)
+    const b = leadingBullet(g, box.w, box.h, inkStats(g), it.x - x, 1.05)
+    if (b?.mark !== "\u25a1" || b.covers) return
+    // 박스 왼끝을 □ 왼끝(띠의 첫 잉크 열)으로 넓힌다
+    const ink = inkStats(g), on = (v: number) => (ink.darkInk ? v <= ink.threshold : v > ink.threshold)
+    let left = 0
+    while (left < it.x - x && !Array.from({ length: box.h }, (_, y) => g[y * box.w + left]).some(on)) left++
+    it.text = "\u25a1 " + it.text
+    it.w += it.x - (x + left)
+    it.x = x + left
+  }
+
   async recognizePage(
     rgba: Uint8Array,
     width: number,
@@ -392,6 +415,7 @@ export class OcrEngine {
     }
     if (leaderEnds.size) items = joinLeaderItems(items, leaderEnds)
     if (tuning.postprocess) items = dropNestedFragments(items)
+    if (tuning.postprocess) for (const it of items) this.outerSquare(rgba, width, it, items)
     if (tuning.postprocess) restoreBulletItems(items)
     items.sort((a, b) => (a.y - b.y) || (a.x - b.x))
     return items
