@@ -741,7 +741,7 @@ function carryZones(zones: WrapZone[], bodyH: number, oneColumn: boolean): void 
   zones.push(...moved)
 }
 
-/** 낡은 캐시로 볼 어긋남(HWPUNIT) — 다시 짠 줄과 한컴 줄의 글꼴 근사 차이보다 크고 한 줄보다 작게 */
+/** 자란 표로 볼 높이 차(HWPUNIT) — 다시 짠 칸 줄과 한컴 줄의 글꼴 근사 차이보다 크고 한 줄보다 작게 */
 const STALE_SLACK = 500
 
 /** 문단에 든 글자처럼 취급 표 중 캐시 없는 칸 문단이 있는 표 — 칸 글을 다시 짜므로 저장 높이보다 자랄 수 있다 */
@@ -885,8 +885,8 @@ function reflowBlockFlow(
   // 칸 안 다단 — 단 폭으로 채우고, 단 나누기 문단은 다음 단 맨 위(한컴 저장본: 2단 칸의 단 나누기 문단 vertpos 0, 줄 폭 19420)
   const cellW = areaW
   let cellCols = 1, cellCol = 0
-  /** 바로 앞 문단을 다시 짰으면 그 시작 자리(낡은 캐시를 버린 문단은 저장 자리) — 뒤 캐시 문단이 같은 쪽에서 낡았는지 볼 때 */
-  let reflowedFrom: number | undefined
+  /** 칸 글로 자란 표를 지났다 — 뒤 문단의 저장 자리는 모두 옛 표 높이 기준이라 흐름 끝까지 다시 짠다 */
+  let staleRest = false
   for (const p of elements(container)) {
     if (ln(p) !== "p") continue
     if (bodyFlow) { const colW = columnWidthIn(p, counter.bodyW!); if (colW !== undefined) areaW = colW }
@@ -897,7 +897,7 @@ function reflowBlockFlow(
     }
     // 문단 안 표 셀을 먼저 셀 로컬 좌표로 reflow (본문 세로 흐름과 무관) —
     // reflowPara의 표 실효높이 측정이 셀 lineseg를 읽으므로 호스트 문단보다 앞서야 한다
-    const regrown = findChildByLocalName(p, "linesegarray") ? regrownInlineTables(p) : []
+    const regrown = regrownInlineTables(p)
     reflowTablesIn(p, doc, styles, mode, counter, reflowBlockFlow)
     reflowSubListsIn(p, doc, styles, mode, counter, reflowBlockFlow, bodyFlow ? areaW : undefined)
     const g = styles.paraGeom.get(p.getAttribute("paraPrIDRef") ?? "")
@@ -907,15 +907,11 @@ function reflowBlockFlow(
     // 쪽 위에 붙은 위아래 배치 개체(vertRelTo=PAGE·vertAlign=TOP, 두문 결재표 등)는 그 아래부터 글을 놓는다(한컴 저장본: 첫 줄 vertpos 17304 = 표 바닥)
     if (bodyH > 0) { const [top, bot] = pageTopBand(p); if (bot > 0 && top <= startV && startV < bot) startV = bot }
     // 낡은 조판 캐시 — 한컴은 열 때 늘 다시 짜서 칸 글이 늘어난 표는 행이 자라고 뒤 문단이 밀린다. 캐시를 믿으면 옛 자리에 그려 자란 표와
-    // 겹쳤다(패치로 칸 글만 늘린 표). 앞에서 다시 짠 문단이 이 문단의 저장 첫 줄 아래까지 내려왔거나(같은 쪽 — 저장 첫 줄이 앞 문단 시작
-    // 아래), 칸 글을 다시 짠 글자처럼 취급 표가 저장 높이보다 자랐으면 이 문단 캐시를 버리고 다시 짠다
-    const lsaC = findChildByLocalName(p, "linesegarray")
-    let staleV: number | undefined
-    if (lsaC) {
-      const s0 = elements(lsaC).find(e => ln(e) === "lineseg"), v0 = s0 ? num(s0, "vertpos") : Number.NaN
-      const pushed = reflowedFrom !== undefined && v0 > reflowedFrom && startV > v0 + STALE_SLACK
-      if (pushed || regrown.some(t => measureTableHeight(t, geomMemo(styles)) > num(findChildByLocalName(t, "sz"), "height") + STALE_SLACK)) { p.removeChild(lsaC); staleV = v0 }
-    }
+    // 겹쳤다(패치로 칸 글만 늘린 표). 칸 글을 다시 짠 글자처럼 취급 표가 저장 높이보다 자라면 그 문단부터 흐름 끝까지 캐시를 버리고 다시 짠다
+    // (뒤 문단 하나만 버리면 밀려 넘어간 쪽에서 다음 캐시 문단을 새 쪽 첫 줄로 보고 옛 자리, 쪽 아래에 그렸다)
+    staleRest ||= regrown.some(t => measureTableHeight(t, geomMemo(styles)) > num(findChildByLocalName(t, "sz"), "height") + STALE_SLACK)
+    const lsaC = staleRest ? findChildByLocalName(p, "linesegarray") : null
+    if (lsaC) p.removeChild(lsaC)
     const numsBefore: NumberCounters = new Map([...(counter.nums ?? [])].map(([k, v]) => [k, v.slice()]))
     const zonesBefore = zones.length
     let res = reflowPara(p, doc, styles, areaW, startV, mode, zones, counter.nums, bodyH > 0, bodyH)
@@ -932,7 +928,6 @@ function reflowBlockFlow(
         startV = v0
       }
     }
-    reflowedFrom = res ? staleV ?? startV : undefined
     if (!res) {
       // 캐시 보유 문단(Tier-1) — 한컴 실좌표로 커서를 전진시킨다. 혼합 캐시 문서
       // (한컴 저장본을 프로그램 편집해 일부 문단만 캐시가 없는 경우)에서 캐시 없는
