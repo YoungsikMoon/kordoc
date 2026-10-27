@@ -616,8 +616,9 @@ export function gapGlyphs(gray: Uint8Array, w: number, h: number, ink: InkStats)
         for (let y = from; y < to; y++) for (let x = c.x0; x < c.x1; x++) if (label[y * w + x] === c.id) { sx += x - c.x0; k++ }
         return k ? sx / k / cw : 0.5
       }
-      if (c.y0 <= bandT + bh * 0.15 && top >= 0.7 && bottom <= 0.5 && stem(c.y0 + band, c.y1) <= 0.35) return "\u300c"
-      if (c.y1 >= bandB - bh * 0.15 && bottom >= 0.7 && top <= 0.5 && stem(c.y0, c.y1 - band) >= 0.65) return "\u300d"
+      // 띠 위·아래 끝에서 20% 안 — 반각 홑낫표(｢ ｣, 교육청 공문서 지침)는 전각보다 0.5px 남짓 안쪽에 앉는다(15% 에서 놓쳤다)
+      if (c.y0 <= bandT + bh * 0.2 && top >= 0.7 && bottom <= 0.5 && stem(c.y0 + band, c.y1) <= 0.35) return "\u300c"
+      if (c.y1 >= bandB - bh * 0.2 && bottom >= 0.7 && top <= 0.5 && stem(c.y0, c.y1 - band) >= 0.65) return "\u300d"
       return null
     }
     if (flushDot) mark = "."

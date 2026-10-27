@@ -212,6 +212,13 @@ function gaps({ chars, cx, gray, w, h, ink }: Ctx) {
       if (loose.some(o => o !== g && Math.abs((o.x0 + o.x1) / 2 - mid) <= pitch * 1.5)) continue
       if (/[\u2026.\u00b7]$/.test(prev) || /^[\u2026.\u00b7]/.test(next)) continue
     }
+    // 여는 홑낫표를 공백으로 읽은 자리("은  행정" — 띄어 쓴 공백 하나 + 낫표 자리 공백 하나)는 그 공백을 「 로
+    if (g.mark === "\u300c") {
+      // 가까운 공백이 든 공백 무리의 마지막 — 여는 낫표는 다음 글자에 붙고 띄어 쓴 공백이 그 앞에 온다(공백 CTC 자리는 반 칸씩 어긋난다)
+      let sp = chars.findIndex((c, i) => c === " " && near(i))
+      if (sp >= 0) while (chars[sp + 1] === " ") sp++
+      if (sp >= 0) { chars[sp] = g.mark; continue }
+    }
     if (g.mark === "\u00b7") {
       if (/^\d/.test(next)) continue
       const sp = chars.findIndex((c, i) => c === " " && near(i))

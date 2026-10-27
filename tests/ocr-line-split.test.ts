@@ -547,3 +547,13 @@ describe("leadingBullet — 글자 높이만 한 □ 의 크기 상한(squareMax
     assert.deepEqual(leadingBullet(g, w, h, inkStats(g), 80, 1.05), { mark: "□", covers: false })
   })
 })
+
+describe("gapGlyphs — 반각 홑낫표 ｢", () => {
+  it("띠 위끝에서 조금 내려앉은 ｢ 도 「 로 본다", () => {
+    // 글자 띠 y 10~33(높이 23) 두 자 사이, 위끝 y 14(띠의 17%)에서 시작하는 ｢ — 윗변 6px, 왼쪽 줄기 12px
+    const W = 90, H = 40, g = canvas(W, H)
+    for (const x0 of [5, 60]) { rect(g, W, x0, 10, x0 + 20, 12); rect(g, W, x0, 10, x0 + 2, 33); rect(g, W, x0 + 18, 10, x0 + 20, 33); rect(g, W, x0, 31, x0 + 20, 33) }
+    rect(g, W, 40, 14, 46, 16); rect(g, W, 40, 14, 42, 26)
+    assert.ok(gapGlyphs(g, W, H, inkStats(g)).glyphs.some((x) => x.mark === "「"))
+  })
+})
