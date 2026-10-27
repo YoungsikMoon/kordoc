@@ -8,7 +8,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { composeText, mapPuaText } from "../src/shared/pua.js"
-import { blocksToMarkdown } from "../src/table/builder.js"
+import { blocksToMarkdown, sanitizeText } from "../src/table/builder.js"
 import type { IRBlock } from "../src/types.js"
 
 describe("mapPuaText — 한컴 검증 PUA (rhwp 44cabad9)", () => {
@@ -134,5 +134,13 @@ describe("blocksToMarkdown — 서식 run(span) 도 PUA 계약을 탄다", () =>
       { type: "paragraph", text: "굵게 보통", spans: [{ text: "굵게", bold: true }, { text: " 보통" }] },
     ]
     assert.ok(blocksToMarkdown(blocks).includes("**굵게** 보통"))
+  })
+})
+
+describe("sanitizeText — 소프트 하이픈", () => {
+  it("한컴 보이는 붙임표(글머리·음수 부호)는 - 로, 낱말 안 꺾임 표시는 그대로", () => {
+    assert.equal(sanitizeText("­ 3D 프린터"), "- 3D 프린터")
+    assert.equal(sanitizeText("­7,445"), "-7,445")
+    assert.equal(sanitizeText("infor­mation"), "infor­mation")
   })
 })

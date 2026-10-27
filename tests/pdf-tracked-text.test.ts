@@ -3,7 +3,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { OPS } from "pdfjs-dist/legacy/build/pdf.mjs"
-import { restoreTrackedSpacing, markSyntheticSpaces, markTrailingSpaceGlyphs } from "../src/pdf/tracked-text.js"
+import { restoreTrackedSpacing, markSyntheticSpaces, markTrailingSpaceGlyphs, softHyphenHeads } from "../src/pdf/tracked-text.js"
 import type { PdfTextItem } from "../src/pdf/text-line.js"
 
 const raw = (str: string, fontName = "F1"): PdfTextItem => ({ str, transform: [11, 0, 0, 11, 100, 40], width: 100, height: 11, fontName })
@@ -85,5 +85,20 @@ describe("markTrailingSpaceGlyphs — 줄 끝 공백을 찍는 쪽이면 공백 
     const items = lines.map((s, k) => at(s, 100 - k * 15))
     markTrailingSpaceGlyphs(items, [OPS.setFont, ...lines.map(() => OPS.showText)], [["F1", 11], ...lines.map(s => [glyphs(s)])])
     assert.deepEqual(items.map(i => (i as { spaceAfter?: boolean }).spaceAfter), [undefined, undefined, undefined, undefined, undefined])
+  })
+})
+
+describe("softHyphenHeads", () => {
+  const at = (str: string, y: number): PdfTextItem => ({ str, transform: [11, 0, 0, 11, 100, y], width: 100, height: 11, fontName: "F1" })
+  const run = (s: string) => [...s].map(unicode => ({ unicode, width: unicode === " " ? 250 : 900 }))
+  it("증감 칸·글머리의 보이는 U+00AD 를 붙임표로 되살린다", () => {
+    const items = [at("670,069", 40), at("7,445", 40), at("분석", 60), at("42개 기관", 40), at("3D 프린터", 20)]
+    softHyphenHeads(items, [OPS.showText], [[run("670,069\u00ad7,445분석\u00ad 42개 기관\u00ad3D 프린터")]])()
+    assert.deepEqual(items.map(i => i.str), ["670,069", "-7,445", "분석", "- 42개 기관", "- 3D 프린터"])
+  })
+  it("앞 줄 끝 라틴 글자에 붙은 낱말 꺾임 표시는 둔다", () => {
+    const items = [at("infor", 60), at("mation is", 40)]
+    softHyphenHeads(items, [OPS.showText], [[run("infor\u00admation is")]])()
+    assert.deepEqual(items.map(i => i.str), ["infor", "mation is"])
   })
 })

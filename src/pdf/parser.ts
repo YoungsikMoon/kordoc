@@ -39,7 +39,7 @@ import { wrapEquationRuns } from "./equation-runs.js"
 import { remapControlGlyphs, restoreNamedGlyphs, restoreUnmappedCidSpaces, type CidFontInfo } from "./glyph-names.js"
 import { occludedTextItems } from "./occluded-text.js"
 import { joinVerticalColumns } from "./vertical-text.js"
-import { restoreTrackedSpacing, markSyntheticSpaces, markTrailingSpaceGlyphs } from "./tracked-text.js"
+import { restoreTrackedSpacing, markSyntheticSpaces, markTrailingSpaceGlyphs, softHyphenHeads } from "./tracked-text.js"
 import { relocateEndnotes } from "./endnotes.js"
 import { dropTabLeaderDots } from "./tab-leaders.js"
 import { mergeEnclosedDigits } from "./enclosed-digits.js"
@@ -261,6 +261,8 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         const occluded = occludedTextItems(rawItems, rawOps.fnArray, rawOps.argsArray)
         // 줄 끝 공백 글리프(어절 경계에서 꺾인 줄) — 아래 복원들이 아이템 글을 바꾸기 전에 흐름과 맞춘다
         markTrailingSpaceGlyphs(rawItems, rawOps.fnArray, rawOps.argsArray)
+        // 아이템 머리 소프트 하이픈(한글 문서의 보이는 붙임표 — 글머리·음수 부호) — 흐름은 지금 맞추고 되살리기는 아래 복원들 뒤에
+        const restoreSoftHyphens = softHyphenHeads(rawItems, rawOps.fnArray, rawOps.argsArray)
         restoreNamedGlyphs(rawItems, rawOps.fnArray, rawOps.argsArray, differencesOf, n => fontObj(n)?.name)
         // 유니코드 없는 기호 글리프(U+F000)는 글꼴 윤곽 모양으로 되살린다 — 한컴 자동 글머리표 "▸"·"□"·겹화살괄호 (symbol-glyphs.ts)
         restoreUnmappedGlyphs(rawItems, rawOps.fnArray, rawOps.argsArray, n => fontObj(n) as { data?: Uint8Array } | null | undefined)
@@ -270,6 +272,7 @@ export async function parsePdfDocument(buffer: ArrayBuffer, options?: ParseOptio
         restoreTrackedSpacing(rawItems, rawOps.fnArray, rawOps.argsArray)
         // pdfjs 가 글자 틈으로 만든 공백 아이템 표시 — 균등배분 판정이 진짜 공백 글리프에서만 끊도록
         markSyntheticSpaces(rawItems, rawOps.fnArray, rawOps.argsArray)
+        restoreSoftHyphens()
         const items = normalizeItems(occluded.size ? rawItems.filter(it => !occluded.has(it)) : rawItems)
 
         // hidden text 필터링 + 경고 수집

@@ -278,6 +278,9 @@ function sanitizePua(text: string): string {
   return mapPuaText(text)
     // Supplementary Private Use Area (U+F0000-U+FFFFD) — HWP 전용 기호 (매핑 안 된 잔여분)
     .replace(/[\u{F0000}-\u{FFFFD}]/gu, "")
+    // 소프트 하이픈 U+00AD — 한컴은 보이는 붙임표로 그린다(글머리 "­ 3D 프린터로…", 증감 칸 "­7,445" = −7,445; 한컴 PDF 도 폭 있는
+    // 붙임표 글리프). 글자 사이(낱말 안 꺾임 표시 "infor­mation")만 두고 "-" 로
+    .replace(/(?<!\p{L})\u00ad|\u00ad(?!\p{L})/gu, "-")
 }
 
 /** HWP PUA 특수문자 및 도형 대체텍스트 제거 — 모든 포맷 공통 (roundtrip 재현도 이 함수를 쓴다) */

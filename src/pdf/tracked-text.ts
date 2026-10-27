@@ -145,6 +145,51 @@ export function markTrailingSpaceGlyphs(items: PdfTextItem[], fnArray: ArrayLike
   const emits = ends.length >= EMIT_MIN_LINES && spaced >= ends.length * EMIT_MIN_RATIO
   for (const [it, s] of ends) if (s || emits) (it as PdfTextItem & { spaceAfter?: boolean }).spaceAfter = s
 }
+/**
+ * 아이템 머리 소프트 하이픈 — 한글 문서는 U+00AD 를 보이는 붙임표로 찍는다(글머리 "­ 42개 공공기관을…", 증감 칸 "­7,445" = −7,445).
+ * pdfjs 는 이 글리프를 아이템 글에서 지워 글머리와 음수 부호가 사라졌다. 아이템 첫 글자 앞(공백만 사이에 둔) 글리프가 폭 있는 U+00AD 면
+ * "-" 를 되살린다(뒤가 수면 음수 부호로 붙여, 아니면 글머리로 띄워). 앞 줄 끝 라틴 글자 바로 뒤에 찍혀 다음 줄이 소문자로 이어지면 낱말 꺾임 표시(영문 "infor­mation")라 둔다.
+ * 글리프 흐름과 아이템 글을 연산 순서로 맞추고 어긋나면 그 쪽의 나머지는 손대지 않는다. 아이템 글을 바꾸는 복원들보다 먼저 맞추고,
+ * 되살리기는 돌려준 함수로 그 복원들 뒤에 한다
+ */
+export function softHyphenHeads(items: PdfTextItem[], fnArray: ArrayLike<number>, argsArray: ArrayLike<unknown>): () => void {
+  const glyphs: Array<{ u: string; w: number }> = []
+  for (let i = 0; i < fnArray.length; i++) {
+    if (fnArray[i] !== OPS.showText) continue
+    for (const g of (argsArray as unknown[][])[i][0] as unknown[]) {
+      const o = g as { unicode?: unknown; width?: unknown }
+      if (g && typeof g === "object" && typeof o.unicode === "string") glyphs.push({ u: o.unicode, w: typeof o.width === "number" ? o.width : 0 })
+    }
+  }
+  if (!glyphs.some(g => g.u === "\u00ad" && g.w > 0)) return () => {}
+  const text = items.filter(it => typeof it.str === "string" && it.str.trim())
+  const heads: Array<[PdfTextItem, string]> = []
+  let gi = 0
+  for (let k = 0; k < text.length; k++) {
+    const it = text[k], prev = text[k - 1]
+    const want = it.str.replace(/\s+/g, "")
+    let soft = -1, spaced = false
+    while (gi < glyphs.length && (/^\s*$/.test(glyphs[gi].u) || glyphs[gi].u === "\u00ad")) {
+      if (glyphs[gi].u === "\u00ad") { soft = glyphs[gi].w > 0 ? gi : -1; spaced = false }
+      else if (soft >= 0) spaced = true
+      gi++
+    }
+    if (soft >= 0) {
+      const before = glyphs[soft - 1]?.u ?? ""
+      const wrapped = !!prev && Math.abs(prev.transform[5] - it.transform[5]) >= 3 && /\p{Script=Latin}$/u.test(before) && /^\p{Ll}/u.test(it.str.trimStart())
+      // 뒤 낱말이 수(7,445·1.1%)면 음수 부호로 붙이고, 아니면 글머리 — 한컴 PDF 는 글머리 뒤 공백 글리프를 빼고 찍는다("­3D 프린터로" = "- 3D …")
+      if (!wrapped) heads.push([it, spaced || !/^[\d.,]+%?(?:\s|$)/.test(it.str.trimStart()) ? "- " : "-"])
+    }
+    const pushed = heads.length
+    let got = ""
+    while (gi < glyphs.length && got.length < want.length) {
+      if (glyphs[gi].u !== "\u00ad") got += normalizeUnicode(glyphs[gi].u).replace(/\s+/g, "")
+      gi++
+    }
+    if (got !== want) { if (pushed && heads[pushed - 1][0] === it) heads.pop(); break }
+  }
+  return () => { for (const [it, head] of heads) it.str = head + it.str }
+}
 /** 줄 끝 공백 글리프를 찍는 쪽 판정 — 줄 끝 수 하한과 공백 글리프 비율 (hwpx↔pdf 744쌍 문서별 비율: 찍는 제작기 0.2 이상) */
 const EMIT_MIN_LINES = 5
 const EMIT_MIN_RATIO = 0.2
