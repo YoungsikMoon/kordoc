@@ -9,13 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- 기관팩(`.kpack`) — 기관 문서(HWPX) 몇 건으로 그 기관 서식 묶음을 만들고 그 서식대로 새 문서를 만든다. kordoc 에 기관 서식을 더 넣지 않고 사용자가 자기 문서로 만든다. `kordoc pack build·info`, `generate --pack`, MCP `build_agency_pack`·`agency_pack_info`·`generate_document pack_path`, API `buildAgencyPack`·`loadAgencyPack`·`packTemplate`. 대표 견본은 역할별 다수결로 후보를 추리고 교차 재현(다른 견본 글을 후보로 다시 만들어 대조)으로 고른다. 팩 견본은 원문 글·작성자 메타·결재선 이름·전화·직위 앞 부서 이름을 비운 판이고, 비운 뒤 다시 읽어 원 견본과 같은지 자기 검사한다. 팩은 코드 없는 zip(`pack.json`·`guide.md`·`kinds/*.hwpx`)이고 읽을 때 신뢰하지 않는 파일로 검사한다. 처음 보는 문서 재현(하나 빼고 만든 팩): 서울 방침서 68.3% → 73.9%, 광양시 보고서 1안 77.1% → 94.5%, 광양시 공고문 58.3% → 70.6%(기본 보고서 프리셋 대비). 설명서 docs/agency-pack.md, 재현 bench/pack-repro.mjs.
+- 기관팩(`.kpack`) — 기관 문서(HWPX) 몇 건으로 그 기관 서식 묶음을 만들고 그 서식대로 새 문서를 만든다. kordoc 에 기관 서식을 더 넣지 않고 사용자가 자기 문서로 만든다. `kordoc pack build·info`, `generate --pack`, MCP `build_agency_pack`·`agency_pack_info`·`generate_document pack_path`, API `buildAgencyPack`·`loadAgencyPack`·`packTemplate`. 대표 견본은 역할별 다수결로 후보를 추리고 교차 재현(다른 견본 글을 후보로 다시 만들어 대조)으로 고른다. 팩 견본은 원문 글·작성자 메타·결재선 이름·전화·직위 앞 부서 이름을 비운 판이고, 비운 뒤 다시 읽어 원 견본과 같은지 자기 검사한다. 팩은 코드 없는 zip(`pack.json`·`guide.md`·`kinds/*.hwpx`)이고 읽을 때 신뢰하지 않는 파일로 검사한다. 처음 보는 문서 재현(하나 빼고 만든 팩): 서울 방침서 68.3% → 74.3%, 광양시 보고서 1안 77.1% → 94.5%, 광양시 공고문 58.3% → 71.1%(기본 보고서 프리셋 대비). 설명서 docs/agency-pack.md, 재현 bench/pack-repro.mjs.
 
 ### Fixed
 
 - PDF: ToUnicode 에 빠진 CID 대체 공백 글리프(Microsoft Print To PDF·Noto Sans KR 의 locl 치환 공백)가 "堺" 로 나오던 것을 공백으로 (#174, @yuhyun00). PDF 코퍼스 문서별 변화 0.
 - 견본 모드(`generate --template`): 공고문 머리 상자(제목·도입 문장·날짜·발신 명의를 표 칸 하나에 담은 꼴)를 담당 칸으로 읽어 제목표가 사라지던 것 — 담당 칸은 칸 첫 줄이 ☎·담당·작성 일자일 때만, 머리 상자는 칸 문단을 자리(제목·부제·도입·날짜·발신 명의)로 나눠 원고 머리 줄을 채운다.
 - 견본 모드(`generate --template`): 원형 문단의 새 글 글자 모양은 강조(검정 아닌 글자색·음영) 아닌 run 에서 — 한 낱말에만 칠한 파랑·형광펜이 글자가 가장 많아 새 글 전체가 강조색이 됐다(서울 방침서 □ 줄, 공고문 제목).
+- 기관팩: 견본이 셋 이상이면 단계·본문·※ 원형을 견본들의 과반 서식(크기·굵기·글꼴·정렬·줄간격·문단 간격)으로 맞춘다 — 대표 견본만의 손 조정을 걷어 냄(서울 방침서 73.9 → 74.3%, 광양 공고문 70.6 → 71.1%, 문서별 하락 0).
 - 기관팩: 다수결 일치도 60% 미만 견본은 교차 재현 후보에서 뺀다(견본 4건 중 54% 견본이 대표로 뽑혀 그 견본의 강조색이 역할 서식이 됐다).
 - 공문서 검수: 연도를 줄인 기간 끝 날짜("2026. 11. 10.(화) ∼ 11. 21.(금)")의 요일도 앞 날짜 연·월로 맞춰 본다(WEEKDAY_MISMATCH), "2027. 3. 1차" 를 끝 마침표 없는 날짜로 보던 오탐(DATE_NO_END_DOT).
 - 견본 모드(`generate --template`): 장 띠 번호를 견본 번호 칸 꼴(1·2·3 / 가·나·다 / Ⅰ·Ⅱ)대로.

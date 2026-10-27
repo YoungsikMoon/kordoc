@@ -272,6 +272,8 @@ export interface PackKindInfo {
   chosen: number
   /** 비운 견본을 다시 훑었을 때 원 견본과 달라진 점 — 비어 있어야 정상 */
   drift: string[]
+  /** 견본들의 다수결 서식으로 맞춘 원형 (대표 견본과 달랐던 것) */
+  consensus?: string[]
   /** 대표 견본이 갖춘 역할 */
   roles: RoleKey[]
   /** 대표 견본에 없어 가까운 서식으로 대신할 역할 (title·contact·summary·chapter·L0~L2·ref·table 중) */
@@ -499,6 +501,101 @@ async function maskedTemplate(sample: Uint8Array): Promise<{ data: Uint8Array; l
   return { data: await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), leftover: [], images }
 }
 
+/** 골격 원고에서 단계·본문 역할 문단의 글 — 비운 판에서 그 문단을 찾는다 */
+const SKELETON_TEXT: Partial<Record<RoleKey, string>> = { L0: "첫째 단계 항목", L1: "둘째 단계 항목", L2: "셋째 단계 항목", L3: "넷째 단계 항목", ref: "참고 문구", body: "부호 없는 본문 문단" }
+/** 다수결로 맞추는 속성 — 문단 모양(정렬·줄간격·위/아래 간격)과 글자 크기·굵기. 글꼴은 견본 header 에 같은 글꼴이 있을 때만 */
+type ConsensusStyle = Partial<{ font: string; pt: number; bold: boolean; align: string; lineSpacing: string; prev: string; next: string }>
+
+/**
+ * 역할별 다수결 서식 — 그 역할을 가진 견본의 과반이 같은 값인 속성만. 대표 견본 하나에는 그 문서만의 손 조정(줄간격·간격)이 섞여 있다
+ */
+export function roleConsensus(samples: TemplateRoles[]): Map<RoleKey, ConsensusStyle> {
+  const out = new Map<RoleKey, ConsensusStyle>()
+  for (const role of Object.keys(SKELETON_TEXT) as RoleKey[]) {
+    const have = samples.map((s) => s.roles.get(role) as (RoleStyle & { prev?: string; next?: string }) | undefined).filter(Boolean) as (RoleStyle & { prev?: string; next?: string })[]
+    if (have.length < 2) continue
+    const c: ConsensusStyle = {}
+    for (const prop of ["font", "pt", "bold", "align", "lineSpacing", "prev", "next"] as const) {
+      const count = new Map<string, number>()
+      for (const st of have) { const v = st[prop]; if (v !== undefined) count.set(String(v), (count.get(String(v)) ?? 0) + 1) }
+      const top = [...count].sort((a, b) => b[1] - a[1])[0]
+      if (top && top[1] >= 2 && top[1] * 2 > have.length) (c as Record<string, unknown>)[prop] = prop === "pt" ? Number(top[0]) : prop === "bold" ? top[0] === "true" : top[0]
+    }
+    if (Object.keys(c).length) out.set(role, c)
+  }
+  return out
+}
+
+/** header 에 id 원소를 복제해 바꾼 판을 덧붙이고 새 id 를 돌려준다 */
+function cloneHeaderItem(header: string, tag: "charPr" | "paraPr", id: string, edit: (xml: string) => string): { header: string; id: string } | null {
+  const m = new RegExp(`<hh:${tag}\\b[^>]{0,4096}?\\bid="${id}"[\\s\\S]{0,16384}?</hh:${tag}>`).exec(header)
+  if (!m) return null
+  const next = 1 + Math.max(...[...header.matchAll(new RegExp(`<hh:${tag}\\b[^>]{0,4096}?\\bid="(\\d{1,10})"`, "g"))].map((x) => Number(x[1])))
+  const xml = edit(m[0]).replace(/\bid="\d+"/, `id="${next}"`)
+  if (xml.replace(/\bid="\d+"/, "") === m[0].replace(/\bid="\d+"/, "")) return null
+  const list = tag === "charPr" ? "charProperties" : "paraProperties"
+  const end = header.indexOf(`</hh:${list}>`)
+  if (end < 0) return null
+  const out = (header.slice(0, end) + xml + header.slice(end)).replace(new RegExp(`(<hh:${list}\\b[^>]{0,1024}?\\bitemCnt=")(\\d+)"`), (_, a: string, n: string) => `${a}${Number(n) + 1}"`)
+  return { header: out, id: String(next) }
+}
+
+/**
+ * 비운 견본의 단계·본문 원형 문단을 견본들의 다수결 서식으로 맞춘다 — 대표 견본만의 줄간격·간격·크기를 걷어 낸다. 바뀐 역할 목록을 돌려준다.
+ * 가린 판(골격 글 없음)은 그대로
+ */
+async function applyConsensus(data: Uint8Array, consensus: Map<RoleKey, ConsensusStyle>): Promise<{ data: Uint8Array; changed: string[] }> {
+  if (!consensus.size) return { data, changed: [] }
+  const zip = await JSZip.loadAsync(data)
+  const secName = "Contents/section0.xml", hdrName = "Contents/header.xml"
+  let sec = await zip.file(secName)!.async("string"), header = await zip.file(hdrName)!.async("string")
+  const ix = indexHeader(header)
+  const faceId = (lang: string, face: string) => {
+    const block = new RegExp(`<hh:fontface\\b[^>]{0,512}\\blang="${lang}"[^>]{0,512}>([\\s\\S]{0,1048576}?)</hh:fontface>`).exec(header)?.[1] ?? ""
+    for (const m of block.matchAll(/<hh:font\b[^>]{0,1024}>/g)) if (attr(m[0], "face") === face) return attr(m[0], "id")
+    return undefined
+  }
+  const changed: string[] = []
+  for (const [role, c] of consensus) {
+    const text = SKELETON_TEXT[role]!
+    const pm = new RegExp(`<hp:p\\b[^>]{0,4096}>(?:(?!</hp:p>)[\\s\\S]){0,65536}?<hp:t>[^<]{0,8}${text}</hp:t>[\\s\\S]{0,65536}?</hp:p>`).exec(sec)
+    if (!pm) continue
+    let para = pm[0]
+    const paraPr = /\bparaPrIDRef="(\d+)"/.exec(para)?.[1]
+    const runM = new RegExp(`<hp:run charPrIDRef="(\\d+)"><hp:t>[^<]{0,8}${text}</hp:t>`).exec(para)
+    const q = paraPr ? ix.paras.get(paraPr) : undefined
+    const ch = runM ? ix.chars.get(runM[1]) : undefined
+    if (paraPr && q && ((c.align && c.align !== q.align) || (c.lineSpacing && c.lineSpacing !== q.lineSpacing) || (c.prev && c.prev !== q.prev) || (c.next && c.next !== q.next))) {
+      const r = cloneHeaderItem(header, "paraPr", paraPr, (x) => {
+        let y = x
+        if (c.align) y = y.replace(/(<hh:align\b[^>]{0,512}?\bhorizontal=")[A-Z_]+"/, `$1${c.align}"`)
+        if (c.lineSpacing && /%$/.test(c.lineSpacing)) y = y.replace(/(<hh:lineSpacing\b[^>]{0,512}?\btype="PERCENT"[^>]{0,512}?\bvalue=")\d+"/, `$1${parseInt(c.lineSpacing)}"`).replace(/(<hh:lineSpacing\b[^>]{0,512}?\bvalue=")\d+("[^>]{0,512}?\btype="PERCENT")/, `$1${parseInt(c.lineSpacing)}$2`)
+        for (const k of ["prev", "next"] as const) if (c[k] !== undefined) y = y.replace(new RegExp(`(<hc:${k}\\b[^>]{0,256}?\\bvalue=")-?\\d+"`, "g"), `$1${c[k]}"`)
+        return y
+      })
+      if (r) { header = r.header; para = para.replace(/\bparaPrIDRef="\d+"/, `paraPrIDRef="${r.id}"`); changed.push(`${roleName(role)} 문단`) }
+    }
+    if (runM && ch && ((c.pt !== undefined && c.pt !== ch.pt) || (c.bold !== undefined && c.bold !== ch.bold) || (c.font && c.font !== ch.font && faceId("HANGUL", c.font)))) {
+      const r = cloneHeaderItem(header, "charPr", runM[1], (x) => {
+        let y = x
+        if (c.pt !== undefined) y = y.replace(/(<hh:charPr\b[^>]{0,4096}?\bheight=")\d+"/, `$1${Math.round(c.pt * 100)}"`)
+        if (c.bold === false) y = y.replace(/<hh:bold\/>/g, "").replace(/\sbold="1"/, "")
+        if (c.bold === true && !/<hh:bold\b/.test(y)) y = y.replace("</hh:charPr>", "<hh:bold/></hh:charPr>")
+        const fid = c.font ? faceId("HANGUL", c.font) : undefined
+        if (fid) y = y.replace(/(<hh:fontRef\b[^>]{0,1024}?\bhangul=")\d+"/, `$1${fid}"`)
+        const lid = c.font ? faceId("LATIN", c.font) : undefined
+        if (lid) y = y.replace(/(<hh:fontRef\b[^>]{0,1024}?\blatin=")\d+"/, `$1${lid}"`)
+        return y
+      })
+      if (r) { header = r.header; para = para.replace(runM[0], runM[0].replace(`charPrIDRef="${runM[1]}"`, `charPrIDRef="${r.id}"`)); changed.push(`${roleName(role)} 글자`) }
+    }
+    sec = sec.replace(pm[0], para)
+  }
+  if (!changed.length) return { data, changed }
+  zip.file(secName, sec); zip.file(hdrName, header)
+  return { data: await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), changed }
+}
+
 /** 작성 요령 — 에이전트가 이 팩으로 원고를 쓸 때 읽는다 */
 function guideFor(name: string, manifest: PackManifest): string {
   const ROLE_DOC: Partial<Record<RoleKey, string>> = {
@@ -582,12 +679,20 @@ export async function buildAgencyPack(name: string, samples: PackSample[], into?
       const d = roleDrift(sigs[i], await templateRoleStyles(masked.data))
       if (d.length < drift.length) { chosen = i; scrub = masked; drift = d }
     }
+    // 견본 셋 이상이면 단계·본문 원형을 역할별 다수결 서식으로 맞춘다(대표 견본만의 손 조정을 걷어 냄 — 서울 방침서 73.9 → 74.3%,
+    // 광양 공고문 70.6 → 71.1%, 문서별 하락 0). 가린 판·어긋난 판은 그대로
+    let consensus: string[] = []
+    if (!drift.length && list.length >= 3) {
+      const r = await applyConsensus(scrub!.data, roleConsensus(sigs))
+      scrub = { ...scrub!, data: r.data }
+      consensus = r.changed
+    }
     // 팩의 역할은 비운 견본을 다시 읽은 것(실제 동작) — 원 견본에 없어 이웃 단계로 채운 단계는 역할로 치지 않는다
     const rep = sigs[chosen], actual = await templateRoleStyles(scrub!.data)
     const roles = actual.protoRoles.filter((r) => !/^L[0-3]$/.test(r) || rep.protoRoles.includes(r))
     const denom = pick.max || 1
     manifest.kinds[kind] = {
-      template: `kinds/${kind}.hwpx`, samples: list.length, chosen, roles, drift,
+      template: `kinds/${kind}.hwpx`, samples: list.length, chosen, roles, drift, consensus,
       missing: EXPECTED.filter((r) => !roles.includes(r) && !(r === "contact" && actual.contactInTitle)),
       agreement: pick.scores.map((s) => Math.round((s / denom) * 100) / 100),
       leftover: scrub!.leftover, images: scrub!.images, bandItem: actual.bandItem, contactInTitle: actual.contactInTitle, bareSyms: actual.bareSyms, headBox: actual.headBox,
@@ -653,6 +758,7 @@ export function packSummary(m: PackManifest): string {
     out.push(`- ${kind}: 견본 ${k.samples}건 중 ${k.chosen + 1}번째를 대표로 · 역할 ${k.roles.length}개`)
     if (k.missing.length) out.push(`  없는 역할(가까운 서식으로 대신): ${k.missing.map(roleName).join(", ")}`)
     if (k.samples > 1) out.push(`  견본별 일치도(다수결 서식과 맞는 비율): ${k.agreement.map((a, i) => `${i + 1}번 ${Math.round(a * 100)}%`).join(" · ")}`)
+    if (k.consensus?.length) out.push(`  견본들의 다수결 서식으로 맞춤: ${k.consensus.join(", ")}`)
     if (k.headBox) out.push("  공고문 머리 상자: 있음 — `# 제목` 다음 줄에 도입 문장·날짜·발신 명의를 차례로 쓴다")
     const low = k.agreement.map((a, i) => ({ a, i })).filter((x) => x.a < 0.5).map((x) => x.i + 1)
     if (low.length && k.samples > 2) out.push(`  ⚠ 다른 서식으로 보이는 견본(일치도 50% 미만): ${low.join("·")}번째 — 같은 종류 문서인지 확인`)

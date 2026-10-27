@@ -7,7 +7,7 @@ import { describe, it, before } from "node:test"
 import assert from "node:assert/strict"
 import JSZip from "jszip"
 import { markdownToHwpx } from "../src/index.js"
-import { buildAgencyPack, loadAgencyPack, packTemplate, packSummary, chooseRepresentative, skeletonMarkdown, scrubPeople, templateRoleStyles, guideExample, packRoleWarnings, type PackKindInfo } from "../src/hwpx/agency-pack.js"
+import { buildAgencyPack, loadAgencyPack, packTemplate, packSummary, chooseRepresentative, skeletonMarkdown, scrubPeople, templateRoleStyles, guideExample, packRoleWarnings, roleConsensus, type PackKindInfo } from "../src/hwpx/agency-pack.js"
 import { validateHwpx } from "../src/validate.js"
 import { registerGenerateTools } from "../src/mcp/tools-generate.js"
 
@@ -131,6 +131,14 @@ describe("기관팩 (agency pack)", () => {
   it("골격 원고 — 공고문 머리 상자 견본이면 도입·날짜·발신 명의 줄까지 (빠지면 비운 판이 머리 상자로 안 읽힌다)", () => {
     const md = skeletonMarkdown({ protoRoles: ["title", "chapter"], bandItem: null, contactInTitle: false, headBox: true })
     assert.match(md, /^# 문서 제목\n\n도입 문장\n\n2026\\\. 1\. 1\.\n\n○○○장\n/)
+  })
+
+  it("역할별 다수결 서식 — 그 역할을 가진 견본의 과반이 같은 속성만", () => {
+    const st = (pt: number, lineSpacing: string) => ({ roles: new Map([["L1", { font: "휴먼명조", pt, bold: false, align: "JUSTIFY", lineSpacing }]]) }) as any
+    const c = roleConsensus([st(15, "160%"), st(15, "190%"), st(15, "160%"), st(13, "170%")]).get("L1")!
+    assert.equal(c.pt, 15)
+    assert.equal(c.lineSpacing, undefined, "4건 중 2건은 과반이 아니다")
+    assert.equal(roleConsensus([st(15, "160%"), st(14, "160%"), st(13, "160%")]).get("L1")!.pt, undefined)
   })
 
   it("사람 정보 지우기 — 직위 낱말·쌍점·☎ 틀은 두고 이름·번호·직위 앞 부서 이름은 지운다", () => {
