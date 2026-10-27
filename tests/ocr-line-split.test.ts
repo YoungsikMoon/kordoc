@@ -518,3 +518,22 @@ describe("arrowGlyph — 홀로 선 화살표 모양", () => {
     assert.equal(arrowGlyph(g, W, H, inkStats(g)), "\u25b6")
   })
 })
+
+describe("gapGlyphs — 1px 길어진 작은 마침표와 작은 쉼표", () => {
+  // 글자 두 개(28px 높이) 뒤 바닥 쪽 3×4 조각 — 대칭이면 마침표, 아래 반쪽이 가늘고 치우치면 쉼표(넣지 않음)
+  const W = 90, H = 40
+  function line(dot: (g: Uint8Array) => void): Uint8Array {
+    const g = canvas(W, H)
+    for (const x0 of [5, 40]) { rect(g, W, x0, 6, x0 + 24, 8); rect(g, W, x0, 6, x0 + 2, 34); rect(g, W, x0 + 22, 6, x0 + 24, 34); rect(g, W, x0, 32, x0 + 24, 34) }
+    dot(g)
+    return g
+  }
+  it("3×4 대칭 점은 마침표", () => {
+    const g = line((g) => rect(g, W, 72, 29, 75, 33))
+    assert.equal(gapGlyphs(g, W, H, inkStats(g)).glyphs.filter((x) => x.mark === ".").length, 1)
+  })
+  it("아래로 가늘어지는 3×4 쉼표는 마침표가 아니다", () => {
+    const g = line((g) => { rect(g, W, 72, 29, 75, 31); rect(g, W, 73, 31, 75, 32); rect(g, W, 74, 32, 75, 33) })
+    assert.ok(!gapGlyphs(g, W, H, inkStats(g)).glyphs.some((x) => x.mark === "."))
+  })
+})

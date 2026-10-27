@@ -602,7 +602,12 @@ export function gapGlyphs(gray: Uint8Array, w: number, h: number, ink: InkStats)
     // 이웃 글자와 x 가 겹치거나(촘촘한 글꼴 "개발·보급") 2px 까지 작은 둥근 점은 공백 자리 대체용으로만 — 한글 자모엔 떨어진 둥근 점이 없다
     const small = ch <= bh * 0.25 && cw <= bh * 0.25 && ch >= 2 && cw >= 2 && cw >= ch * 0.6 && cw <= ch * 1.6 && fill >= 0.6 && cy >= 0.3 && cy <= 0.7
     // 아래쪽 점은 이웃과 x 가 겹치지만 않으면(빈 열 없이 맞닿음) 본다 — 날짜 끝 마침표 뒤에 쉼표가 붙은 "2013.3.23.,2014.11.19." 의 "." (교육청 공문서 지침)
-    const flushDot = !apart && dot && fill >= 0.6 && cy >= 0.75 && cw >= ch * 0.8 && !others.some(o => o.x0 < c.x1 && o.x1 > c.x0)
+    // 작은 점의 위·아래 행 잉크 중심 차가 반 칸 안 — 마침표는 대칭, 쉼표는 꼬리가 치우친다
+    const rowMid = (y: number) => { let sx = 0, k = 0; for (let x = c.x0; x < c.x1; x++) if (label[y * w + x] === c.id) { sx += x; k++ } return k ? sx / k : NaN }
+    // 위·아래 반쪽 잉크 양도 비슷해야 — 3×4 작은 쉼표는 꼬리 쪽 아래 반쪽이 가늘다(교사추천서, → .)
+    const half = Math.floor(ch / 2), topInk = spans.slice(0, half).reduce((a, b) => a + b, 0), botInk = spans.slice(ch - half).reduce((a, b) => a + b, 0)
+    const upright = () => Math.abs(rowMid(c.y0) - rowMid(c.y1 - 1)) <= 0.5 && topInk <= botInk * 1.25 && botInk <= topInk * 1.25
+    const flushDot = !apart && dot && fill >= 0.6 && cy >= 0.75 && (cw >= ch * 0.8 || (ch - cw <= 1 && upright())) && !others.some(o => o.x0 < c.x1 && o.x1 > c.x0)
     if (!apart && !abut && !flushDot && !(nearlyApart && ch >= bh * 0.6)) { if (small) out.push({ x0: c.x0, x1: c.x1, mark: "\u00b7\u0001" }); continue }
     // 줄기 쪽 — 가로 변을 뺀 줄의 잉크 x 평균(폭 비). 「 는 왼쪽, 」 는 오른쪽 (한글 ㄱ·ㄴ 은 반대쪽이라 걸리지 않는다)
     const bracket = (): string | null => {
@@ -618,7 +623,9 @@ export function gapGlyphs(gray: Uint8Array, w: number, h: number, ink: InkStats)
     if (flushDot) mark = "."
     else if (!apart && !abut) { /* 빗금 후보만 아래에서 */ } else if (abut) { if (fill < 0.5) mark = bracket() } else if (dot && fill >= 0.6 && cy >= 0.3 && cy <= 0.7) mark = "\u00b7"
     else if (small) mark = "\u00b7\u0001"
-    else if (dot && fill >= 0.6 && cy >= 0.75 && cw >= ch * 0.8) mark = "." // 꼬리 달린 쉼표(세로로 긴 점)는 빼고
+    // 꼬리 달린 쉼표(세로로 긴 점)는 빼고 — 픽셀 반올림으로 1px 길어진 작은 마침표(3×4, 국회 회의록 "…하겠읍니다.")는 위·아래 행 잉크
+    // 중심이 같을 때만 마침표(작은 쉼표는 꼬리 쪽 아래 행이 왼쪽으로 치우친다)
+    else if (dot && fill >= 0.6 && cy >= 0.75 && (cw >= ch * 0.8 || (ch - cw <= 1 && upright()))) mark = "."
     else if (ch <= bh * 0.4 && ch >= speck && cw >= ch * 0.75 && cw <= ch * 1.3 && fill < 0.6 && runs[ch >> 1] === 2 && cy >= 0.6) mark = "\u3002"
     else if (ch <= bh * 0.15 && cw >= ch * 2 && cw <= bh * 0.8 && fill >= 0.7 && cy >= 0.35 && cy <= 0.75) mark = "-"
     else if (ch >= bh * 0.5 && cw >= ch * 0.9 && cw <= ch * 1.4 && fill >= 0.4 && runs.every(r => r <= 1)
