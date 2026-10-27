@@ -42,6 +42,14 @@ export function isRealStrikeShape(shape: string): boolean {
   }
 }
 
+/**
+ * 색 강조 글자 모양 — 검정 아닌 글자색 또는 음영(<hh:charPr> 여는 태그). 견본 문단을 복제해 새 글을 넣을 때
+ * 한 낱말에만 칠한 색·형광펜을 새 글 전체에 입히지 않으려고 가린다(견본 모드 fillParagraph avoid·패치 견본 복제)
+ */
+export function isColorEmphasis(charPrOpenTag: string): boolean {
+  return /\bshadeColor="(?!none"|#FFFFFF")[^"]+"/i.test(charPrOpenTag) || /\btextColor="(?!#000000"|none")[^"]+"/i.test(charPrOpenTag)
+}
+
 /** hh:numbering > hh:paraHead 한 수준의 정의 */
 export interface ParaHeadDef {
   numFormat: string  // DIGIT, HANGUL_SYLLABLE, CIRCLED_DIGIT 등

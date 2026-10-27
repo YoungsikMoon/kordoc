@@ -39,7 +39,7 @@ import { detectFormat } from "../detect.js"
 import { patchHwp } from "./hwp5-patch.js"
 import { parseEmphasis, minimalTextSplices } from "./inline-edit.js"
 import { readZipEntry } from "../hwpx/parser-shared.js"
-import { createStructureEditor, pairTablesInGaps } from "./structure-edit.js"
+import { createStructureEditor, pairTablesInGaps, charStyles } from "./structure-edit.js"
 
 export type { PatchOptions, PatchResult, PatchSkip } from "../types.js"
 
@@ -141,6 +141,7 @@ export async function patchHwpx(
     origUnits, origBlocks, paraMap, scans, scanTables, obTableOrdinals, sectionSplices, skipped,
     inlineOf: oi => textUnitInline(origUnits[oi].raw, origBlocks[origUnits[oi].blockIdx]),
     tableXml: (edited, outerParaPrId) => newTableParagraph(edited, outerParaPrId, tableInsert),
+    chars: tableInsert && charStyles(tableInsert.headerXml, scans.map(s => s.xml)),
   }) : null
   let lastOi: number | null = null
   for (const [oi, ei] of struct ? pairTablesInGaps(pairs, origUnits, editedUnits) : pairs) {

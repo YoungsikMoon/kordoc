@@ -81,6 +81,72 @@ describe("patchHwpx 구조 편집: 추가", () => {
   })
 })
 
+describe("patchHwpx 구조 편집: 견본 강조 run", () => {
+  // 질문지 꼴 — "○ (현황)" 은 부호 보통 + 소제목 굵게, "- 안내" 는 통째로 굵은 파랑(글자 모양 9 = 굵게 0 + 파랑)
+  const FORM_MD = ["# 사전 질문지", "", "○ **(현황)**", "", "1) 현재 구동 형태는?", "", "**- 아래 내용 중 다른 부분이 있으면 수정**", "", "끝 문단"].join("\n")
+
+  async function makeForm(): Promise<{ original: Uint8Array; markdown: string; plain: string }> {
+    const zip = await JSZip.loadAsync(new Uint8Array(await markdownToHwpx(FORM_MD)))
+    let header = await zip.file("Contents/header.xml")!.async("string")
+    const bold = /<hh:charPr id="1"[\s\S]*?<\/hh:charPr>/.exec(header)![0]
+    header = header.replace("</hh:charProperties>", bold.replace('id="1"', 'id="99"').replace('textColor="#000000"', 'textColor="#0000FF"') + "</hh:charProperties>")
+    zip.file("Contents/header.xml", header)
+    const xml = await zip.file("Contents/section0.xml")!.async("string")
+    zip.file("Contents/section0.xml", xml.replace('<hp:run charPrIDRef="1"><hp:t>- 아래', '<hp:run charPrIDRef="99"><hp:t>- 아래'))
+    const original = new Uint8Array(await zip.generateAsync({ type: "uint8array" }))
+    const markdown = (await parseHwpx(toAB(original), { layoutTables: "keep" })).markdown
+    assert.ok(markdown.includes("○ **(현황)**") && markdown.includes("**- 아래 내용"), markdown)
+    const plain = /<hp:run charPrIDRef="(\d+)"><hp:t>끝 문단/.exec(xml)![1]
+    return { original, markdown, plain }
+  }
+
+  const runsOf = (xml: string, text: string): string[] => {
+    const at = xml.indexOf(text)
+    assert.ok(at > 0, `문단 없음: ${text}`)
+    const p = xml.slice(xml.lastIndexOf("<hp:p ", at), xml.indexOf("</hp:p>", at))
+    return [...p.matchAll(/<hp:run charPrIDRef="(\d+)"><hp:t>([^<]*)<\/hp:t>/g)].filter(m => m[2]).map(m => `${m[1]}:${m[2]}`)
+  }
+
+  it("평문 ○ 줄 추가 → 견본 굵은 소제목 글자 모양이 아니라 굵지 않은 본문 글자 모양", async () => {
+    const { original, markdown, plain } = await makeForm()
+    const edited = markdown.replace("○ **(현황)**", "○ **(현황)**\n\n○ 서버 없음, 이용자 PC에 설치해 실행")
+    const res = await patchHwpx(original, edited)
+    assert.ok(res.success, res.error)
+    const after = await sectionXml(res.data!)
+    assert.deepEqual(runsOf(after, "서버 없음"), [`${plain}:○ `, `${plain}:서버 없음, 이용자 PC에 설치해 실행`])
+    assert.equal((await parseHwpx(toAB(res.data!), { layoutTables: "keep" })).markdown, edited)
+  })
+
+  it("평문 - 줄 추가 → 굵은 파랑 견본의 강조를 뺀 짝 글자 모양(같은 크기·글꼴)", async () => {
+    const { original, markdown, plain } = await makeForm()
+    const edited = markdown.replace(/(\*\*- 아래 내용[^\n]*)/, "$1\n\n- 업로드 화면과 처리 API")
+    const res = await patchHwpx(original, edited)
+    assert.ok(res.success, res.error)
+    const after = await sectionXml(res.data!)
+    assert.deepEqual(runsOf(after, "업로드 화면"), [`${plain}:- 업로드 화면과 처리 API`])
+    assert.equal((await parseHwpx(toAB(res.data!), { layoutTables: "keep" })).markdown, edited)
+  })
+
+  it("강조 표지가 견본과 다르게 놓인 새 글 → 강조 조각만 견본 강조 글자 모양", async () => {
+    const { original, markdown, plain } = await makeForm()
+    const edited = markdown.replace("○ **(현황)**", "○ **(현황)**\n\n○ **(목적)** 시범 운영 전 기능 범위 파악")
+    const res = await patchHwpx(original, edited)
+    assert.ok(res.success, res.error)
+    const after = await sectionXml(res.data!)
+    assert.deepEqual(runsOf(after, "시범 운영"), [`${plain}:○ `, "1:(목적)", `${plain}: 시범 운영 전 기능 범위 파악`])
+    assert.equal((await parseHwpx(toAB(res.data!), { layoutTables: "keep" })).markdown, edited)
+  })
+
+  it("강조 자리가 견본과 같으면 종전대로 조각마다 제 run", async () => {
+    const { original, markdown, plain } = await makeForm()
+    const edited = markdown.replace("○ **(현황)**", "○ **(현황)**\n\n○ **(대상 서비스)**")
+    const res = await patchHwpx(original, edited)
+    assert.ok(res.success, res.error)
+    const after = await sectionXml(res.data!)
+    assert.deepEqual(runsOf(after, "대상 서비스"), [`${plain}:○ `, "1:(대상 서비스)"])
+  })
+})
+
 describe("patchHwpx 구조 편집: 삭제·갈아입히기", () => {
   it("문단 삭제 → 문단째 사라지고 앞뒤는 그대로", async () => {
     const { original, markdown } = await makeReport()

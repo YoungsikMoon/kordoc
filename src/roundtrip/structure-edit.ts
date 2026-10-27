@@ -7,8 +7,9 @@
  * 삭제는 개체(표·그림·구역 정의·컨트롤)가 없는 최상위 문단만 통째로 지우고, 개체가 있으면 글만 비운다.
  */
 
-import { scanSectionXml, findElementEnd, applySplices, buildParagraphSplices, markerRunSplices, type ScanParagraph, type ScanTable, type SectionScan, type SpliceEdit } from "./source-map.js"
-import { minimalTextSplices, parseEmphasis } from "./inline-edit.js"
+import { scanSectionXml, findElementEnd, applySplices, buildParagraphSplices, markerRunSplices, paraTText, type ScanParagraph, type ScanTable, type SectionScan, type SpliceEdit } from "./source-map.js"
+import { minimalTextSplices, parseEmphasis, alignToRaw } from "./inline-edit.js"
+import { isColorEmphasis, isRealStrikeShape } from "../hwpx/styles.js"
 import { summarize, alignUnits, type MdUnit } from "./markdown-units.js"
 import type { IRBlock, PatchSkip } from "../types.js"
 
@@ -107,6 +108,58 @@ export interface Donor {
   /** 원본 문단의 IR 평문과 서식 조각 (글 치환 좌표) */
   plain: string
   segs: string[]
+  /** 조각마다 강조 표지 안인지 (parseEmphasis marks) */
+  marks?: boolean[]
+}
+
+/**
+ * 견본 복제의 강조 글자 모양 — marked 는 파서가 마크다운 표지로 내는 굵게·기울임·밑줄·취소선, emphasis 는 거기에 색·음영
+ * (isColorEmphasis, 견본 모드와 같은 기준)을 더한 것. plain 은 강조 글자 모양 → 강조만 뺀 짝: 나머지 속성(크기·글꼴·장평·
+ * 자간 …)이 같은 강조 아닌 글자 모양, header 에 없으면 문서 본문에서 같은 크기로 글이 가장 많은 강조 아닌 글자 모양
+ */
+export interface CharStyles {
+  marked: ReadonlySet<string>
+  emphasis: ReadonlySet<string>
+  plain: ReadonlyMap<string, string>
+}
+
+export function charStyles(headerXml: string, sectionXmls: string[]): CharStyles {
+  const marked = new Set<string>(), emphasis = new Set<string>()
+  const keyOf = new Map<string, string>(), heightOf = new Map<string, string>(), byKey = new Map<string, string>()
+  for (const m of headerXml.matchAll(/<hh:charPr\b[^>]{0,4096}>/g)) {
+    const id = /\bid="(\d{1,10})"/.exec(m[0])?.[1]
+    if (!id) continue
+    const close = headerXml.indexOf("</hh:charPr>", m.index!)
+    const body = m[0].endsWith("/>") || close < 0 ? m[0] : headerXml.slice(m.index!, close)
+    const strike = /<hh:strikeout\b[^>]{0,512}\bshape="(\w{1,20})"/.exec(body)?.[1]
+    if (/<hh:(?:bold|italic)\b|\s(?:bold|italic)="(?:1|true)"/.test(body) || /<hh:underline\b[^>]{0,512}\btype="BOTTOM"/.test(body)
+      || (strike !== undefined && isRealStrikeShape(strike))) marked.add(id)
+    if (marked.has(id) || isColorEmphasis(m[0])) emphasis.add(id)
+    // 짝 열쇠 — id 와 강조 속성(굵게·기울임·밑줄·취소선·글자색·음영)을 걷은 정의
+    const key = body.replace(/\sid="\d{1,10}"/, "").replace(/\s(?:bold|italic|textColor|shadeColor)="[^"]{0,64}"/g, "")
+      .replace(/<hh:(?:bold|italic|underline|strikeout)\b[^>]{0,512}>/g, "")
+    keyOf.set(id, key)
+    heightOf.set(id, /\bheight="(\d{1,10})"/.exec(m[0])?.[1] ?? "")
+    if (!emphasis.has(id) && !byKey.has(key)) byKey.set(key, id)
+  }
+  // 문서 본문 기본 run — 같은 크기 강조 아닌 글자 모양 중 글이 가장 많은 것
+  const used = new Map<string, number>()
+  for (const xml of sectionXmls) {
+    for (const m of xml.matchAll(/<(?:\w+:)?run\b[^>]{0,512}?\bcharPrIDRef="(\d{1,10})"[^>]{0,512}>\s*<(?:\w+:)?t>([^<]{1,4096})/g)) {
+      if (!emphasis.has(m[1])) used.set(m[1], (used.get(m[1]) ?? 0) + m[2].length)
+    }
+  }
+  const common = new Map<string, string>()
+  for (const [id, n] of used) {
+    const h = heightOf.get(id) ?? "", cur = common.get(h)
+    if (cur === undefined || n > used.get(cur)!) common.set(h, id)
+  }
+  const plain = new Map<string, string>()
+  for (const id of emphasis) {
+    const p = byKey.get(keyOf.get(id)!) ?? common.get(heightOf.get(id)!)
+    if (p) plain.set(id, p)
+  }
+  return { marked, emphasis, plain }
 }
 
 /**
@@ -124,20 +177,74 @@ export function pickDonor(donors: Donor[], cls: string, near: number, exclude?: 
 
 /**
  * 견본 문단 XML 을 복제해 글만 새 글로 바꾼 문단 XML. 줄 배치 캐시는 지워(새 글은 다시 조판) 한컴이 변조 경고 없이 열고,
- * 쪽·단 나눔은 끈다(견본이 쪽 첫 문단이어도 복제본이 쪽을 넘기지 않게). 글을 넣을 자리가 없으면 null
+ * 쪽·단 나눔은 끈다(견본이 쪽 첫 문단이어도 복제본이 쪽을 넘기지 않게). 글을 넣을 자리가 없으면 null.
+ *
+ * 새 글의 강조 표지가 견본과 다르게 놓이면(newMarks·chars) 견본 강조 run 의 글자 모양을 강조 뺀 짝으로 바꿔 놓고 글을 넣은 뒤,
+ * 새 글의 강조 조각만 견본 강조 글자 모양으로 감싼다 — 평문 "○ 서버 없음" 을 "○ **(현황)**" 견본으로 복제하면 새 글이
+ * 굵은 소제목 run 에 들어 본문 전체가 굵게(통째로 굵은 파랑인 "- 안내" 견본이면 굵은 파랑) 나왔다
  */
-export function cloneParagraphXml(xml: string, donor: Donor, newPlain: string, newSegs: string[]): string | null {
+export function cloneParagraphXml(xml: string, donor: Donor, newPlain: string, newSegs: string[], newMarks?: boolean[], chars?: CharStyles): string | null {
   const end = findElementEnd(xml, donor.para.start)
   if (end < 0) return null
-  const frag = xml.slice(donor.para.start, end)
+  let frag = xml.slice(donor.para.start, end)
   if (!isRemovableParagraph(frag.replace(/\b(?:pageBreak|columnBreak)="1"/, ""))) return null
+  const restyle = !!chars && !!newMarks && !!donor.marks
+    && !(donor.segs.length === newSegs.length && donor.marks.every((m, i) => m === newMarks[i]))
+  let markedCharPr = ""
+  if (restyle) {
+    let best = 0
+    for (const m of frag.matchAll(/<(?:\w+:)?run\b[^>]{0,512}?\bcharPrIDRef="(\d{1,10})"[^>]{0,512}>/g)) {
+      if (m[0].endsWith("/>") || !chars.marked.has(m[1])) continue
+      const n = frag.slice(m.index! + m[0].length, findElementEnd(frag, m.index!)).replace(/<[^>]*>/g, "").replace(/\s/g, "").length
+      if (n > best) { best = n; markedCharPr = m[1] }
+    }
+    frag = frag.replace(/(<(?:\w+:)?run\b[^>]{0,512}?\bcharPrIDRef=")(\d{1,10})"/g, (m, open: string, id: string) =>
+      chars.plain.has(id) ? `${open}${chars.plain.get(id)}"` : m)
+  }
   const para = scanSectionXml(frag, donor.sectionIndex).bodyParagraphs[0]
   if (!para || para.start !== 0) return null
   const splices: SpliceEdit[] | null = minimalTextSplices(para, frag, donor.plain, newPlain, donor.segs, newSegs)
     ?? markerRunSplices(para, frag, newPlain) ?? buildParagraphSplices(para, newPlain, frag)
   if (splices === null) return null
-  return applySplices(frag, splices).replace(LINESEG_RE, "")
+  const out = applySplices(frag, splices).replace(LINESEG_RE, "")
     .replace(/^(<[^>]*?)\bpageBreak="1"/, "$1pageBreak=\"0\"").replace(/^(<[^>]*?)\bcolumnBreak="1"/, "$1columnBreak=\"0\"")
+  if (!restyle || !markedCharPr || !newMarks.some(Boolean)) return out
+  return markedRuns(out, donor.sectionIndex, newPlain, newSegs, newMarks, markedCharPr) ?? out
+}
+
+/**
+ * 복제본에서 강조 조각(marks)의 글을 따로 run(charPr)으로 가른다. 조각 앞뒤 빈칸은 둘레 run 에 남긴다.
+ * 조각이 run 하나 안에 들지 않거나 글 좌표를 못 맞추면 null (강조 없이 둔다)
+ */
+function markedRuns(clone: string, sectionIndex: number, plain: string, segs: string[], marks: boolean[], charPr: string): string | null {
+  const para = scanSectionXml(clone, sectionIndex).bodyParagraphs[0]
+  const raw = para ? paraTText(para, clone) : null
+  const pos = raw !== null ? alignToRaw(raw, plain) : null
+  if (!para || !pos) return null
+  const ts = para.tRanges.filter(t => !t.selfClosing)
+  const P = para.runPrefix ? `${para.runPrefix}:` : ""
+  /** t-도메인 위치 → 원문 위치와 그 hp:t 가 든 run 의 여는 태그 자리 (끝 위치는 hp:t 끝이어도 된다) */
+  const locate = (r: number, isEnd: boolean): { at: number; run: number } | null => {
+    let off = 0
+    for (const t of ts) {
+      const len = t.contentEnd - t.contentStart
+      if (r < off + len || (isEnd && r === off + len)) return { at: t.contentStart + r - off, run: clone.lastIndexOf(`<${P}run`, t.contentStart) }
+      off += len
+    }
+    return null
+  }
+  const splices: SpliceEdit[] = []
+  for (let k = 0, a = 0; k < segs.length; a += segs[k].length, k++) {
+    const lead = /^\s*/.exec(segs[k])![0].length, len = segs[k].trim().length
+    if (!marks[k] || !len) continue
+    const s = locate(pos[a + lead], false), e = locate(pos[a + lead + len - 1] + 1, true)
+    if (!s || !e || s.run < 0 || s.run !== e.run) return null
+    const runOpen = clone.slice(s.run, clone.indexOf(">", s.run) + 1)
+    splices.push({ start: s.at, end: s.at, replacement: `</${P}t></${P}run>${runOpen.replace(/\bcharPrIDRef="\d{1,10}"/, `charPrIDRef="${charPr}"`)}<${P}t>` })
+    splices.push({ start: e.at, end: e.at, replacement: `</${P}t></${P}run>${runOpen}<${P}t>` })
+  }
+  // 가른 자리가 hp:t 처음·끝이면 빈 run 이 남는다 — 지운다
+  return applySplices(clone, splices).replace(/<(\w+:)?run\b[^>]{0,512}><\1t><\/\1t><\/\1run>/g, "")
 }
 
 // ─── 패치 적용 ───────────────────────────────────────
@@ -158,10 +265,12 @@ export interface StructureEnv {
   inlineOf: (oi: number) => string
   /** 새 표 문단 XML (문단→표 변환과 같은 빌더) — 못 만들면 사유 */
   tableXml: (edited: MdUnit, outerParaPrId: number) => string | { reason: string }
+  /** 견본 복제의 강조 글자 모양 (header 를 못 읽으면 없음 — 견본 run 그대로) */
+  chars?: CharStyles
 }
 
 /** 편집 유닛 → 평문·서식 조각·헤딩 수준 */
-function editedInline(raw: string): { plain: string; segs: string[]; level?: number } {
+function editedInline(raw: string): { plain: string; segs: string[]; marks: boolean[]; level?: number } {
   let text = raw.split("\n").map(l => l.trim()).filter(Boolean).join(" ")
   const hm = /^(#{1,6})\s+/.exec(text)
   if (hm) text = text.slice(hm[0].length)
@@ -208,9 +317,9 @@ export function createStructureEditor(env: StructureEnv) {
     const top = topOf(oi)
     const xml = env.scans[m.para.sectionIndex].xml
     if (!top || top.start !== m.para.start || !isRemovableParagraph(xml.slice(top.start, top.end).replace(/\b(?:pageBreak|columnBreak)="1"/, ""))) return
-    const { plain, segs } = parseEmphasis(env.inlineOf(oi))
+    const { plain, segs, marks } = parseEmphasis(env.inlineOf(oi))
     if (!plain.trim()) return
-    donors.push({ cls: markerClass(plain, block.type === "heading" ? block.level : undefined), unitIdx: oi, sectionIndex: m.para.sectionIndex, para: m.para, plain, segs })
+    donors.push({ cls: markerClass(plain, block.type === "heading" ? block.level : undefined), unitIdx: oi, sectionIndex: m.para.sectionIndex, para: m.para, plain, segs, marks })
   })
   const donorOf = new Map(donors.map(d => [d.unitIdx, d]))
 
@@ -262,7 +371,7 @@ export function createStructureEditor(env: StructureEnv) {
       if (!donor) return null
       const top = topOf(oi)!
       if (touched(top.sectionIndex, top.start, top.end)) return null
-      const clone = cloneParagraphXml(env.scans[donor.sectionIndex].xml, donor, ed.plain, ed.segs)
+      const clone = cloneParagraphXml(env.scans[donor.sectionIndex].xml, donor, ed.plain, ed.segs, ed.marks, env.chars)
       if (clone === null) return null
       const xml = env.scans[top.sectionIndex].xml
       env.sectionSplices[top.sectionIndex].push({ start: top.start, end: top.end, replacement: keepBreaks(clone, xml.slice(top.start, xml.indexOf(">", top.start) + 1)) })
@@ -337,7 +446,7 @@ export function createStructureEditor(env: StructureEnv) {
         if (!ed.plain.trim()) return 0
         const donor = chooseDonor(markerClass(ed.plain, ed.level), at.near)
         if (!donor) return skip("서식을 빌릴 본문 문단이 없어 추가 미지원", undefined, edited.raw)
-        fragment = cloneParagraphXml(env.scans[donor.sectionIndex].xml, donor, ed.plain, ed.segs)
+        fragment = cloneParagraphXml(env.scans[donor.sectionIndex].xml, donor, ed.plain, ed.segs, ed.marks, env.chars)
         if (fragment === null) return skip("견본 문단 복제 실패 — 추가 미지원", undefined, edited.raw)
       }
       env.sectionSplices[at.sectionIndex].push({ start: at.pos, end: at.pos, replacement: fragment })

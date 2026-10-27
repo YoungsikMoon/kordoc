@@ -17,6 +17,8 @@ interface Tok {
   n?: number
   /** 짝을 찾은 표지 */
   paired?: boolean
+  /** 짝의 여는 쪽 */
+  opener?: boolean
   code?: boolean
 }
 
@@ -24,10 +26,11 @@ const ESCAPABLE = new Set(["~", "*", "_", "`", "|", "#", "<", "$", "\\"])
 const isWs = (c: string | undefined): boolean => c !== undefined && /\s/.test(c)
 
 /**
- * 마크다운 인라인 글 → { plain, segs }: plain 은 표지를 걷고 역이스케이프한 글, segs 는 서식이 같은 조각의 글(이으면 plain).
- * 표지는 짝이 맞고 글자에 붙은 것만 인정한다(여는 쪽 뒤·닫는 쪽 앞이 공백이 아님). 짝 없는 표지는 글자로 둔다("3 * 4").
+ * 마크다운 인라인 글 → { plain, segs, marks }: plain 은 표지를 걷고 역이스케이프한 글, segs 는 서식이 같은 조각의 글(이으면 plain),
+ * marks 는 조각마다 강조 표지(** · * · ~~ · <u>) 안인지. 표지는 짝이 맞고 글자에 붙은 것만 인정한다(여는 쪽 뒤·닫는 쪽 앞이
+ * 공백이 아님). 짝 없는 표지는 글자로 둔다("3 * 4").
  */
-export function parseEmphasis(text: string): { plain: string; segs: string[] } {
+export function parseEmphasis(text: string): { plain: string; segs: string[]; marks: boolean[] } {
   const toks: Tok[] = []
   const pushText = (s: string, code = false): void => {
     const last = toks[toks.length - 1]
@@ -76,6 +79,7 @@ export function parseEmphasis(text: string): { plain: string; segs: string[] } {
       || (t.kind === "star" && top.kind === "star" && top.n === t.n))
     if (canClose && matches) {
       top!.paired = true
+      top!.opener = true
       t.paired = true
       stack.pop()
       continue
@@ -85,20 +89,20 @@ export function parseEmphasis(text: string): { plain: string; segs: string[] } {
   }
 
   // 조각: 짝 맞은 표지가 서식 경계, 짝 없는 표지는 글자
-  const segs: string[] = []
-  let cur = ""
-  const cut = (): void => { if (cur) segs.push(cur); cur = "" }
+  const segs: string[] = [], marks: boolean[] = []
+  let cur = "", depth = 0
+  const cut = (): void => { if (cur) { segs.push(cur); marks.push(depth > 0) } cur = "" }
   for (const t of toks) {
-    if (t.kind !== "text" && t.paired) { cut(); continue }
-    if (t.code) { cut(); segs.push(t.text); continue }
+    if (t.kind !== "text" && t.paired) { cut(); depth += t.opener ? 1 : -1; continue }
+    if (t.code) { cut(); segs.push(t.text); marks.push(depth > 0); continue }
     cur += t.text
   }
   cut()
-  return { plain: segs.join(""), segs }
+  return { plain: segs.join(""), segs, marks }
 }
 
 /** 원문 글 raw 와 IR 평문 norm 맞대기: norm[i] 의 raw 위치. raw 의 여분 공백은 건너뛴다. 못 맞추면 null */
-function alignToRaw(raw: string, norm: string): number[] | null {
+export function alignToRaw(raw: string, norm: string): number[] | null {
   const pos: number[] = new Array(norm.length)
   let j = 0
   for (let i = 0; i < norm.length; i++) {
