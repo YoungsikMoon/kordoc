@@ -2,6 +2,20 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.13: OCR, PDF and agency packs · 2026-10-27
+
+Compared document by document against 4.24.12 with the same corpora and scorers across the full suite (rounds 132–138; 131, 139 and 140 rejected). The eight decreases are listed in the CHANGELOG (measurement exceptions): order changes inside false tables, soft hyphens deleted by the ground truth or reference extractors, and decorative heading order. Agency-pack reproduction comes from bench/pack-repro.mjs (leave-one-out packs, docs/agency-pack-en.md).
+
+| Metric | 4.24.12 | 4.24.13 |
+| --- | --- | --- |
+| OCR CER (fair · strict) | 0.02806 · 0.05913 | **0.02630 · 0.05740** |
+| OCR character recall · precision | 0.99141 · 0.99451 | **0.99155 · 0.99480** |
+| Degraded-input OCR CER (clean · blur · JPEG · scan) | 0.0429 · 0.0586 · 0.0460 · 0.0726 | **0.0409 · 0.0555 · 0.0457 · 0.0697** |
+| PDF text recall · precision · reading order | 0.99881 · 0.99677 · 0.99309 | **0.99883 · 0.99678 · 0.99312** |
+| ODL overall (default · best options) | 0.96370 · 0.97512 | **0.96374 · 0.97516** |
+| Agency-pack reproduction of unseen documents (Seoul plans · Gwangyang style 1 · Gwangyang notices) | plain preset 68.3% · 77.1% · 58.3% | **74.3% · 94.5% · 71.1%** |
+| PDF tables · statute annexes · HWPX · round trip · generation · rendering | — | unchanged |
+
 ## 4.24.12: OCR · 2026-10-27
 
 Compared document by document against 4.24.11 with the same corpora and scorers for OCR, degraded-input OCR and ODL OCR (rounds 121, 127–130). The full suite was rerun to confirm PDF text, PDF tables, statute annexes, HWPX, round trip, generation and rendering are unchanged. One exception is listed in the CHANGELOG (measurement exceptions).
