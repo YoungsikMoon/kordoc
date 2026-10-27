@@ -173,7 +173,7 @@ function defaultPara(text: string): string {
 
 function bodyPara(ctx: EmitCtx, text: string): string {
   const body = ctx.scan.protos.get("body")
-  return body ? fillParagraph(body, text) : defaultPara(text)
+  return body ? fillParagraph(body, text, { avoid: ctx.scan.emphasis }) : defaultPara(text)
 }
 
 function levelPara(ctx: EmitCtx, depth: number, text: string, glyph?: string): string {
@@ -183,7 +183,7 @@ function levelPara(ctx: EmitCtx, depth: number, text: string, glyph?: string): s
     const proto = k >= 0 && k <= 3 ? ctx.scan.protos.get(`L${k}` as RoleKey) : undefined
     if (!proto) continue
     if (k !== d) ctx.missing.add(`${GLYPH[d]} 항목`)
-    return fillParagraph(proto, text, { marker: true, glyph: glyph ?? (k === d ? undefined : GLYPH[d]) })
+    return fillParagraph(proto, text, { marker: true, glyph: glyph ?? (k === d ? undefined : GLYPH[d]), avoid: ctx.scan.emphasis })
   }
   ctx.missing.add(`${GLYPH[d]} 항목`)
   return bodyPara(ctx, `${glyph ?? GLYPH[d]} ${text}`)
@@ -193,7 +193,7 @@ function levelPara(ctx: EmitCtx, depth: number, text: string, glyph?: string): s
 function rolePara(ctx: EmitCtx, role: RoleKey, text: string): string {
   if (/^L[0-3]$/.test(role)) return levelPara(ctx, Number(role[1]), text)
   const proto = ctx.scan.protos.get(role)
-  return proto ? fillParagraph(proto, text, { marker: true }) : levelPara(ctx, 1, text)
+  return proto ? fillParagraph(proto, text, { marker: true, avoid: ctx.scan.emphasis }) : levelPara(ctx, 1, text)
 }
 
 /** 기호로 시작하는 문단(▶ 【 ⇒ …) — 같은 기호 원형이 있으면 그 서식 */
@@ -203,7 +203,7 @@ function symbolPara(ctx: EmitCtx, text: string): string | null {
   const proto = ctx.scan.protos.get(role)
   if (!proto) return null
   const ch = role.slice(4)
-  return fillParagraph(proto, text.replace(/^\s+/, "").slice(ch.length).trim(), { marker: true })
+  return fillParagraph(proto, text.replace(/^\s+/, "").slice(ch.length).trim(), { marker: true, avoid: ctx.scan.emphasis })
 }
 
 /** 장·참고 띠 — 첫 칸 번호, 가장 넓은 칸 제목, 나머지 칸 비움 */
@@ -393,37 +393,16 @@ function headBoxSplice(ctx: EmitCtx, proto: string, cell: CellInfo, title: strin
     const k = introSlots.indexOf(i)
     return k === introSlots.length - 1 ? intro.splice(0).join(" ") : intro.shift() ?? ""
   }
-  const replacement = paras.map((p, i) => { const t = text(i); return t === null ? p.xml : i === titleAt ? unshadedFill(ctx, p.xml, t) : fillParagraph(p.xml, t) }).join("")
+  const replacement = paras.map((p, i) => { const t = text(i); return t === null ? p.xml : fillParagraph(p.xml, t, { avoid: ctx.scan.emphasis }) }).join("")
   return { start: cell.paras[0].start, end: cell.paras[cell.paras.length - 1].end, replacement }
 }
 
-/**
- * 제목 줄 채우기 — 견본 제목 줄에서 일부 낱말에만 칠한 음영(형광펜) run 이 글자가 가장 많으면 새 제목 전체에 음영이 칠해졌다.
- * 그 문단에 음영 없는 run 이 있으면 그 글자 모양(글자 가장 많은 것)으로
- */
-function unshadedFill(ctx: EmitCtx, pXml: string, text: string): string {
-  const filled = fillParagraph(pXml, text)
-  const shaded = new Set([...ctx.headerXml.matchAll(/<hh:charPr\b[^>]{0,4096}>/g)]
-    .filter((m) => /\bshadeColor="(?!none"|#FFFFFF")[^"]+"/i.test(m[0])).map((m) => /\bid="(\d{1,10})"/.exec(m[0])?.[1] ?? ""))
-  const body = new RegExp(`<hp:run charPrIDRef="(\\d+)"><hp:t>${escapeRe(bodyText(text))}</hp:t>`).exec(filled)
-  if (!body || !shaded.has(body[1])) return filled
-  const p = elementAt(pXml, 0)!
-  let best = "", bestN = 0
-  for (const r of parsePara(pXml, p).runs) {
-    if (shaded.has(r.charPr)) continue
-    const n = r.parts.reduce((a, pt) => a + pt.toks.reduce((b, t) => b + (t.xml === null ? t.s.replace(/\s/g, "").length : 0), 0), 0)
-    if (n > bestN) { bestN = n; best = r.charPr }
-  }
-  return best ? filled.replace(body[0], body[0].replace(`charPrIDRef="${body[1]}"`, `charPrIDRef="${best}"`)) : filled
-}
-
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 
 /** 제목표 — 제목 칸(가장 큰 글자)에 제목, 담당 줄 칸에 ☎ 조각(없으면 비움) */
 function titleXml(ctx: EmitCtx, title: string, contact: string | null, box: HeadBoxLines | null = null): string {
   const proto = ctx.scan.protos.get("title")!
   const el = hostTable(proto)
-  if (!el) return fillParagraph(proto, title)
+  if (!el) return fillParagraph(proto, title, { avoid: ctx.scan.emphasis })
   const info = tableInfo(proto, el, ctx.scan.heights)
   const contactCells = info.cells.filter(isContactCell)
   const titleCell = info.cells.filter((c) => !contactCells.includes(c) && c.text).sort((a, b) => b.maxH - a.maxH)[0] ?? info.cells[0]
@@ -544,7 +523,7 @@ function summaryXml(ctx: EmitCtx, text: string): string {
   const proto = ctx.scan.protos.get("summary")
   const lines = text.split("\n").map((l) => plainInline(l.trim())).filter(Boolean)
   if (!proto) ctx.missing.add("요약 상자")
-  if (!proto) return ctx.scan.protos.get("ref") ? fillParagraph(ctx.scan.protos.get("ref")!, lines.join(" "), { marker: true }) : bodyPara(ctx, lines.join(" "))
+  if (!proto) return ctx.scan.protos.get("ref") ? fillParagraph(ctx.scan.protos.get("ref")!, lines.join(" "), { marker: true, avoid: ctx.scan.emphasis }) : bodyPara(ctx, lines.join(" "))
   const info = tableInfo(proto, hostTable(proto)!, ctx.scan.heights)
   return resetBreaks(fillCells(proto, [{ cell: info.cells[0], lines }]))
 }
@@ -559,7 +538,7 @@ function emitBody(ctx: EmitCtx, blocks: MdBlock[], head: { contact: string | nul
   if (title) out.push(protos.get("title") ? titleXml(ctx, plainInline(title), ctx.scan.contactInTitle ? head.contact : null, head.box ?? null) : levelPara(ctx, 0, plainInline(title)))
   if (head.sub) {
     const sub = protos.get("subtitle")
-    out.push(sub ? fillParagraph(sub, plainInline(head.sub)) : bodyPara(ctx, plainInline(head.sub)))
+    out.push(sub ? fillParagraph(sub, plainInline(head.sub), { avoid: ctx.scan.emphasis }) : bodyPara(ctx, plainInline(head.sub)))
   }
   if (head.contact && !(title && protos.get("title") && ctx.scan.contactInTitle)) out.push(contactXml(ctx, plainInline(head.contact)))
   // 장 띠가 없는 견본에서 ## 장을 □ 로 내렸으면 그 아래 항목을 한 단계 내린다 (명시 □ 부호를 쓴 원고는 그대로)
@@ -597,7 +576,7 @@ function emitBody(ctx: EmitCtx, blocks: MdBlock[], head: { contact: string | nul
       case "ref": {
         const text = plainInline(node.text)
         const ref = protos.get("ref")
-        out.push(ref ? fillParagraph(ref, text, { marker: true }) : bodyPara(ctx, `※ ${text}`))
+        out.push(ref ? fillParagraph(ref, text, { marker: true, avoid: ctx.scan.emphasis }) : bodyPara(ctx, `※ ${text}`))
         break
       }
       case "heading": out.push(levelPara(ctx, node.level - 3 + shift, plainInline(node.text))); break

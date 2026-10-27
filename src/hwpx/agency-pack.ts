@@ -371,7 +371,7 @@ export function guideExample(k: Pick<PackKindInfo, "roles" | "bandItem" | "conta
   const has = new Set(k.roles)
   const out: string[] = []
   if (has.has("title")) out.push("# 문서 제목")
-  if (k.headBox) out.push("도입 문장 (「사업명」의 참여자를 아래와 같이 모집합니다.)", "2026\\. ○. ○.", "○○○장")
+  if (k.headBox) out.push("- 제목 위 사업명 줄(견본에 있을 때) -", "도입 문장 (「사업명」의 참여자를 아래와 같이 모집합니다.)", "2026\\. ○. ○.", "○○○장")
   if (has.has("subtitle")) out.push("- 부제 -")
   if (has.has("contact") || k.contactInTitle) out.push("담당 : 홍길동 ☎ 000-0000")
   if (has.has("summary")) out.push("> 문서 목적을 한 문장으로")
@@ -515,10 +515,10 @@ function guideFor(name: string, manifest: PackManifest): string {
     "이 팩은 kordoc 견본 모드로 새 문서를 만든다: `kordoc generate 원고.md --pack 이팩.kpack` 또는 MCP generate_document 의 pack_path.",
     "원고는 아래 역할 규칙대로 쓴다. 견본에 없는 역할은 가까운 서식으로 대신하고 경고한다. 그림·각주·인라인 수식은 넣지 않는다.",
     "날짜처럼 숫자와 마침표로 시작하는 줄(\"2026. 3. 1.\")은 마크다운 번호 목록으로 읽힌다 — \"2026\\. 3. 1.\" 처럼 쓴다.",
-    "생성 때 나오는 표기·문체 지적(쌍점 띄어쓰기 등)은 참고용이다 — 기관 관행과 다르면 사용자에게 물어 정한다.", ""]
+    "생성 때 나오는 표기·문체 지적(쌍점 띄어쓰기 등)은 참고용이다 — 기관 관행과 다르면 사용자에게 물어 정한다. 공고문 도입 문장의 \"~합니다\" 처럼 문서 종류에 맞는 문체는 지적돼도 고치지 않는다. 날짜·요일이 맞지 않다는 지적(WEEKDAY_MISMATCH)은 사용자에게 꼭 확인한다.", ""]
   for (const [kind, k] of Object.entries(manifest.kinds)) {
     const low = k.agreement.map((a, i) => ({ a, i })).filter((x) => x.a < 0.5).map((x) => x.i + 1)
-    lines.push(`## 문서 종류: ${kind}`, "", `견본 ${k.samples}건 중 ${k.chosen + 1}번째를 대표로 씀 (역할별 다수결 서식과 가장 많이 맞는 견본).`)
+    lines.push(`## 문서 종류: ${kind}`, "", `견본 ${k.samples}건 중 ${k.chosen + 1}번째를 대표로 씀 (다수결 서식과 잘 맞는 견본들 가운데 다른 견본 글을 가장 잘 재현한 견본).`)
     if (low.length) lines.push(`다른 서식으로 보이는 견본: ${low.join("·")}번째 — 같은 종류 문서인지 확인하고, 아니면 종류를 나눠 다시 만들 것.`)
     if (k.drift.length) lines.push(`⚠ 비운 견본이 원 견본과 다르게 읽힘(${k.drift.join(", ")}) — 다른 견본을 더 넣어 다시 만들 것.`)
     lines.push("", "쓸 수 있는 역할:", "")
@@ -562,8 +562,13 @@ export async function buildAgencyPack(name: string, samples: PackSample[], into?
     // 다수결 상위 후보를 교차 재현 점수로 다시 줄 세운다(견본 3건 이상). 비운 견본이 원 견본과 같은 원형으로 다시 읽히는지도 확인 —
     // 어긋나면(제목 없이 요약 상자만 있는 견본 등 훑기 판정이 갈리는 꼴) 다음 견본을 쓴다. 다 어긋나면 가장 나은 견본을 쓰고 알린다
     const byVote = sigs.map((_, i) => i).sort((a, b) => pick.scores[b] - pick.scores[a] || (a === pick.index ? -1 : b === pick.index ? 1 : a - b))
-    const cross = list.length >= 3 ? await crossScores(list, byVote.slice(0, XVAL_CANDIDATES)) : new Map<number, number>()
-    const order = [...byVote.slice(0, XVAL_CANDIDATES)].sort((a, b) => (cross.get(b) ?? 0) - (cross.get(a) ?? 0) || byVote.indexOf(a) - byVote.indexOf(b)).concat(byVote.slice(XVAL_CANDIDATES))
+    // 다수결과 동떨어진 견본(일치도 60% 미만)은 교차 재현 후보에서 뺀다 — 견본이 적으면 교차 점수가 흔들려 그런 견본이 뽑히고,
+    // 그 견본만의 강조색이 역할 서식이 됐다(서울 방침서 4건 중 54% 견본이 대표 → □ 줄 전체 파랑)
+    const fit = (i: number) => pick.scores[i] / (pick.max || 1) >= 0.6
+    const pool = byVote.filter(fit).length ? byVote.filter(fit) : byVote
+    const cands = pool.slice(0, XVAL_CANDIDATES)
+    const cross = cands.length >= 2 && list.length >= 3 ? await crossScores(list, cands) : new Map<number, number>()
+    const order = [...cands].sort((a, b) => (cross.get(b) ?? 0) - (cross.get(a) ?? 0) || byVote.indexOf(a) - byVote.indexOf(b)).concat(byVote.filter((i) => !cands.includes(i)))
     let chosen = -1, scrub: Awaited<ReturnType<typeof scrubbedTemplate>> | null = null, drift: string[] = []
     for (const i of order) {
       const cand = await scrubbedTemplate(list[i], sigs[i])
@@ -583,7 +588,7 @@ export async function buildAgencyPack(name: string, samples: PackSample[], into?
     const denom = pick.max || 1
     manifest.kinds[kind] = {
       template: `kinds/${kind}.hwpx`, samples: list.length, chosen, roles, drift,
-      missing: EXPECTED.filter((r) => !roles.includes(r)),
+      missing: EXPECTED.filter((r) => !roles.includes(r) && !(r === "contact" && actual.contactInTitle)),
       agreement: pick.scores.map((s) => Math.round((s / denom) * 100) / 100),
       leftover: scrub!.leftover, images: scrub!.images, bandItem: actual.bandItem, contactInTitle: actual.contactInTitle, bareSyms: actual.bareSyms, headBox: actual.headBox,
     }
@@ -653,7 +658,7 @@ export function packSummary(m: PackManifest): string {
     if (low.length && k.samples > 2) out.push(`  ⚠ 다른 서식으로 보이는 견본(일치도 50% 미만): ${low.join("·")}번째 — 같은 종류 문서인지 확인`)
     if (k.drift.length) out.push(`  ⚠ 비운 견본이 원 견본과 다르게 읽힘(${k.drift.join(", ")}) — 이 역할은 견본과 다르게 나올 수 있다. 같은 종류 견본을 더 넣어 다시 만들 것`)
     if (k.leftover.length) out.push(`  ⚠ 비운 견본에 남은 글 ${k.leftover.length}개(머리말·꼬리말·고정 칸 글) — 남에게 주기 전에 확인: ${k.leftover.slice(0, 5).join(" / ")}`)
-    if (k.images) out.push(`  그림 ${k.images}개(로고 등) 포함 — 남에게 줄 때 사용 허락 확인`)
+    if (k.images) out.push(`  그림 ${k.images}개(로고·쪽 배경·띠 그림 등, 새 문서에 안 보이는 것도 포함) — 남에게 줄 때 사용 허락 확인`)
   }
   return out.join("\n")
 }

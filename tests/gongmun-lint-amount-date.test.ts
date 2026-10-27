@@ -55,3 +55,23 @@ describe("DATE_HYPHEN — 하이픈·ISO 날짜", () => {
     assert.ok(!rulesOf("2026. 7. 18. 개최").includes("DATE_HYPHEN"), "온점형은 대상 아님")
   })
 })
+
+describe("WEEKDAY_MISMATCH — 연도를 줄인 기간 끝 날짜", () => {
+  it("앞 날짜의 연·월을 이어받아 끝 날짜 요일을 본다", () => {
+    assert.equal(suggestOf("접수기간 : 2026. 11. 10.(화) ~ 11. 21.(금)", "WEEKDAY_MISMATCH"), "11. 21.(금) → 2026. 11. 21.(토)")
+    assert.equal(suggestOf("2026. 11. 10.(화)∼21.(토)", "WEEKDAY_MISMATCH"), undefined)
+    assert.equal(suggestOf("2026. 11. 10.(화)∼21.(금)", "WEEKDAY_MISMATCH"), "21.(금) → 2026. 11. 21.(토)")
+  })
+  it("해를 넘기는 기간·맞는 요일·연도를 쓴 끝 날짜는 그대로", () => {
+    assert.ok(!rulesOf("2026. 12. 29.(화)∼1. 2.(토)").includes("WEEKDAY_MISMATCH"))
+    assert.ok(!rulesOf("2026. 11. 9.(월)∼11. 20.(금)").includes("WEEKDAY_MISMATCH"))
+    assert.equal(rulesOf("2026. 12. 29.(화)∼2027. 1. 2.(토)").filter((r) => r === "WEEKDAY_MISMATCH").length, 0)
+  })
+})
+
+describe("DATE_NO_END_DOT — 차수·회차는 날짜가 아니다", () => {
+  it("\"2027. 3. 1차\" 는 3월 1일이 아니라 3월의 1차", () => {
+    assert.ok(!rulesOf("ㅇ 2027. 3. 1차 설치 착수").includes("DATE_NO_END_DOT"))
+    assert.ok(rulesOf("ㅇ 2027. 3. 1 설치 착수").includes("DATE_NO_END_DOT"))
+  })
+})

@@ -161,6 +161,8 @@ export interface FillOptions {
   glyph?: string
   /** 쪽·단 나눔을 원형대로 둔다 (참고 띠 — 새 쪽에서 시작) */
   keepBreak?: boolean
+  /** 새 글에 입히지 않을 강조 글자 모양(색·음영) — 원형 문단에 다른 run 이 있으면 그 글자 모양으로 (TemplateScan.emphasis) */
+  avoid?: ReadonlySet<string>
 }
 
 /** XML 1.0 이 허용하지 않는 비문자(U+FFFE·U+FFFF)와 짝 없는 대리 문자 — 한글이 파일을 못 연다 */
@@ -207,8 +209,9 @@ export function fillParagraph(pXml: string, text: string, opts: FillOptions = {}
   if (opts.glyph && mStart < 0) text = `${opts.glyph} ${text}`
   const objLimit = mStart >= 0 ? mStart : ws
 
-  // 본문 글자 모양 — 부호 뒤 글이 가장 많은 run (없으면 부호 run, 그것도 없으면 마지막 run)
-  let bodyCharPr = "", bestN = 0, markerCharPr = "", pos = 0
+  // 본문 글자 모양 — 부호 뒤 글이 가장 많은 run (없으면 부호 run, 그것도 없으면 마지막 run). 강조(색·음영) 아닌 run 이 있으면
+  // 그중에서 — 한 낱말에만 칠한 파랑·형광펜 run 이 글자가 가장 많으면 새 글 전체가 강조색이 됐다(서울 방침서 □ 줄·공고문 제목)
+  let bodyCharPr = "", bestN = 0, plainCharPr = "", plainN = 0, markerCharPr = "", pos = 0
   for (const run of m.runs) {
     let n = 0
     for (const part of run.parts) for (const tok of part.toks) {
@@ -218,7 +221,9 @@ export function fillParagraph(pXml: string, text: string, opts: FillOptions = {}
       }
     }
     if (n > bestN) { bestN = n; bodyCharPr = run.charPr }
+    if (n > plainN && !opts.avoid?.has(run.charPr)) { plainN = n; plainCharPr = run.charPr }
   }
+  if (plainCharPr) bodyCharPr = plainCharPr
   if (!bodyCharPr) bodyCharPr = markerCharPr || m.runs.at(-1)?.charPr || "0"
   const bodyRun = text ? `<hp:run charPrIDRef="${bodyCharPr}"><hp:t>${bodyText(text)}</hp:t></hp:run>` : `<hp:run charPrIDRef="${bodyCharPr}"/>`
 
@@ -377,6 +382,8 @@ export interface TemplateScan {
   contactInTitle: boolean
   /** 제목표 칸 하나가 제목·도입 문장·날짜·발신 명의를 담은 머리 상자다 (공고문) */
   headBox: boolean
+  /** 강조 글자 모양 — 검정 아닌 글자색 또는 음영 (fillParagraph avoid) */
+  emphasis: Set<string>
   /** 참고 띠 아래 첫 항목 문단의 역할 (견본 참고 쪽 항목 서식 — ▶ 등) */
   bandItem: RoleKey | null
   /** charPr id → 글자 크기 (HWPUNIT) */
@@ -561,5 +568,8 @@ export function scanTemplate(sectionXml: string, headerXml: string): TemplateSca
   if (clean !== undefined) set("table", clean)
   if (!protos.has("table")) for (const i of dataTables) set("table", i)
 
-  return { protos, head: secPr + ctrls.join(""), headCharPr, contactInTitle, headBox, bandItem, heights, aligns: paraAligns(headerXml) }
+  const emphasis = new Set([...headerXml.matchAll(/<hh:charPr\b[^>]{0,4096}>/g)]
+    .filter((m) => /\bshadeColor="(?!none"|#FFFFFF")[^"]+"/i.test(m[0]) || /\btextColor="(?!#000000"|none")[^"]+"/i.test(m[0]))
+    .map((m) => /\bid="(\d{1,10})"/.exec(m[0])?.[1] ?? ""))
+  return { protos, head: secPr + ctrls.join(""), headCharPr, contactInTitle, headBox, emphasis, bandItem, heights, aligns: paraAligns(headerXml) }
 }

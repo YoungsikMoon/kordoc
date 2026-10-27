@@ -122,6 +122,20 @@ function weekdayCheck(m: RegExpMatchArray): string | null {
   return right === m[4] ? null : `${m[0].trim()} → ${y}. ${mo}. ${d}.(${right})`
 }
 
+/**
+ * 기간 끝 날짜의 요일 — "2026. 11. 10.(화) ∼ 11. 21.(금)" 처럼 연도(와 달)를 줄인 끝 날짜는 앞 날짜의 연·월을 이어받아 본다.
+ * 끝 달이 앞 달보다 작으면 다음 해(12. 29.∼1. 2.)
+ */
+function weekdayRangeCheck(m: RegExpMatchArray): string | null {
+  const [y0, mo0] = [Number(m[1]), Number(m[2])]
+  const mo = m[3] ? Number(m[3]) : mo0, d = Number(m[4])
+  const y = mo < mo0 ? y0 + 1 : y0
+  const date = new Date(y, mo - 1, d)
+  if (date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d) return null
+  const right = WEEKDAYS[date.getDay()]
+  return right === m[5] ? null : `${m[3] ? `${mo}. ` : ""}${d}.(${m[5]}) → ${y}. ${mo}. ${d}.(${right})`
+}
+
 const HANGUL_DIGIT: Record<string, number> = { 일: 1, 이: 2, 삼: 3, 사: 4, 오: 5, 육: 6, 칠: 7, 팔: 8, 구: 9, 영: 0 }
 const HANGUL_SMALL: Record<string, number> = { 십: 10, 백: 100, 천: 1000 }
 const HANGUL_BIG: Record<string, number> = { 만: 1e4, 억: 1e8, 조: 1e12 }
@@ -159,7 +173,7 @@ const RULES: LintRule[] = [
   // (구청 실무자 결정 2026-10-21) — 날짜 바로 앞이 탭·점선(점·가운뎃점 2개 이상)·두 칸 이상 빈칸일 때만
   { code: "DATE_2DIGIT_YR", severity: "error", pattern: /(?<!\d)['’]\d{2}\.\s*\d/g, check: scheduleLineYear,
     message: "연도는 네 자리로 표기('24 ✕) — 일정 줄(탭·점선 뒤 날짜)은 허용", suggest: "예) 2025. 1. 6." },
-  { code: "DATE_NO_END_DOT", severity: "warning", pattern: /\b\d{4}\.\s\d{1,2}\.\s\d{1,2}(?!\s*[.\d(])/g,
+  { code: "DATE_NO_END_DOT", severity: "warning", pattern: /\b\d{4}\.\s\d{1,2}\.\s\d{1,2}(?!\s*[.\d(])(?![차회번호기])/g,
     message: "날짜의 '일' 다음에 마침표(.)를 찍어야 함", suggest: "예) 2025. 1. 6." },
   // 하이픈·ISO 날짜(2026-07-18) — 편람은 온점 구분만 인정. URL 경로·파일명·코드 안(앞뒤에 / = & ? # % . - 영숫자)은
   // 제외, 표 셀은 서식 기입란 관행이 섞여 건너뜀. 제안은 실제 변환값(0 패딩 제거)
@@ -216,6 +230,9 @@ const RULES: LintRule[] = [
     message: "기간·시각 범위는 물결표(∼)로", suggest: "예) 2026. 3. 1.∼6. 30., 14:00∼16:00" },
   { code: "WEEKDAY_MISMATCH", severity: "error", pattern: /(?<![\d.])(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.?\s*\(([월화수목금토일])\)/g,
     check: weekdayCheck, message: "날짜와 요일이 맞지 않음" },
+  { code: "WEEKDAY_MISMATCH", severity: "error",
+    pattern: /(?<![\d.])(\d{4})\.\s*(\d{1,2})\.\s*\d{1,2}\.?\s*\([월화수목금토일]\)\s*[∼~～\-–]\s*(?!\d{4}\.)(?:(\d{1,2})\.\s*)?(\d{1,2})\.?\s*\(([월화수목금토일])\)/g,
+    check: weekdayRangeCheck, message: "기간 끝 날짜와 요일이 맞지 않음(연도는 앞 날짜)" },
   { code: "TILDE_SPACE", severity: "warning", pattern: /(?<=[\d.)일월년시분’'])[ \t]+[∼~～]|[∼~～][ \t]+(?=[\d'’])/g,
     message: "물결표(∼) 앞뒤는 붙여 씀", suggest: "예) 2. 20.∼2. 24., 09:00∼18:00" },
   // 두음법칙 — 어두의 "년도·년간·년말…" 은 "연도·연간·연말" (숫자 뒤 '2026년도' 는 정상). 서식의

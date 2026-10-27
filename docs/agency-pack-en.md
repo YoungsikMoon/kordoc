@@ -35,8 +35,8 @@ Same scorer as the generation fidelity bench (`bench/gen-repro.mjs`). Every numb
 
 | Set | Manuscript | Plain report preset | **Agency pack** | Upper bound (own template) | Font/size/bold (preset → pack) |
 | --- | --- | --- | --- | --- | --- |
-| Seoul policy plans, 5 of 16 with manuscripts | hand-transcribed | 68.3% | **73.9%** | 79.5% | 53.5% → **75.1%** |
-| Gwangyang report style 1, 9 docs (from proposal #173) | same | 77.1% | **94.5%** | 95.4% | 38.8% → **85.3%** |
+| Seoul policy plans, 5 of 16 with manuscripts | hand-transcribed | 68.3% | **73.9%** | 80.0% | 53.5% → **75.1%** |
+| Gwangyang report style 1, 9 docs (from proposal #173) | same | 77.1% | **94.5%** | 95.4% | 38.8% → **85.9%** |
 | Gwangyang website notices, 4 docs (same form) | parsed by kordoc | 58.3% | **70.6%** | 74.4% | 24.8% → **54.2%** |
 
 Stripping is lossless for all 144 Seoul template × manuscript cases (the one template whose skeleton-stripped form drifts falls back to the masked form, which is byte-identical in output). The privacy check
