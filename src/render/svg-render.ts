@@ -136,7 +136,11 @@ function drawTable(tbl: Element, tx: number, ty: number, ctx: Ctx, depth: number
   const rowSum = new Map<number, { cover: number; w: number }>()
   for (const c of cells) { const r = rowSum.get(c.ra) ?? { cover: 0, w: 0 }; r.cover += c.cs; r.w += c.w; rowSum.set(c.ra, r) }
   const noExactRow = ![...rowSum.values()].some(r => r.cover === nCols && Math.abs(r.w - tblW) <= 2)
-  const colX = tableColumnBoundaries(colCons, nCols, tblW || undefined, noExactRow)
+  // 칸 간격(cellSpacing) — 표 너비 = 칸 너비 합 + 간격 × (열 + 1)인데(행정업무운영 편람 16행 표 255), 한컴 PDF 는 첫 칸을 표 왼끝에 붙이고
+  // 칸 사이에만 간격을 둔다(가장자리 몫은 오른쪽에 남는다). 열 경계는 간격을 뺀 너비로 풀고 칸마다 앞 칸 사이 간격만큼 민다 — 간격을 칸 너비에
+  // 나눠 섞으면 열마다 2.5pt 씩 왼쪽으로 밀렸다. 세로는 칸 위마다 간격(행 높이가 품는다)
+  const sp = num(tbl, "cellSpacing")
+  const colX = tableColumnBoundaries(colCons, nCols, (tblW && sp > 0 ? tblW - sp * (nCols + 1) : tblW) || undefined, noExactRow)
   // 행 높이는 쪽 프리패스(tableContPages)·재배치와 같은 모델 — 칸 간격(cellSpacing)도 행에 든다
   const rowH = measureTableRowHeights(tbl, ctx.extentMemo)
   const rowY: number[] = [0]
@@ -146,7 +150,7 @@ function drawTable(tbl: Element, tx: number, ty: number, ctx: Ctx, depth: number
   // 조각만 기록하고 경고한다. sourceId = hp:tbl id (IR 표와의 조인 키, #76)
   const tblH = rowY[nRows]
   if (ty + tblH > ctx.pageH + 100) warnOnce(ctx, "table-split", "페이지에 걸친 표 — 분할 지오메트리가 없어 시작 페이지 영역만 region 으로 기록")
-  const tblId = ctx.regions.add("table", bboxOf(ctx, tx, ty, colX[nCols], tblH), { sourceId: tbl.getAttribute("id") ?? undefined, parentId: parentId(ctx) })
+  const tblId = ctx.regions.add("table", bboxOf(ctx, tx, ty, colX[nCols] + (sp > 0 ? sp * (nCols + 1) : 0), tblH), { sourceId: tbl.getAttribute("id") ?? undefined, parentId: parentId(ctx) })
   emit(ctx, regionOpenTag(tblId, "table", pageNo(ctx)))
   ctx.parentStack.push(tblId)
 
@@ -167,7 +171,7 @@ function drawTable(tbl: Element, tx: number, ty: number, ctx: Ctx, depth: number
   while (ctx.pages.length <= Math.max(startPage, ...contPages)) ctx.pages.push([])
   // 1패스: 배경 → 2패스: 콘텐츠 → 3패스: 테두리 (테두리가 배경/콘텐츠 위)
   type CellGeom = { c: typeof cells[number]; page: number; x: number; y: number; w: number; h: number; pieces?: RowPiece[] }
-  const xw = (c: typeof cells[number]) => ({ x: tx + colX[c.ca], w: colX[Math.min(c.ca + c.cs, nCols)] - colX[c.ca] })
+  const xw = (c: typeof cells[number]) => ({ x: tx + colX[c.ca] + sp * c.ca, w: colX[Math.min(c.ca + c.cs, nCols)] - colX[c.ca] + sp * (c.cs - 1) })
   const geom: CellGeom[] = []
   for (const c of cells) {
     const pcs = plan[c.ra]
@@ -201,6 +205,8 @@ function drawTable(tbl: Element, tx: number, ty: number, ctx: Ctx, depth: number
   // 반복 머리 행은 이어진 쪽 표 위에 — 갈린 칸 안 표면 그 칸 내용 위(splitContMT)에서
   const contBase = depth !== 1 && ctx.splitContMT !== undefined ? ctx.splitContMT : ctx.geom.MT
   for (const page of contPages) for (const c of cells) if (c.ra < hdrRows) geom.push({ c, page, ...xw(c), y: contBase + num(findChildByLocalName(tbl, "outMargin"), "top") + rowY[c.ra], h: rowY[Math.min(c.ra + c.rs, nRows)] - rowY[c.ra] })
+  // 행 높이(measureTableRowHeights)는 칸 위 간격을 품고 마지막 행은 아래 간격까지 품는다 — 칸 틀은 그 간격을 뺀 자리
+  if (sp > 0) for (const g of geom) { g.y += sp; g.h -= sp + (g.c.ra + g.c.rs >= nRows ? sp : 0) }
   for (const g of geom) {
     ctx.page = g.page
     const bf = g.c.bfId != null ? ctx.styles.borderFill.get(g.c.bfId) : undefined
