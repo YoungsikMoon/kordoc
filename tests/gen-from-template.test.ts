@@ -243,6 +243,18 @@ describe("generate --template (부서 서식 견본)", () => {
     assert.ok(w.some((x) => x.includes("1번째 구역")))
   })
 
+  it("공고문 머리 상자 — 제목·도입·날짜·발신 명의를 한 칸에 담은 칸은 담당 칸이 아니라 제목표, 원고 머리 줄을 자리대로 채운다", async () => {
+    const head = "| 2026년 견본 사업 참여자 모집 공고<br>견본 사업의 참여자를 아래와 같이 모집합니다.<br>2026. 5. 20.<br>견본기관장 |\n| --- |\n"
+    const tplMd = `${head}\n□ 견본 항목\n\nㅇ 견본 세부\n`
+    const t = await markdownToHwpx(tplMd)
+    const scan = scanTemplate(await entry(t, "Contents/section0.xml"), await entry(t, "Contents/header.xml"))
+    assert.ok(scan.protos.has("title") && !scan.protos.has("contact") && scan.headBox, [...scan.protos.keys()].join(","))
+    const out = await markdownToHwpx("# 새 사업 참여자 모집 공고\n\n새 사업의 참여자를 모집합니다.\n\n2026\\. ○. ○.\n\n새기관장\n\n□ 새 항목\n", { template: t })
+    const cell = /<hp:tc\b[\s\S]*?<\/hp:tc>/.exec(await entry(out, "Contents/section0.xml"))![0]
+    const lines = [...cell.matchAll(/<hp:p\b[\s\S]*?<\/hp:p>/g)].map((m) => [...m[0].matchAll(/<hp:t>([^<]*)<\/hp:t>/g)].map((x) => x[1]).join(""))
+    assert.deepEqual(lines, ["새 사업 참여자 모집 공고", "새 사업의 참여자를 모집합니다.", "2026. ○. ○.", "새기관장"])
+  })
+
   it("표지 구역 + 본문 구역 견본 — 역할 원형이 많은 본문 구역을 훑는다 (결재 문서 표지·점검표 다음 본문)", async () => {
     // 표지 구역: 구역 정의 + 제목 한 줄. 본문 구역: 합성 견본 본문 전체
     const tops = topLevelParagraphs(tplSec)

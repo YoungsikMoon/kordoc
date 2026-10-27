@@ -39,7 +39,7 @@ Same scorer as the generation fidelity bench (`bench/gen-repro.mjs`). Every numb
 | Gwangyang report style 1, 9 docs (from proposal #173) | same | 77.1% | **94.5%** | 95.4% | 38.8% → **85.3%** |
 | Gwangyang website notices, 4 docs (same form) | parsed by kordoc | 58.3% | **70.6%** | 74.4% | 24.8% → **54.2%** |
 
-Stripping is lossless for 135 of 144 Seoul template × manuscript cases (the other 9 come from one template the self-check flags). The privacy check
+Stripping is lossless for all 144 Seoul template × manuscript cases (the one template whose skeleton-stripped form drifts falls back to the masked form, which is byte-identical in output). The privacy check
 (names, phone numbers and 8-character body fragments of the sample must not appear in the pack) passes for all 16 Seoul and 9 Gwangyang samples.
 Reproduce with `node bench/pack-repro.mjs [--dir=<folder>] [--privacy]`.
 

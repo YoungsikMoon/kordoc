@@ -33,6 +33,7 @@ import { KordocError } from "../utils.js"
 import { loadTemplateZip, packTemplateZip } from "./template-zip.js"
 import {
   scanTemplate, fillParagraph, tableInfo, hostTable, elementAt, resetBreaks, lineRole, removeElements, dropNonChars, bodyText,
+  isContactCell, isHeadBox, parsePara, paraPlain, paraMaxH,
   BAND_LABEL_RE, SUBTITLE_RE, type TemplateScan, type CellInfo, type TableInfo, type RoleKey,
 } from "./template-scan.js"
 
@@ -366,15 +367,68 @@ function undistribute(ctx: EmitCtx, pXml: string): string {
   return pXml.replace(/\bparaPrIDRef="\d+"/, `paraPrIDRef="${alt}"`)
 }
 
+/** 머리 상자에 넣을 원고 머리 줄 — 제목 다음, 첫 장·항목 앞의 부호 없는 줄들 */
+export interface HeadBoxLines { sub: string | null; intro: string[]; date: string | null; sender: string | null }
+
+/**
+ * 머리 상자(공고문 제목·도입 문장·날짜·발신 명의를 한 칸에 담은 꼴) 채우기 — 견본 칸 문단을 자리로 나눠(가장 큰 글자 = 제목, 그 앞 =
+ * 부제, 날짜 꼴 = 날짜, 날짜 뒤 마지막 글 = 발신 명의, 나머지 = 도입) 원고 줄을 같은 자리 문단 서식으로 넣는다. 빈 문단(간격)은 그대로,
+ * 원고에 없는 자리는 비운다
+ */
+function headBoxSplice(ctx: EmitCtx, proto: string, cell: CellInfo, title: string, box: HeadBoxLines | null) {
+  const paras = cell.paras.map((p) => { const xml = proto.slice(p.start, p.end), m = parsePara(proto, p); return { xml, text: paraPlain(m).trim(), h: paraMaxH(m, ctx.scan.heights) } })
+  const live = paras.map((p, i) => ({ ...p, i })).filter((p) => p.text)
+  const titleAt = live.reduce((a, b) => (b.h > a.h ? b : a), live[0]).i
+  const dateAt = live.find((p) => p.i > titleAt && /\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\./.test(p.text))?.i ?? -1
+  const senderAt = dateAt >= 0 ? live.filter((p) => p.i > dateAt).at(-1)?.i ?? -1 : -1
+  const intro = [...(box?.intro ?? [])]
+  const introSlots = live.filter((p) => p.i > titleAt && p.i !== dateAt && p.i !== senderAt).map((p) => p.i)
+  const text = (i: number): string | null => {
+    if (!paras[i].text) return null // 간격 문단은 견본 그대로
+    if (i === titleAt) return title
+    if (i < titleAt) return box?.sub?.replace(/^-\s*|\s*-$/g, "") ?? ""
+    if (i === dateAt) return box?.date ?? ""
+    if (i === senderAt) return box?.sender ?? ""
+    // 도입 자리가 원고 도입 줄보다 적으면 마지막 자리에 나머지를 잇는다
+    const k = introSlots.indexOf(i)
+    return k === introSlots.length - 1 ? intro.splice(0).join(" ") : intro.shift() ?? ""
+  }
+  const replacement = paras.map((p, i) => { const t = text(i); return t === null ? p.xml : i === titleAt ? unshadedFill(ctx, p.xml, t) : fillParagraph(p.xml, t) }).join("")
+  return { start: cell.paras[0].start, end: cell.paras[cell.paras.length - 1].end, replacement }
+}
+
+/**
+ * 제목 줄 채우기 — 견본 제목 줄에서 일부 낱말에만 칠한 음영(형광펜) run 이 글자가 가장 많으면 새 제목 전체에 음영이 칠해졌다.
+ * 그 문단에 음영 없는 run 이 있으면 그 글자 모양(글자 가장 많은 것)으로
+ */
+function unshadedFill(ctx: EmitCtx, pXml: string, text: string): string {
+  const filled = fillParagraph(pXml, text)
+  const shaded = new Set([...ctx.headerXml.matchAll(/<hh:charPr\b[^>]{0,4096}>/g)]
+    .filter((m) => /\bshadeColor="(?!none"|#FFFFFF")[^"]+"/i.test(m[0])).map((m) => /\bid="(\d{1,10})"/.exec(m[0])?.[1] ?? ""))
+  const body = new RegExp(`<hp:run charPrIDRef="(\\d+)"><hp:t>${escapeRe(bodyText(text))}</hp:t>`).exec(filled)
+  if (!body || !shaded.has(body[1])) return filled
+  const p = elementAt(pXml, 0)!
+  let best = "", bestN = 0
+  for (const r of parsePara(pXml, p).runs) {
+    if (shaded.has(r.charPr)) continue
+    const n = r.parts.reduce((a, pt) => a + pt.toks.reduce((b, t) => b + (t.xml === null ? t.s.replace(/\s/g, "").length : 0), 0), 0)
+    if (n > bestN) { bestN = n; best = r.charPr }
+  }
+  return best ? filled.replace(body[0], body[0].replace(`charPrIDRef="${body[1]}"`, `charPrIDRef="${best}"`)) : filled
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
 /** 제목표 — 제목 칸(가장 큰 글자)에 제목, 담당 줄 칸에 ☎ 조각(없으면 비움) */
-function titleXml(ctx: EmitCtx, title: string, contact: string | null): string {
+function titleXml(ctx: EmitCtx, title: string, contact: string | null, box: HeadBoxLines | null = null): string {
   const proto = ctx.scan.protos.get("title")!
   const el = hostTable(proto)
   if (!el) return fillParagraph(proto, title)
   const info = tableInfo(proto, el, ctx.scan.heights)
-  const isContact = (c: CellInfo) => /☎|담당자?\s*[:：]/.test(c.text) || DATE_IN_RE.test(c.text)
-  const contactCells = info.cells.filter(isContact)
+  const contactCells = info.cells.filter(isContactCell)
   const titleCell = info.cells.filter((c) => !contactCells.includes(c) && c.text).sort((a, b) => b.maxH - a.maxH)[0] ?? info.cells[0]
+  // 다른 칸은 손대지 않는다(제목 칸 하나만 쓰는 견본과 같이)
+  if (isHeadBox(titleCell)) return resetBreaks(applySplices(proto, [headBoxSplice(ctx, proto, titleCell, title, box)]))
   // 담당 줄 행의 나머지 칸도 담당 줄 칸 (날짜만 든 칸 등)
   const contactRows = new Set(contactCells.map((c) => c.row))
   const slots = info.cells.filter((c) => c !== titleCell && contactRows.has(c.row)).sort((a, b) => a.row - b.row || a.col - b.col)
@@ -496,13 +550,13 @@ function summaryXml(ctx: EmitCtx, text: string): string {
 }
 
 /** 마크다운 블록 → 견본 원형 문단들 */
-function emitBody(ctx: EmitCtx, blocks: MdBlock[], head: { contact: string | null; sub: string | null }): string[] {
+function emitBody(ctx: EmitCtx, blocks: MdBlock[], head: { contact: string | null; sub: string | null; box?: HeadBoxLines | null }): string[] {
   const outline = buildOutline(blocks, { gaejosik: true, consumeTitle: true, summaryFromQuote: true, listUnderMarker: true, keepMarkers: true })
   const out: string[] = []
   const { protos } = ctx.scan
   const title = outline.title
   if (title && !protos.get("title")) ctx.missing.add("제목표")
-  if (title) out.push(protos.get("title") ? titleXml(ctx, plainInline(title), ctx.scan.contactInTitle ? head.contact : null) : levelPara(ctx, 0, plainInline(title)))
+  if (title) out.push(protos.get("title") ? titleXml(ctx, plainInline(title), ctx.scan.contactInTitle ? head.contact : null, head.box ?? null) : levelPara(ctx, 0, plainInline(title)))
   if (head.sub) {
     const sub = protos.get("subtitle")
     out.push(sub ? fillParagraph(sub, plainInline(head.sub)) : bodyPara(ctx, plainInline(head.sub)))
@@ -587,12 +641,29 @@ function emitBody(ctx: EmitCtx, blocks: MdBlock[], head: { contact: string | nul
  * 제목 바로 뒤 담당 줄(☎·담당:)·작성일(날짜만 든 줄)·부제(- … -)를 빼 둔다 — 아웃라인 전에 빼야 뒤 인용문이 요약 상자가 된다.
  * 항목 부호로 시작하는 줄("□ 2026. 1. 1.부터 시행")과 날짜로 시작하는 본문 줄은 본문이다.
  */
-function takeHeadLines(blocks: MdBlock[]): { blocks: MdBlock[]; contact: string | null; sub: string | null } {
+function takeHeadLines(blocks: MdBlock[], headBox = false): { blocks: MdBlock[]; contact: string | null; sub: string | null; box: HeadBoxLines | null } {
   const h1 = blocks.findIndex((b) => b.type === "heading" && (b.level ?? 1) === 1)
   let contact: string | null = null, date: string | null = null, sub: string | null = null
   const drop = new Set<number>()
   // 제목(#)이 없는 원고는 첫 줄이 날짜·☎ 로 시작해도 본문이다 — 담당 줄로 빼지 않는다
-  if (h1 < 0) return { blocks, contact, sub }
+  if (h1 < 0) return { blocks, contact, sub, box: null }
+  // 머리 상자 견본 — 제목 다음 첫 장·항목·표 앞의 부호 없는 줄을 도입·날짜(○ 자리표시 포함)·발신 명의로
+  if (headBox) {
+    const lines: string[] = []
+    for (let k = h1 + 1; k < blocks.length && lines.length < 8; k++) {
+      const b = blocks[k]
+      if (b.type !== "paragraph" && !(b.type === "list_item" && /^\d{4}$/.test(String(b.marker ?? "").replace(/\.$/, "")))) break
+      const t = plainInline((b.type === "list_item" ? `${b.marker} ${b.text ?? ""}` : b.text ?? "").trim())
+      if (lineRole(t) !== null && !/^\d/.test(t)) break
+      lines.push(t)
+      drop.add(k)
+    }
+    const si = lines.findIndex((l) => SUBTITLE_RE.test(l) && l.length < 60)
+    const di = lines.findIndex((l) => /^\(?\d{4}\.\s*[\d○]{1,2}\.\s*[\d○]{1,2}\.?/.test(l))
+    const sender = di >= 0 && di < lines.length - 1 && lines.at(-1)!.length <= 40 ? lines.at(-1)! : null
+    const intro = lines.filter((_, i) => i !== di && i !== si && !(sender !== null && i === lines.length - 1))
+    return { blocks: blocks.filter((_, i) => !drop.has(i)), contact, sub: null, box: { sub: si >= 0 ? lines[si] : null, intro, date: di >= 0 ? lines[di] : null, sender } }
+  }
   for (let k = h1 + 1; k < blocks.length && k <= h1 + 4; k++) {
     const b = blocks[k]
     if (b.type !== "paragraph" && b.type !== "list_item" && b.type !== "blockquote") break
@@ -608,7 +679,7 @@ function takeHeadLines(blocks: MdBlock[]): { blocks: MdBlock[]; contact: string 
   }
   // 따로 쓴 작성일은 담당 줄 앞 조각으로 — "|" 구분 원고면 같은 구분으로 잇는다
   if (date) contact = !contact ? date : /[|｜]/.test(contact) ? `${date} | ${contact}` : `${date} ${contact}`
-  return { blocks: blocks.filter((_, i) => !drop.has(i)), contact, sub }
+  return { blocks: blocks.filter((_, i) => !drop.has(i)), contact, sub, box: null }
 }
 
 /** 덧붙일 header 정의 — 가운데 정렬 문단 모양(균등 분할 대신)·기본 표 테두리. 기존 정의는 순서·id 그대로 */
@@ -671,7 +742,7 @@ export async function markdownToHwpxFromTemplate(markdown: string, template: Uin
   if (imageOnly.length) warnings.push(`template: 그림 ${imageOnly.length}개는 견본 모드에서 넣지 않습니다`)
   const inlineImages = parsed.filter((b) => !imageOnly.includes(b) && /!\[[^\]]*\]\([^)]*\)/.test(b.text ?? "")).length
   if (inlineImages) warnings.push(`template: 글 줄 안 그림 ${inlineImages}개는 대체 글(alt)로 넣었습니다`)
-  const { blocks, contact, sub } = takeHeadLines(parsed.filter((b) => !imageOnly.includes(b)))
+  const { blocks, contact, sub, box } = takeHeadLines(parsed.filter((b) => !imageOnly.includes(b)), scan.headBox)
 
   const maxId = (re: RegExp) => maxOf([...headerXml.matchAll(re)].map((m) => Number(m[1])))
   const fallbackBfId = maxId(/<hh:borderFill\b[^>]{0,4096}?\bid="(\d{1,10})"/g) + 1
@@ -689,7 +760,7 @@ export async function markdownToHwpxFromTemplate(markdown: string, template: Uin
   beginInlineDoc(new Map())
   let paras: string[]
   try {
-    paras = emitBody(ctx, blocks, { contact, sub })
+    paras = emitBody(ctx, blocks, { contact, sub, box })
   } finally {
     endInlineDoc()
   }

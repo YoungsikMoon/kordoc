@@ -128,6 +128,11 @@ describe("기관팩 (agency pack)", () => {
     assert.match(md, /## 참고1 참고 제목\n\n\\\* 참고 항목/)
   })
 
+  it("골격 원고 — 공고문 머리 상자 견본이면 도입·날짜·발신 명의 줄까지 (빠지면 비운 판이 머리 상자로 안 읽힌다)", () => {
+    const md = skeletonMarkdown({ protoRoles: ["title", "chapter"], bandItem: null, contactInTitle: false, headBox: true })
+    assert.match(md, /^# 문서 제목\n\n도입 문장\n\n2026\\\. 1\. 1\.\n\n○○○장\n/)
+  })
+
   it("사람 정보 지우기 — 직위 낱말·쌍점·☎ 틀은 두고 이름·번호·직위 앞 부서 이름은 지운다", () => {
     assert.equal(scrubPeople("<hp:t>정책기획팀장:김  철☎1234 담당:박보람☎1235</hp:t>"), "<hp:t>팀장:○○○☎○○○○ 담당:○○○☎○○○○</hp:t>")
     assert.equal(scrubPeople("<hp:t>(○○재단) 경영기획본부장 :최가람☎123-4567</hp:t>"), "<hp:t>본부장 :○○○☎○○○○</hp:t>")

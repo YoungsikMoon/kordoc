@@ -274,7 +274,7 @@ export interface TableInfo { el: El; rowCnt: number; colCnt: number; width: numb
 const attrNum = (tag: string, name: string): number => Number(new RegExp(`\\b${name}="(-?\\d{1,10})"`).exec(tag)?.[1] ?? 0)
 
 /** run 글자 크기 최댓값 (글 있는 run 만) */
-function paraMaxH(m: ParaModel, heights: Map<string, number>): number {
+export function paraMaxH(m: ParaModel, heights: Map<string, number>): number {
   let max = 0
   for (const r of m.runs) {
     if (r.parts.some((p) => p.toks.some((t) => t.xml === null && /\S/.test(t.s)))) max = Math.max(max, heights.get(r.charPr) ?? 0)
@@ -323,6 +323,21 @@ export function hostTable(xml: string): El | null {
 
 // ─── 역할 판정 ─────────────────────────────────────────
 
+/**
+ * 담당 줄 칸 — 첫 글 줄이 전화 기호·담당·작성 일자로 시작하는 칸. 칸 글 어디든 날짜가 있다고 담당 칸으로 보면, 제목·도입 문장·날짜·
+ * 발신 명의를 한 칸에 담은 공고문 머리 상자가 담당 칸이 되어 제목표가 사라졌다
+ */
+export function isContactCell(c: CellInfo): boolean {
+  const first = c.text.split("\n").map((l) => l.trim()).find(Boolean) ?? ""
+  return CONTACT_RE.test(first)
+}
+
+/** 머리 상자 — 글 있는 문단 셋 이상, 첫 줄은 담당 줄이 아니고 칸 안에 작성 일자가 있다 (공고문 제목·도입·날짜·발신 명의) */
+export function isHeadBox(c: CellInfo): boolean {
+  const lines = c.text.split("\n").map((l) => l.trim()).filter(Boolean)
+  return lines.length >= 3 && !isContactCell(c) && /\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\./.test(c.text)
+}
+
 /** 참고 띠 첫 칸 — "참고1" "<참고 2>" "별첨" "붙임" */
 export const BAND_LABEL_RE = /^[<＜\[［]?(참고|별첨|붙임)\d*[>＞\]］]?$/u
 /** 장 띠 첫 칸 — "Ⅰ" "[Ⅱ]" "1." "가." */
@@ -360,6 +375,8 @@ export interface TemplateScan {
   headCharPr: string
   /** 제목표 안에 담당 줄 칸이 있다 */
   contactInTitle: boolean
+  /** 제목표 칸 하나가 제목·도입 문장·날짜·발신 명의를 담은 머리 상자다 (공고문) */
+  headBox: boolean
   /** 참고 띠 아래 첫 항목 문단의 역할 (견본 참고 쪽 항목 서식 — ▶ 등) */
   bandItem: RoleKey | null
   /** charPr id → 글자 크기 (HWPUNIT) */
@@ -465,7 +482,7 @@ export function scanTemplate(sectionXml: string, headerXml: string): TemplateSca
     return {
       xml, tbl, plain, objs: objs.length, style: styleKey(xml, model),
       role: objs.length ? null : lineRole(plain),
-      maxH: tbl ? maxOf(tbl.cells.filter((c) => !CONTACT_RE.test(c.text)).map((c) => c.maxH)) : paraMaxH(model, heights),
+      maxH: tbl ? maxOf(tbl.cells.filter((c) => !isContactCell(c)).map((c) => c.maxH)) : paraMaxH(model, heights),
       drawing: objs.some((o) => DRAWING.has(o.name)) || tbls.length > 1,
     }
   })
@@ -484,18 +501,19 @@ export function scanTemplate(sectionXml: string, headerXml: string): TemplateSca
   const head = infos.slice(0, bodyStart).map((x, i) => ({ x, i })).filter(({ x }) => !x.drawing && (x.tbl ? x.tbl.cells.some((c) => c.text) : x.plain.trim()))
   let titleIdx = -1
   for (const { x, i } of head) if (x.maxH > 0 && (titleIdx < 0 || x.maxH > infos[titleIdx].maxH)) titleIdx = i
-  let contactInTitle = false
+  let contactInTitle = false, headBox = false
   if (titleIdx >= 0) {
     set("title", titleIdx)
     const t = infos[titleIdx].tbl
-    contactInTitle = !!t && t.cells.some((c) => CONTACT_RE.test(c.text))
+    contactInTitle = !!t && t.cells.some(isContactCell)
+    headBox = !!t && t.cells.some(isHeadBox)
   }
   const subIdx = head.find(({ x, i }) => i !== titleIdx && !x.tbl && x.objs === 0 && SUBTITLE_RE.test(mapPuaText(x.plain.trim())))?.i ?? -1
   if (subIdx >= 0) set("subtitle", subIdx)
   const summaryIdx = head.find(({ x, i }) => i > titleIdx && x.tbl?.rowCnt === 1 && x.tbl.colCnt === 1 && !CONTACT_RE.test(x.tbl.cells[0]?.text ?? "") && !isTocBox(infos, i))?.i ?? -1
   if (summaryIdx >= 0) set("summary", summaryIdx)
   const contactIdx = contactInTitle ? -1
-    : head.find(({ x, i }) => i !== titleIdx && i !== summaryIdx && i !== subIdx && CONTACT_RE.test(x.tbl ? x.tbl.cells.map((c) => c.text).join(" ") : x.plain))?.i ?? -1
+    : head.find(({ x, i }) => i !== titleIdx && i !== summaryIdx && i !== subIdx && (x.tbl ? x.tbl.cells.some(isContactCell) : CONTACT_RE.test(x.plain)))?.i ?? -1
   if (contactIdx >= 0) set("contact", contactIdx)
 
   const dataTables: number[] = []
@@ -543,5 +561,5 @@ export function scanTemplate(sectionXml: string, headerXml: string): TemplateSca
   if (clean !== undefined) set("table", clean)
   if (!protos.has("table")) for (const i of dataTables) set("table", i)
 
-  return { protos, head: secPr + ctrls.join(""), headCharPr, contactInTitle, bandItem, heights, aligns: paraAligns(headerXml) }
+  return { protos, head: secPr + ctrls.join(""), headCharPr, contactInTitle, headBox, bandItem, heights, aligns: paraAligns(headerXml) }
 }

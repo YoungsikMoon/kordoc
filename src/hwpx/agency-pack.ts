@@ -101,6 +101,8 @@ export interface TemplateRoles {
   bandItem: RoleKey | null
   /** 제목표 안에 담당 칸이 있다 */
   contactInTitle: boolean
+  /** 제목표가 공고문 머리 상자다 (제목·도입 문장·날짜·발신 명의) */
+  headBox: boolean
   /** 글 없이 기호만 있는 기호 원형 ("*" 한 글자 문단) — 골격 원고도 기호만 써야 같은 역할로 다시 읽힌다 */
   bareSyms: string[]
   /** 본문 구역에서 역할마다 문단 수 — 대표 고르기 무게 (ㅇ·- 문단이 대부분이고 제목·담당은 한 줄) */
@@ -134,7 +136,7 @@ export async function templateRoleStyles(hwpx: Uint8Array | ArrayBuffer): Promis
     counts.set(r, (counts.get(r) ?? 0) + 1)
   }
   for (const r of ["title", "contact", "summary", "chapter"] as RoleKey[]) if (scan.protos.has(r)) counts.set(r, Math.max(1, counts.get(r) ?? 0))
-  return { roles, protoRoles: [...scan.protos.keys()], bandItem: scan.bandItem, contactInTitle: scan.contactInTitle, bareSyms, counts }
+  return { roles, protoRoles: [...scan.protos.keys()], bandItem: scan.bandItem, contactInTitle: scan.contactInTitle, headBox: scan.headBox, bareSyms, counts }
 }
 
 const key = (s: RoleStyle) => JSON.stringify([s.font, s.pt, s.bold, s.align, s.lineSpacing])
@@ -284,6 +286,8 @@ export interface PackKindInfo {
   bandItem: RoleKey | null
   contactInTitle: boolean
   bareSyms: string[]
+  /** 제목표가 공고문 머리 상자 — 원고 머리 줄(도입 문장·날짜·발신 명의)이 그 칸에 들어간다 */
+  headBox?: boolean
 }
 
 export interface PackManifest {
@@ -318,10 +322,12 @@ function rolePrefix(r: RoleKey): string {
  * 역할을 한 번씩 쓰는 골격 원고 — 대표 견본으로 이 원고를 생성한 결과가 팩 견본(원문 글이 빠진 판)이 된다. 다시 훑었을 때
  * 같은 원형이 잡히도록 견본 상태(제목표 안 담당 칸·참고 띠 아래 항목 역할)도 그대로 옮긴다
  */
-export function skeletonMarkdown(t: Pick<TemplateRoles, "protoRoles" | "bandItem" | "contactInTitle"> & { bareSyms?: string[] }): string {
+export function skeletonMarkdown(t: Pick<TemplateRoles, "protoRoles" | "bandItem" | "contactInTitle"> & { bareSyms?: string[]; headBox?: boolean }): string {
   const has = new Set(t.protoRoles)
   // 제목은 견본에 있을 때만 — 없는 견본에 제목을 넣으면 다시 훑을 때 요약 상자가 제목 자리로 잡힌다
   const out: string[] = has.has("title") ? ["# 문서 제목"] : []
+  // 머리 상자는 도입·날짜·발신 명의까지 채워야 다시 읽어도 머리 상자다(날짜가 빠지면 머리 상자로 안 읽혀 제목이 칸 첫 간격 문단에 들어갔다)
+  if (t.headBox) out.push("도입 문장", "2026\\. 1. 1.", "○○○장")
   if (has.has("subtitle")) out.push("- 부제 -")
   // 결재선 칸(과장·팀장·담당)은 원고에 없는 직위 칸에 견본 글(실명·전화)을 남긴다(gen-from-template matchRoleSlots). 견본 칸에
   // 없는 직위(센터장)를 섞어 칸을 차례로 다시 채우게 한다 — 남는 칸은 비고, 견본 이름은 남지 않는다
@@ -356,14 +362,16 @@ function roleDrift(a: TemplateRoles, b: TemplateRoles): string[] {
   for (const [r, st] of a.roles) { const o = b.roles.get(r); if (o && key(o) !== key(st)) out.push(`${roleName(r)}: 서식이 달라짐`) }
   if (a.bandItem !== b.bandItem) out.push("참고 띠 아래 항목 서식이 달라짐")
   if (a.contactInTitle !== b.contactInTitle) out.push("제목표 안 담당 칸이 달라짐")
+  if (a.headBox !== b.headBox) out.push(a.headBox ? "공고문 머리 상자가 빠짐" : "공고문 머리 상자가 생김")
   return out
 }
 
 /** 작성 요령의 원고 예 — 팩이 가진 역할만, 사람이 읽을 꼴로(골격 원고와 달리 빠진 단계·합계 행·가짜 직위를 넣지 않는다) */
-export function guideExample(k: Pick<PackKindInfo, "roles" | "bandItem" | "contactInTitle" | "bareSyms">): string {
+export function guideExample(k: Pick<PackKindInfo, "roles" | "bandItem" | "contactInTitle" | "bareSyms" | "headBox">): string {
   const has = new Set(k.roles)
   const out: string[] = []
   if (has.has("title")) out.push("# 문서 제목")
+  if (k.headBox) out.push("도입 문장 (「사업명」의 참여자를 아래와 같이 모집합니다.)", "2026\\. ○. ○.", "○○○장")
   if (has.has("subtitle")) out.push("- 부제 -")
   if (has.has("contact") || k.contactInTitle) out.push("담당 : 홍길동 ☎ 000-0000")
   if (has.has("summary")) out.push("> 문서 목적을 한 문장으로")
@@ -494,11 +502,11 @@ async function maskedTemplate(sample: Uint8Array): Promise<{ data: Uint8Array; l
 /** 작성 요령 — 에이전트가 이 팩으로 원고를 쓸 때 읽는다 */
 function guideFor(name: string, manifest: PackManifest): string {
   const ROLE_DOC: Partial<Record<RoleKey, string>> = {
-    title: "`# 제목` — 첫 줄. 견본 제목표에 들어간다",
+    title: "`# 제목` — 첫 줄. 견본 제목표에 들어간다(머리 상자 견본이면 그 아래 도입 문장 → 날짜 → 발신 명의 줄도 같은 상자에)",
     subtitle: "제목 다음 `- 부제 -` 줄 — 부제",
     contact: "제목 다음 담당 줄(`담당 : 홍길동 ☎ 1234` 처럼 ☎ 또는 '담당:' 포함) — 견본 담당 칸",
     summary: "제목 다음 `> 요약 한 문장` — 견본 요약 상자",
-    chapter: "`## 장 제목` — 견본 장 띠(번호는 Ⅰ Ⅱ … 자동)",
+    chapter: "`## 장 제목` — 견본 장 띠(번호는 견본 꼴대로 1·2·3 / 가·나·다 / Ⅰ·Ⅱ 자동)",
     L0: "`□ 항목` — 1단계", L1: "`ㅇ 항목` — 2단계 (견본의 ○·ㅇ 부호를 따른다)", L2: "`- 항목` — 3단계", L3: "`· 항목` — 4단계",
     ref: "`※ 참고` — 참고 문구", body: "부호 없는 문단 — 견본 본문 문단",
     table: "GFM 표 — 견본 표 서식(머리행·본문·합계 행)", band: "`## 참고1 제목` — 견본 참고 띠, 그 아래 항목은 견본 참고 쪽 서식",
@@ -577,7 +585,7 @@ export async function buildAgencyPack(name: string, samples: PackSample[], into?
       template: `kinds/${kind}.hwpx`, samples: list.length, chosen, roles, drift,
       missing: EXPECTED.filter((r) => !roles.includes(r)),
       agreement: pick.scores.map((s) => Math.round((s / denom) * 100) / 100),
-      leftover: scrub!.leftover, images: scrub!.images, bandItem: actual.bandItem, contactInTitle: actual.contactInTitle, bareSyms: actual.bareSyms,
+      leftover: scrub!.leftover, images: scrub!.images, bandItem: actual.bandItem, contactInTitle: actual.contactInTitle, bareSyms: actual.bareSyms, headBox: actual.headBox,
     }
     templates.set(kind, scrub!.data)
     for (const data of list) manifest.sources.push({ kind, sha256: createHash("sha256").update(data).digest("hex") })
@@ -639,8 +647,10 @@ export function packSummary(m: PackManifest): string {
   for (const [kind, k] of Object.entries(m.kinds)) {
     out.push(`- ${kind}: 견본 ${k.samples}건 중 ${k.chosen + 1}번째를 대표로 · 역할 ${k.roles.length}개`)
     if (k.missing.length) out.push(`  없는 역할(가까운 서식으로 대신): ${k.missing.map(roleName).join(", ")}`)
+    if (k.samples > 1) out.push(`  견본별 일치도(다수결 서식과 맞는 비율): ${k.agreement.map((a, i) => `${i + 1}번 ${Math.round(a * 100)}%`).join(" · ")}`)
+    if (k.headBox) out.push("  공고문 머리 상자: 있음 — `# 제목` 다음 줄에 도입 문장·날짜·발신 명의를 차례로 쓴다")
     const low = k.agreement.map((a, i) => ({ a, i })).filter((x) => x.a < 0.5).map((x) => x.i + 1)
-    if (low.length && k.samples > 2) out.push(`  ⚠ 다른 서식으로 보이는 견본: ${low.join("·")}번째 — 같은 종류 문서인지 확인`)
+    if (low.length && k.samples > 2) out.push(`  ⚠ 다른 서식으로 보이는 견본(일치도 50% 미만): ${low.join("·")}번째 — 같은 종류 문서인지 확인`)
     if (k.drift.length) out.push(`  ⚠ 비운 견본이 원 견본과 다르게 읽힘(${k.drift.join(", ")}) — 이 역할은 견본과 다르게 나올 수 있다. 같은 종류 견본을 더 넣어 다시 만들 것`)
     if (k.leftover.length) out.push(`  ⚠ 비운 견본에 남은 글 ${k.leftover.length}개(머리말·꼬리말·고정 칸 글) — 남에게 주기 전에 확인: ${k.leftover.slice(0, 5).join(" / ")}`)
     if (k.images) out.push(`  그림 ${k.images}개(로고 등) 포함 — 남에게 줄 때 사용 허락 확인`)
