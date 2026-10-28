@@ -38,6 +38,7 @@ import {
   parseCharacterDict,
 } from "./models.js"
 import { arrowGlyph, edgeTrim, leadingBullet, tallInkCount, grayCrop, inkBounds, inkStats, leaderRuns, leadingTriangle, leadingRing, splitRowBands } from "./line-split.js"
+import type { InkStats } from "./line-split.js"
 import { restoreGlyphs, trimInklessEnds } from "./glyph-restore.js"
 import { dropNestedFragments, isDotFragment, joinLeaderItems, restoreBulletItems, restoreSymbols } from "./postprocess.js"
 import { bandBoxes, splitBoxAtCellRules, splitBoxAtRowRules, lineCrop, type Box, REC_HEIGHT } from "./crop.js"
@@ -119,6 +120,8 @@ const TALL_RATIO = 1.5
 const ROTATE_RATIO = 3
 /** 이웃 줄 끝자락을 지운 crop 이 원본 crop 을 이기려면 넘어야 할 신뢰도 차 (recognizePage 주석) */
 const KEEP_MARGIN = 0.06
+/** 두 줄로 갈라 다시 읽은 줄(recognizePage 재시도)을 받을 신뢰도 하한 */
+const RETRY_SCORE = 0.9
 /** 리더로 볼 최소 점 수 — 말줄임표 "…"(3점)보다 많이. 목차 쪽번호 박스가 무는 점은 코퍼스 실측 4~9개가 대부분 */
 const LEADER_MIN_DOTS = 4
 /** 리더 앞 조각 crop 을 리더 안쪽으로 더 무는 폭 (박스 높이 배수, recognizePage 주석) */
@@ -276,6 +279,28 @@ export function rowHeadBoxes(rgba: Uint8Array, width: number, items: OcrItem[]):
     out.push({ x: Math.max(0, minX - pad), y: Math.max(0, minY - pad), w: maxX - minX + 1 + 2 * pad, h: maxY - minY + 1 + 2 * pad })
   }
   return out
+}
+
+/**
+ * 두 줄 상자의 가운데 빈 행 — 높이 30~70% 안에서 잉크가 폭 2% 이하인 행이 이어진 구간 중 가운데에 가장 가까운 것 [시작, 끝). 세로 괘선
+ * (높이 85% 이상 잉크인 열)은 세지 않는다. splitRowBands 는 띠 잉크 폭을 글자 크기로 보아(세로쓰기 칸) 가로로 긴 두 줄을 한 띠로 합친다
+ */
+export function midBlankRow(gray: Uint8Array, w: number, h: number, ink: InkStats): [number, number] | null {
+  if (h < 24) return null
+  const isInk = (v: number) => (ink.darkInk ? v <= ink.threshold : v > ink.threshold)
+  const colInk = new Uint32Array(w)
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (isInk(gray[y * w + x])) colInk[x]++
+  const blank = (y: number) => { let n = 0; for (let x = 0; x < w; x++) if (colInk[x] < h * 0.85 && isInk(gray[y * w + x])) n++; return n <= Math.max(1, w * 0.02) }
+  let best: [number, number] | null = null
+  for (let y = Math.floor(h * 0.3); y < Math.ceil(h * 0.7); y++) {
+    if (!blank(y)) continue
+    let a = y, b = y + 1
+    while (a > 0 && blank(a - 1)) a--
+    while (b < h && blank(b)) b++
+    if (!best || Math.abs((a + b) / 2 - h / 2) < Math.abs((best[0] + best[1]) / 2 - h / 2)) best = [a, b]
+    y = b
+  }
+  return best
 }
 
 /**
@@ -618,6 +643,8 @@ export class OcrEngine {
     })
 
     let items: OcrItem[] = []
+    /** 신뢰도에 걸려 버린 상자 — 줄 띠가 둘 이상이면 띠마다 다시 읽는다(아래) */
+    const retry: Box[] = []
     for (const r of best.values()) {
       const { job, confidence, stepPx } = r
       const { text: read, steps } = tuning.postprocess && job.rot === 0 ? trimInklessEnds(rgba, width, job.box, r.text, r.steps, stepPx) : r
@@ -673,6 +700,7 @@ export class OcrEngine {
       }
       if (tuning.postprocess && isDotFragment(text)) continue
       if (confidence < tuning.textScore) {
+        if (tuning.postprocess && job.rot === 0 && job.join === undefined && !job.footer) retry.push(job.box)
         if (stats) {
           stats.droppedLowConf++
           stats.dropped?.push({ text, ...this.itemBox(rgba, width, job.box, tuning), confidence })
@@ -687,6 +715,29 @@ export class OcrEngine {
       const item = { text, ...this.itemBox(rgba, width, job.box, tuning), confidence }
       if (job.rot === 0) rememberOcrTextGaps(item, findOcrTextGaps(rgba, width, job.box, read, text, steps, stepPx))
       items.push(item)
+    }
+    // 두 줄을 한 상자로 잡아 인식이 무너진 표 칸 — 상자가 넓어 세로로 긴 상자 가르기(splitTall)에 안 걸린다(여수 인원표 "산 단 환 경 /
+    // 관 리 과" 가 "살다까" 로 읽혀 버려짐). 버려질 상자만 가운데 빈 행에서 두 줄로 갈라 다시 읽어 신뢰도를 넘는 줄을 받는다
+    if (retry.length) {
+      const subs: Box[] = []
+      for (const b of retry) {
+        const gray = grayCrop(rgba, width, b)
+        const cut = midBlankRow(gray, b.w, b.h, inkStats(gray))
+        // 가로 글줄만 — 좁은 세로쓰기 조직도 칸("중앙노동위원회")의 두 글자 조각("원회")은 순서가 섞여 들어갔다(web068)
+        if (cut && b.w >= 3 * Math.max(cut[0], b.h - cut[1])) subs.push({ ...b, h: cut[0] }, { ...b, y: b.y + cut[1], h: b.h - cut[1] })
+      }
+      // 이미 읽힌 아이템과 반 넘게 겹치는 줄은 뺀다 — 검출기가 두 줄 상자와 아랫줄 상자를 함께 내 "봉림동" 이 두 번 들어갔다(창원 계획)
+      const overlap = (a: Box, o: OcrItem) => Math.max(0, Math.min(a.x + a.w, o.x + o.w) - Math.max(a.x, o.x)) * Math.max(0, Math.min(a.y + a.h, o.y + o.h) - Math.max(a.y, o.y))
+      for (let k = subs.length - 1; k >= 0; k--) if (subs[k].h < 8 || items.some(o => overlap(subs[k], o) * 2 > subs[k].w * subs[k].h)) subs.splice(k, 1)
+      const res = subs.length ? await this.recognizeJobs(rgba, width, subs.map((box, k) => ({ box, rot: 0 as const, group: k })), tuning.recBatch) : []
+      subs.forEach((box, k) => {
+        const r = res[k]
+        // 문턱은 본 인식보다 높게 — 그림 속 작은 글("e-learning" → "eleanig" 0.79)이 붙었다(나라배움터 계획)
+        if (!r || r.confidence < RETRY_SCORE) return
+        const text = restoreSymbols(restoreGlyphs(rgba, width, box, r.text, r.steps, r.stepPx).trim())
+        // 글자·숫자가 있어야 — 장식 띠를 "---" 로 읽었다(경기 학교 매뉴얼 머리)
+        if (/[\p{L}\p{N}]/u.test(text)) items.push({ text, ...this.itemBox(rgba, width, box, tuning), confidence: r.confidence })
+      })
     }
     const leaderEnds = new Map<OcrItem, { lead: boolean; trail: boolean }>()
     for (const j of joins) {

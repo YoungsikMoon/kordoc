@@ -1,6 +1,7 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { closingParens, footerInkBox, placeholderSquares, rowHeadBoxes, rowHeadDashes, rowTailBoxes } from "../src/ocr/engine.js"
+import { closingParens, footerInkBox, midBlankRow, placeholderSquares, rowHeadBoxes, rowHeadDashes, rowTailBoxes } from "../src/ocr/engine.js"
+import { inkStats } from "../src/ocr/line-split.js"
 
 const W = 400, H = 600
 function page(): Uint8Array {
@@ -115,6 +116,28 @@ describe("rowHeadBoxes — 줄 머리 장 번호", () => {
     assert.equal(rowHeadBoxes(page(true), W6, row).length, 0)
     assert.equal(rowHeadBoxes(page(false), W6, [{ ...row[0], text: "Overview" }]).length, 0)
     assert.equal(rowHeadBoxes(page(false), W6, [...row, { text: "Ⅱ.", x: 58, y: 12, w: 24, h: 24, confidence: 1 }]).length, 0)
+  })
+})
+
+describe("midBlankRow — 두 줄 상자 가운데 빈 행", () => {
+  const W7 = 120, H7 = 60
+  function crop(gapInk: boolean): Uint8Array {
+    const g = new Uint8Array(W7 * H7).fill(255)
+    const rect = (x0: number, y0: number, x1: number, y1: number) => { for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) g[y * W7 + x] = 0 }
+    for (let x = 10; x < 110; x += 8) rect(x, 6, x + 3, 26) // 윗줄 글자 획
+    for (let x = 10; x < 90; x += 8) rect(x, 34, x + 3, 54) // 아랫줄
+    rect(2, 0, 4, 60) // 칸 세로 테두리 — 세지 않는다
+    if (gapInk) rect(40, 26, 44, 34) // 두 줄을 잇는 획
+    return g
+  }
+  it("두 줄 사이 빈 행 구간을 낸다", () => {
+    const g = crop(false)
+    assert.deepEqual(midBlankRow(g, W7, H7, inkStats(g)), [26, 34])
+  })
+  it("빈 행이 없거나 낮은 상자는 null", () => {
+    const g = crop(true)
+    assert.equal(midBlankRow(g, W7, H7, inkStats(g)), null)
+    assert.equal(midBlankRow(g.subarray(0, W7 * 20), W7, 20, inkStats(g.subarray(0, W7 * 20))), null)
   })
 })
 
