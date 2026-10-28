@@ -106,19 +106,19 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 
 ## Validation
 
-**4.22.14 verification · 2026-10-19** (render layout, PDF text, PDF tables and OCR: 4.24.14 · 2026-10-28). Results use fixed corpora and reference criteria.
+**4.22.14 verification · 2026-10-19** (render layout: 4.24.14; PDF text, PDF tables and OCR: 4.24.15 · 2026-10-28). Results use fixed corpora and reference criteria.
 
 | Target | Population | Result |
 | --- | --- | --- |
 | HWPX | 2,424 documents · 10,342 tables | Table structure match **10,342/10,342 · 100%** |
 | HWP 5.x ↔ HWPX | 1,130 pairs · 4,315 tables | Paired-document table structure match **100%** |
-| PDF text | 744 pairs | Character recall **99.883%** · precision **99.678%** · reading order **99.312%** · word-boundary F1 **99.066%** |
+| PDF text | 744 pairs | Character recall **99.883%** · precision **99.678%** · reading order **99.312%** · word-boundary F1 **99.067%** |
 | PDF tables | 708 pairs · 2,331 tables | Detection **99.83%** · structure match **98.24%** · cell F1 **0.9919** |
 | HWPX reflow | 25,187 multiline paragraphs (12 folders) | All line starts match **24,941/25,187 · 99.02%** |
 | Nested PDF tables (text layer) | 29 documents · 101 tables | Structure and cell content **101/101 · 100%** |
 | Statute annexes | 272 documents · 346 tables | HWP **346/346**, PDF **342/346 · 98.84%** |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage **99.80%** |
-| OCR | 53 documents · 102 pages · 67 tables | CER **0.0260** · character recall **99.19%** · table structure **26/67** |
+| OCR | 53 documents · 102 pages · 67 tables | CER **0.0255** · character recall **99.23%** · table structure **26/67** |
 | opendataloader-bench | 200 PDF documents | Overall **0.964** with defaults · **0.939** with OCR off |
 | HWPX render layout (4.24.14) | Hancom PDF pairs · 90,840 text runs · 4,107 images | Text position (±1.5pt) **87,643 · 96.5%** · image position (±2pt) **4,019 · 97.9%** |
 
@@ -126,15 +126,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.14](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.14)** · 2026-10-28
+Latest release: **[4.24.15](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.15)** · 2026-10-28
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.15 | OCR: form placeholder boxes □□-□□□, leading table-of-contents dashes and lone trailing page numbers missed by the detector, large ■ bullets, liter sign ℓ, small ring 。, leading middle dots buried under the line above, hallucinated slash cells · PDF: joining two-line paragraphs in widely spaced Chinese and Japanese text | OCR CER 0.0260 → **0.0255** · character recall 99.19% → **99.23%** · 8 of 9 degraded-input sets improved (clean 0.0405 → **0.0397**; noise 0.0485 → 0.0486) · PDF word-boundary F1 99.066% → **99.067%** |
 | 4.24.14 | Rendering: cell positions in tables with `cellSpacing` · OCR: 「 read as a space or quote, page numbers missed by the detector, leading ○ before Latin acronyms or read as C, ring-only cells ○, diamond bullets ◆·◇·◈, far closing paren in form cells | Rendered text position 87,577 → **87,643** · OCR CER 0.0263 → **0.0260** · all 9 degraded-input sets improved (clean 0.0409 → **0.0405**) |
 | 4.24.13 | Agency packs (`.kpack`): build a style pack from a few of an agency's own documents and write new documents in that style · OCR: borderless-table column order and widely spread justified words, stroke fragments inside a read glyph box, leading □ outside the line box, period on the start date of ~ ranges, phone sign ☎ · PDF and HWP: Hancom soft hyphens shown as visible hyphens (minus signs in change columns) · patch added-paragraph emphasis style and render overlap of grown tables (#175) | Agency-pack reproduction of unseen documents: Seoul 68.3% → **74.3%** · Gwangyang 77.1% → **94.5%** · OCR CER 0.0281 → **0.0263** · all 9 degraded-input sets improved (clean 0.0429 → **0.0409**) |
 | 4.24.12 | OCR: org-chart connector lines kept as rulings (department/team boxes read by column), missing date period before weekday, table-of-contents leader specks, arrow shapes ⇨·➔·▶, 」 read as a comma | OCR CER 0.0306 → **0.0281** · character recall 99.12% → **99.14%** · all 9 degraded-input sets improved (clean 0.0475 → **0.0429**) |
 | 4.24.11 | OCR: detection boxes split at table cell and row boundaries, date commas, 前/現 before titles · Rendering: page-number font size · Generation: Seoul policy-plan title spacing and summary alignment | OCR CER 0.0310 → **0.0306** · character recall 99.10% → **99.12%** · rendered text position 87,546 → **87,577** · generation fidelity 0.806 → **0.807** |
-| 4.24.10 | Security: zod and fast-uri in the demo lockfile, government GitLab mirror restored (Java SDK `kordoc-pom.xml`) · OCR: leading ▣, ❐ and ‣ bullets, Roman numerals read as `\|`, date-final periods · PDF: vertical-writing 、。, gradient backgrounds taken as rules, CJK–Latin autospacing | OCR CER 0.0313 → **0.0310** · character recall 99.06% → **99.10%** · all 9 degraded-input variants improved (scan 0.0734 → **0.0730**) · PDF word-boundary F1 99.064% → **99.066%** |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 
