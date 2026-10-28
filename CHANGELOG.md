@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- OCR: 짧은 목차 리더 "··"("서면결의 가능 여부 ·· 18", 비영리법인 FAQ·농진청 성과계획 목차) — 점 두세 개는 리더 가르기(넷 이상)에 안 걸리고 모델이 버렸다. 줄 끝 쪽 번호(숫자 1~3자) 바로 앞에 안 읽힌 같은 꼴 점만 늘어서 있으면 그 점들을 넣는다. OCR CER .02546 → .02532.
+
 ## [4.24.15] - 2026-10-28
 
 ### Fixed

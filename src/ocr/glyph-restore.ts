@@ -197,6 +197,17 @@ function gaps({ chars, cx, gray, w, h, ink }: Ctx) {
   const pitch = d.length >= 2 ? d.sort((a, b) => a - b)[d.length >> 1] : bandH
   const nearTo = (g: { x0: number; x1: number }) => (i: number) => Math.abs(cx(i) - (g.x0 + g.x1) / 2) <= Math.max(pitch * 0.45, (g.x1 - g.x0) / 2 + 1)
   const loose = glyphs.filter(g => /^[\u00b7.]/.test(g.mark) && !live.some(nearTo(g)))
+  // 짧은 목차 리더 — 점 두세 개("가능 여부 ·· 18")는 리더 가르기(넷 이상)에 안 걸리고 모델이 버렸다. 줄 끝 쪽 번호(숫자 1~3자) 바로 앞,
+  // 안 읽힌 같은 꼴 점만 늘어서 있으면 그 점들을 앞 글자 뒤에 넣는다
+  const tail = [...live].reverse().findIndex(i => !/^\d$/.test(chars[i]))
+  if (tail >= 1 && tail <= 3 && tail < live.length) {
+    const prev = live[live.length - 1 - tail], num = live[live.length - tail]
+    const run = loose.filter(g => (g.x0 + g.x1) / 2 > cx(prev) && (g.x0 + g.x1) / 2 < cx(num))
+    // 작은 점 꼴("·\u0001")도 같은 가운뎃점 — 첫 글자로 견준다. 늘어선 점은 아래 루프가 리더로 보고 건너뛴다
+    const mark = run[0]?.mark[0]
+    if (run.length >= 2 && run.length <= 3 && run.every(g => g.mark[0] === mark) && /^[가-힣?)]$/.test(chars[prev]) && !glyphs.some(g => !run.includes(g) && (g.x0 + g.x1) / 2 > cx(prev) && (g.x0 + g.x1) / 2 < cx(num)))
+      chars[prev] += " " + mark!.repeat(run.length) + " "
+  }
   for (const g of glyphs.sort((a, b) => a.x0 - b.x0)) {
     const mid = (g.x0 + g.x1) / 2
     const near = nearTo(g)
