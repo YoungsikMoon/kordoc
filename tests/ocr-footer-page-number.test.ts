@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { closingParens, footerInkBox, midBlankRow, placeholderSquares, rowHeadBoxes, rowHeadDashes, rowTailBoxes } from "../src/ocr/engine.js"
+import { closingParens, footerInkBox, joinGapLeaders, midBlankRow, placeholderSquares, rowHeadBoxes, rowHeadDashes, rowTailBoxes } from "../src/ocr/engine.js"
 import { inkStats } from "../src/ocr/line-split.js"
 
 const W = 400, H = 600
@@ -116,6 +116,27 @@ describe("rowHeadBoxes — 줄 머리 장 번호", () => {
     assert.equal(rowHeadBoxes(page(true), W6, row).length, 0)
     assert.equal(rowHeadBoxes(page(false), W6, [{ ...row[0], text: "Overview" }]).length, 0)
     assert.equal(rowHeadBoxes(page(false), W6, [...row, { text: "Ⅱ.", x: 58, y: 12, w: 24, h: 24, confidence: 1 }]).length, 0)
+  })
+})
+
+describe("joinGapLeaders — 상자 사이 리더로 갈린 목차 줄", () => {
+  const W8 = 400, H8 = 40
+  function page(dots: boolean): Uint8Array {
+    const rgba = new Uint8Array(W8 * H8 * 4).fill(255)
+    // 잉크 40 — 0/255 두 값뿐이면 Otsu 문턱이 0 이 되어 성분이 안 잡힌다
+    const rect = (x0: number, y0: number, x1: number, y1: number) => {
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const p = (y * W8 + x) * 4; rgba[p] = rgba[p + 1] = rgba[p + 2] = 40 }
+    }
+    rect(10, 8, 60, 32); rect(340, 8, 350, 32) // 제목·쪽 번호 글자
+    if (dots) for (let x = 70; x < 330; x += 10) rect(x, 28, x + 3, 31) // 리더 점
+    return rgba
+  }
+  const row = () => [{ text: "개요", x: 10, y: 8, w: 50, h: 24, confidence: 1 }, { text: "2", x: 340, y: 8, w: 10, h: 24, confidence: 1 }]
+  it("틈을 리더 점이 덮으면 탭으로 이은 한 아이템", () => {
+    assert.deepEqual(joinGapLeaders(page(true), W8, row()).map(i => i.text), ["개요\t2"])
+  })
+  it("틈이 비어 있으면 그대로", () => {
+    assert.deepEqual(joinGapLeaders(page(false), W8, row()).map(i => i.text), ["개요", "2"])
   })
 })
 

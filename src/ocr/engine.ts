@@ -239,6 +239,41 @@ export function rowTailBoxes(rgba: Uint8Array, width: number, items: OcrItem[]):
 }
 
 /**
+ * 상자 사이 리더로 갈린 목차 줄 — 잡음·흐림 판에서 리더 점이 끊기면 검출기가 [제목] [쪽 번호] 두 상자를 내고, 쪽 번호 열이 클러스터 표를
+ * 불러 목차를 열 단위로 섞었다(제안요청서 목차 잡음 판, 원본 판은 리더까지 한 상자라 "제목 … 2"). 숫자만 든 아이템의 같은 줄 왼쪽 이웃과의
+ * 틈(줄 높이 3배 이상)을 양쪽 줄 높이만큼 넓혀 잘라 리더 점 무리(line-split leaderRuns, 점 4개+)가 틈의 60% 넘게 덮으면 한 아이템으로 잇는다
+ */
+export function joinGapLeaders(rgba: Uint8Array, width: number, items: OcrItem[]): OcrItem[] {
+  const gone = new Set<OcrItem>()
+  const sameLine = (a: OcrItem, b: OcrItem) => Math.abs(a.y + a.h / 2 - (b.y + b.h / 2)) <= Math.max(a.h, b.h) / 2
+  // 리더 점 조각만 읽힌 아이템("·", "…:")은 이웃으로 보지 않고, 틈 안에 있으면 리더로 지운다
+  const junk = (o: OcrItem) => /^[\s.:\u00b7\u2022\u2026]+$/u.test(o.text)
+  for (const num of [...items].sort((a, b) => a.x - b.x)) {
+    if (gone.has(num) || !/^[\s.:\u00b7\u2026]*\d{1,4}$/u.test(num.text)) continue
+    let left: OcrItem | null = null
+    for (const o of items) if (o !== num && !gone.has(o) && !junk(o) && sameLine(o, num) && o.x + o.w <= num.x + 2 && (!left || o.x + o.w > left.x + left.w)) left = o
+    if (!left || /\u2026/.test(left.text) || !/[가-힣A-Za-z]/.test(left.text)) continue
+    const h = Math.max(left.h, num.h), g0 = left.x + left.w, g1 = num.x
+    if (g1 - g0 < h * 3) continue
+    // 위아래로도 줄 높이 0.25배 넓힌다 — 띠 높이만큼 큰 글자 성분은 괘선으로 빠진다(components)
+    const pad = Math.round(h * 0.25), y = Math.max(0, Math.min(left.y, num.y) - pad), x = Math.max(0, Math.round(g0 - h))
+    const box = { x, y, w: Math.min(width, Math.round(g1 + h)) - x, h: Math.min(Math.floor(rgba.length / 4 / width), Math.max(left.y + left.h, num.y + num.h) + pad) - y }
+    const gray = grayCrop(rgba, width, box)
+    const runs = leaderRuns(gray, box.w, box.h, inkStats(gray), LEADER_MIN_DOTS)
+    const cover = runs.reduce((k, [a, b]) => k + Math.max(0, Math.min(b, g1 - box.x) - Math.max(a, g0 - box.x)), 0)
+    if (cover < (g1 - g0) * 0.6) continue
+    for (const o of items) if (junk(o) && sameLine(o, num) && o.x >= g0 - 2 && o.x + o.w <= g1 + 2) gone.add(o)
+    // 탭으로 잇는다 — 따로 남은 두 아이템도 줄 묶기에서 탭으로 붙었고 텍스트층도 목차 탭 리더를 탭으로 준다. 순서만 바로잡는다
+    left.text = left.text.trimEnd() + "\t" + num.text.replace(/^[\s.:\u00b7\u2026]+/u, "")
+    const x2 = Math.max(left.x + left.w, num.x + num.w), y2 = Math.max(left.y + left.h, num.y + num.h)
+    left.y = Math.min(left.y, num.y); left.w = x2 - left.x; left.h = y2 - left.y
+    left.confidence = Math.min(left.confidence, num.confidence)
+    gone.add(num)
+  }
+  return items.filter(it => !gone.has(it))
+}
+
+/**
  * 줄 머리 상자 밖 잉크 무리 — 한글·숫자로 여는 줄(한글 두 자 이상)의 가장 왼쪽 아이템 앞(줄 높이 4배 안), 띠 안 상자 밖 잉크 열이 한 무리뿐이고
  * 그 무리가 줄 높이(아이템 높이 중앙값) 0.5배 이상·폭 3배 이하면 그 외곽(여백 4px)을 낸다. 무늬 바탕 목차의 장 번호 "Ⅱ."·"Ⅲ." 는
  * 검출기가 상자를 치지 않았다(함평 계획 — 같은 열 "Ⅰ." 는 잡힘). 받을지는 인식 결과가 번호 꼴인지로 정한다(recognizePage)
@@ -789,6 +824,8 @@ export class OcrEngine {
         })
       }
     }
+    // 줄 끝 쪽 번호(rowTailBoxes)까지 들어온 뒤에 잇는다
+    if (tuning.postprocess) items = joinGapLeaders(rgba, width, items)
     if (tuning.postprocess) restoreBulletItems(items)
     items.sort((a, b) => (a.y - b.y) || (a.x - b.x))
     return items
