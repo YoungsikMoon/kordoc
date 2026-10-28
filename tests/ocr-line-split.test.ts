@@ -261,6 +261,13 @@ describe("leadingBullet — 사전 밖·작은 점으로 읽히거나 빠지는 
     text(low, w)
     assert.equal(leadingBullet(low, w, h, inkStats(low), 22)?.mark, "\u274f")
   })
+  it("기울기 보정 뒤 남은 기울기로 가운데 줄 외곽 끝이 비어도 ❐ (끝 2px 안 빈 칸은 건너뛰고 잰다)", () => {
+    const w = 120, h = 40, g = canvas(w, h)
+    rect(g, w, 10, 9, 34, 15); rect(g, w, 28, 9, 34, 31) // 위 6px·오른쪽 6px
+    rect(g, w, 10, 9, 12, 20); rect(g, w, 11, 20, 13, 31); rect(g, w, 11, 29, 34, 31) // 왼쪽 2px 가 아래 절반에서 1px 밀림, 아래 2px
+    text(g, w)
+    assert.equal(leadingBullet(g, w, h, inkStats(g), 22)?.mark, "\u2750")
+  })
   it("속 찬 네모를 품은 네모는 ▣ — 인식에서 빠졌으면(첫 글자 자리가 뒤) covers 거짓", () => {
     const w = 120, h = 40, g = canvas(w, h)
     rect(g, w, 10, 9, 33, 11); rect(g, w, 10, 29, 33, 31); rect(g, w, 10, 9, 12, 31); rect(g, w, 31, 9, 33, 31) // 바깥 테두리 23×22
@@ -467,6 +474,13 @@ describe("ringBullet — 줄 머리 고리 ○ / ㅇ (모델이 같은 글리프
     assert.equal(ringBullet(big, w, h, inkStats(big), 22), "\u25cb")
     const small = canvas(w, h); ring(small, w, 22, 20, 7, 3); text(small, w)
     assert.equal(ringBullet(small, w, h, inkStats(small), 22), "\u3147")
+  })
+  it("그림자 진 고리는 가는 쪽이 번져 폭 8% 를 넘어도 두꺼운 쪽의 2/3 이하면 ○", () => {
+    const w = 120, h = 40, g = canvas(w, h)
+    ring(g, w, 22, 20, 16, 3) // 가는 쪽 3px (폭 33 의 9%)
+    for (let y = 4; y <= 36; y++) for (let x = 22; x <= 38; x++) { const d = Math.hypot(x - 22, y - 20); if (d <= 16 && d >= 11) g[y * w + x] = 0 } // 오른쪽 5px
+    rect(g, w, 60, 6, 110, 34)
+    assert.equal(ringBullet(g, w, h, inkStats(g), 22), "\u25cb")
   })
   it("속 찬 원·고리 아닌 글자는 null", () => {
     const w = 120, h = 40, g = canvas(w, h); ring(g, w, 22, 20, 10, 10); text(g, w)

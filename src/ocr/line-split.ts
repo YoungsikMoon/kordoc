@@ -691,8 +691,9 @@ export function ringBullet(gray: Uint8Array, w: number, h: number, ink: InkStats
   let n = 0
   for (let y = c.y0; y < c.y1; y++) for (let x = c.x0; x < c.x1; x++) if (label[y * w + x] === c.id) n++
   const fill = n / (cw * ch), rel = ch / bh
-  // 그림자 진 고리(한쪽 획만 두꺼움 — ❍, 글꼴에 따라 ○ 도 이렇게 그려진다)도 가는 쪽 획이 가늘면 도형 ○
-  if (rel >= 0.62 && (fill <= 0.23 ? row.mx <= cw * 0.1 : fill <= 0.33 && row.mn <= cw * 0.08)) return "\u25cb"
+  // 그림자 진 고리(한쪽 획만 두꺼움 — ❍, 글꼴에 따라 ○ 도 이렇게 그려진다)도 가는 쪽 획이 가늘면 도형 ○. 기울기 보정·흐림으로 가는 쪽이
+  // 1px 번지면(2 → 3px, 폭 8% 초과) 두꺼운 쪽과의 차(1.5배 이상)로 본다 — 글자 O·o 는 좌우 획이 고르다(농진청 계획 1° 판 ❍ → o)
+  if (rel >= 0.62 && (fill <= 0.23 ? row.mx <= cw * 0.1 : fill <= 0.33 && (row.mn <= cw * 0.08 || row.mn * 1.5 <= row.mx))) return "\u25cb"
   if (rel <= 0.58 && fill >= 0.24) return "\u3147"
   // 라틴 소문자 o — x 높이(띠 0.6~0.8배)로 줄 아래쪽에 앉은 굵은 고리(속초 예산서 "o 기본급", 모델은 숫자 0 으로 읽음). 숫자 0 은 세로로 길고
   // (폭/높이 0.58) 자모 ㅇ 은 띠 가운데(0.41~0.51)에 뜬다
@@ -905,7 +906,14 @@ export function leadingBullet(gray: Uint8Array, w: number, h: number, ink: InkSt
     && Math.abs((core.y0 + core.y1) - (y0 + y1)) <= ch * 0.2 && edgeFull(y0, 1) && edgeFull(y1 - 1, -1)
   // 그림자 진 네모 — 오른쪽 변과 위·아래 한 변이 맞은편보다 1.8배 넘게 두껍다(농진청 계획 "❐ 글로벌 경쟁 …", 모델은 자모 ㅁ 으로 읽음).
   // 획 두께는 가운데 가로줄·세로줄에서 바깥 끝부터 이어진 잉크 길이. 자모 ㅁ·□ 는 네 변 두께가 고르다
-  const run = (x: number, y: number, dx: number, dy: number) => { let n = 0; while (x >= x0 && x < x1 && y >= y0 && y < y1 && cl.some(c => label[y * w + x] === c.id)) { n++; x += dx; y += dy } return n }
+  // 바깥 끝 2px 안 빈 칸은 건너뛴다 — 기울기 보정 뒤 남은 0.1° 안팎 기울기로 가운데 줄의 외곽 끝 픽셀이 비어 두께가 0 으로 재졌다(농진청 계획 1° 판 ❐ → □)
+  const run = (x: number, y: number, dx: number, dy: number) => {
+    const inside = () => x >= x0 && x < x1 && y >= y0 && y < y1, on = () => cl.some(c => label[y * w + x] === c.id)
+    for (let k = 0; k < 2 && inside() && !on(); k++) { x += dx; y += dy }
+    let n = 0
+    while (inside() && on()) { n++; x += dx; y += dy }
+    return n
+  }
   const my0 = y0 + (ch >> 1), mx0 = x0 + (cw >> 1)
   // 비율만 보면 가는 획(1px·2px)에서 갈린다 — 그림자 쪽이 실제로 몇 px 더 두꺼워야 한다(web044 "□ (경과)" 아랫변 2px·윗변 1px)
   const thin = (a: number, b: number) => a > 0 && b >= a * 1.8 && b - a >= Math.max(3, ch * 0.08)
