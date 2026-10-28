@@ -231,3 +231,13 @@ describe("dateDots — 끝 날짜 가운데 점", () => {
     assert.equal(dateDots("입법예고(’25.11.25~’26.1.5)"), "입법예고(’25.11.25~’26.1.5)")
   })
 })
+
+describe("restoreSymbols — 리터 ℓ", () => {
+  it("한글 줄의 숫자 바로 뒤 홑 l 은 ℓ", () => {
+    assert.equal(restoreSymbols("유류비 1,500원*200l *12월"), "유류비 1,500원*200ℓ *12월")
+  })
+  it("영문 줄·단위 글자(ml·lb)는 그대로", () => {
+    assert.equal(restoreSymbols("200l bottle"), "200l bottle")
+    assert.equal(restoreSymbols("10lb 무게"), "10lb 무게")
+  })
+})
