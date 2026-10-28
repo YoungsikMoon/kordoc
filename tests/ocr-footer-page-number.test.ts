@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { closingParens, footerInkBox } from "../src/ocr/engine.js"
+import { closingParens, footerInkBox, placeholderSquares } from "../src/ocr/engine.js"
 
 const W = 400, H = 600
 function page(): Uint8Array {
@@ -36,5 +36,24 @@ describe("closingParens — 서식 칸에서 멀리 떨어진 닫는 괄호", ()
   })
   it("띠 밖으로 이어지는 칸 테두리는 괄호가 아니다", () => {
     assert.deepEqual(closingParens(line(false, true), W2, [it0]), [])
+  })
+})
+
+describe("placeholderSquares — 검출기가 놓친 서식 빈칸 네모", () => {
+  const W3 = 300, H3 = 80
+  function page(): Uint8Array {
+    const rgba = new Uint8Array(W3 * H3 * 4).fill(255)
+    const rect = (x0: number, y0: number, x1: number, y1: number) => {
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const p = (y * W3 + x) * 4; rgba[p] = rgba[p + 1] = rgba[p + 2] = 0 }
+    }
+    const box = (x: number, y: number, s: number) => { rect(x, y, x + s, y + 2); rect(x, y + s - 2, x + s, y + s); rect(x, y, x + 2, y + s); rect(x + s - 2, y, x + s, y + s) }
+    box(20, 20, 20); box(44, 20, 20); rect(68, 29, 76, 32); box(80, 20, 20) // □□-□
+    box(200, 20, 20) // 검출 상자 안(이미 읽은 글)
+    box(150, 60, 8) // 작은 표시 네모
+    return rgba
+  }
+  it("같은 줄 네모를 이어 □ 무리로, 막대는 - 로", () => {
+    const got = placeholderSquares(page(), W3, H3, [{ text: "가", x: 195, y: 15, w: 30, h: 30, confidence: 1 }])
+    assert.deepEqual(got.map(i => i.text), ["□□-□"])
   })
 })

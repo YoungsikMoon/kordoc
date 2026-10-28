@@ -148,6 +148,72 @@ interface SharpChain {
 interface LineJob { box: Box; rot: 0 | 90 | 270; group: number; footer?: boolean; join?: number; dotsBefore?: boolean; trimDots?: boolean; keep?: { x0: number; x1: number; y0: number; y1: number; bg: number } }
 
 /**
+ * 검출기가 놓친 서식 빈칸 네모 — 코드 입력 칸 "□□□"·"□□-□□□" 는 글이 아니라 가는 테두리 네모만 늘어서 검출 지도에 글줄로 잡히지
+ * 않는다(법령 별지서식 건축허가 신청서 "지역 □□□ 지구 □□□"). 검출 상자에 들지 않은 잉크 성분 가운데 속 빈 정사각(한 변 12~60px —
+ * 조직도의 3pt 표시 네모는 뺀다,
+ * 가로세로 0.75~1.33배, 네 변이 80% 넘게 차고 안쪽 25% 테두리 안은 비었다)을 같은 줄에서 한 변 길이 안 틈으로 이어 "□" 무리로
+ * 내고, 무리 사이 짧은 가로 막대(두 변 길이 안)는 "-" 로 잇는다
+ */
+export function placeholderSquares(rgba: Uint8Array, width: number, height: number, items: OcrItem[]): OcrItem[] {
+  const dark = new Uint8Array(width * height)
+  for (let p = 0, i = 0; p < dark.length; p++, i += 4) dark[p] = ((rgba[i] * 77 + rgba[i + 1] * 150 + rgba[i + 2] * 29) >> 8) < 128 ? 1 : 0
+  const covered = (x: number, y: number) => items.some(b => x >= b.x - 2 && x < b.x + b.w + 2 && y >= b.y - 2 && y < b.y + b.h + 2)
+  const seen = new Uint8Array(width * height)
+  type C = { x0: number; y0: number; x1: number; y1: number; n: number; px: number[] }
+  const squares: C[] = [], bars: C[] = []
+  const stack: number[] = []
+  for (let start = 0; start < dark.length; start++) {
+    if (!dark[start] || seen[start]) continue
+    const c: C = { x0: width, y0: height, x1: -1, y1: -1, n: 0, px: [] }
+    stack.push(start); seen[start] = 1
+    while (stack.length) {
+      const p = stack.pop()!, x = p % width, y = (p - x) / width
+      c.n++; if (c.px.length < 4000) c.px.push(p)
+      if (x < c.x0) c.x0 = x; if (x > c.x1) c.x1 = x; if (y < c.y0) c.y0 = y; if (y > c.y1) c.y1 = y
+      for (const q of [p - 1, p + 1, p - width, p + width]) if (q >= 0 && q < dark.length && !seen[q] && dark[q] && Math.abs((q % width) - x) <= 1) { seen[q] = 1; stack.push(q) }
+      if (c.n > 4000) break
+    }
+    while (stack.length) { const p = stack.pop()!; seen[p] = 1 }
+    const w = c.x1 - c.x0 + 1, h = c.y1 - c.y0 + 1
+    if (c.n > 4000 || covered((c.x0 + c.x1) >> 1, (c.y0 + c.y1) >> 1)) continue
+    if (h >= 2 && h <= 6 && w >= 4 && w <= 30 && c.n >= w * h * 0.7) { bars.push(c); continue }
+    if (w < 12 || h < 12 || w > 60 || h > 60 || w > h * 1.33 || h > w * 1.33) continue
+    const at = (x: number, y: number) => dark[y * width + x] === 1
+    const row = (y: number) => { let k = 0; for (let x = c.x0; x <= c.x1; x++) if (at(x, y)) k++; return k / w }
+    const col = (x: number) => { let k = 0; for (let y = c.y0; y <= c.y1; y++) if (at(x, y)) k++; return k / h }
+    const edge = (vals: number[]) => Math.max(...vals) >= 0.8
+    const top = edge([row(c.y0), row(c.y0 + 1)]), bottom = edge([row(c.y1), row(c.y1 - 1)]), left = edge([col(c.x0), col(c.x0 + 1)]), right = edge([col(c.x1), col(c.x1 - 1)])
+    let inner = 0
+    for (let y = c.y0 + Math.ceil(h * 0.25); y <= c.y1 - Math.ceil(h * 0.25); y++) for (let x = c.x0 + Math.ceil(w * 0.25); x <= c.x1 - Math.ceil(w * 0.25); x++) if (at(x, y)) inner++
+    if (top && bottom && left && right && inner === 0) squares.push(c)
+  }
+  squares.sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0)
+  const out: OcrItem[] = []
+  const used = new Set<C>()
+  for (const s0 of squares) {
+    if (used.has(s0)) continue
+    const run: C[] = [s0]
+    used.add(s0)
+    const side = s0.y1 - s0.y0 + 1, cy = (s0.y0 + s0.y1) / 2
+    let text = "\u25a1"
+    for (;;) {
+      const last = run[run.length - 1]
+      const next = squares.find(q => !used.has(q) && Math.abs((q.y0 + q.y1) / 2 - cy) <= side * 0.3 && q.x0 > last.x1 && q.x0 - last.x1 <= side * 2)
+      if (!next) break
+      const gap = next.x0 - last.x1
+      const bar = bars.find(b => b.x0 > last.x1 && b.x1 < next.x0 && Math.abs((b.y0 + b.y1) / 2 - cy) <= side * 0.3)
+      if (bar) text += "-"
+      else if (gap > side) break
+      text += "\u25a1"
+      used.add(next); run.push(next)
+    }
+    const x0 = run[0].x0, x1 = run[run.length - 1].x1
+    out.push({ text, x: x0, y: s0.y0, w: x1 - x0 + 1, h: side, confidence: 0.9 })
+  }
+  return out
+}
+
+/**
  * 검출기가 놓친 쪽 번호 꼬리말 — 띄엄띄엄 얇은 "-   1   -" 는 DB 검출 지도에서 글줄로 이어지지 않아 상자가 아예 없다(국회 예산 검토
  * 보고서·연구 보고서·업무보고 첫 쪽). 쪽 아래 12%·가운데 40% 띠에서 검출 상자에 들지 않은 잉크의 외곽이 쪽 높이 0.5~2.5% 면
  * 그 외곽(여백 4px)을 인식 상자로 하나 더 낸다 — 결과가 쪽 번호 꼴("- 1 -"·"3"·"- ii -")이 아니면 버린다
@@ -485,6 +551,7 @@ export class OcrEngine {
     if (tuning.postprocess) items = dropNestedFragments(items)
     if (tuning.postprocess) for (const it of items) this.outerSquare(rgba, width, it, items)
     if (tuning.postprocess) items.push(...closingParens(rgba, width, items))
+    if (tuning.postprocess) items.push(...placeholderSquares(rgba, width, height, items))
     if (tuning.postprocess) restoreBulletItems(items)
     items.sort((a, b) => (a.y - b.y) || (a.x - b.x))
     return items
