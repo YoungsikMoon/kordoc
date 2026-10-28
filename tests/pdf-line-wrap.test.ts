@@ -540,3 +540,19 @@ it("preserves hyphenated terms embedded in Korean prose", () => {
   assert.equal(wrapJoiner("안전 규격의 fire-", "resistant 용어"), "")
   assert.equal(wrapJoiner("해상도 (high-", "definition television)"), "")
 })
+
+describe("bodyLineJoins — 줄 둘뿐인 묶음의 넓은 줄 간격", () => {
+  // 11pt 본문, 줄 간격 28pt(255%) — 묶음 안에 견줄 다른 줄쌍이 없다
+  const two = [
+    { text: "可通过书面协议延长", left: 72, right: 516, y: 600, fontSize: 11 },
+    { text: "合同期限。若无相关书面延长协议，", left: 72, right: 300, y: 572, fontSize: 11 },
+  ]
+  it("쪽 줄 흐름의 본문 간격이 같으면 꺾임으로 잇는다", () => {
+    const lex = new WrapLexicon()
+    for (let k = 0; k < 6; k++) lex.addPitch(11, 28)
+    assert.notEqual(bodyLineJoins(two, lex)[0], "\n")
+  })
+  it("근거가 없으면 종전대로 2em 넘는 간격은 문단 경계", () => {
+    assert.equal(bodyLineJoins(two)[0], "\n")
+  })
+})

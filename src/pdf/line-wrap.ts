@@ -51,6 +51,19 @@ export class WrapLexicon {
   private readonly heads = new Set<string>()
   /** 줄 안 이웃 어절의 앞 어절 한글 꼬리 + 뒤 어절 첫 음절("지식재산 보") — 어절 머리 증거의 거부권 */
   private readonly spacedHeads = new Set<string>()
+  /** 쪽 줄 흐름에서 넓은 줄 사이 기준선 간격(글자 크기별) — 줄 둘뿐인 묶음은 묶음 안에 견줄 간격이 없어 넓은 줄 간격 본문을 문단 경계로 봤다 */
+  private readonly pitches: Array<{ fs: number; pitch: number }> = []
+
+  /** 줄 흐름의 이웃한 넓은 두 줄(같은 글자 크기) 사이 간격 하나를 더한다 */
+  addPitch(fontSize: number, pitch: number): void {
+    if (fontSize > 0 && pitch > 0 && pitch < 4 * fontSize) this.pitches.push({ fs: fontSize, pitch })
+  }
+
+  /** 이 글자 크기(±15%) 본문의 줄 간격 — 표본 넷 이상의 중앙값, 없으면 undefined */
+  bodyPitch(fontSize: number): number | undefined {
+    const ps = this.pitches.filter(p => Math.abs(p.fs - fontSize) <= 0.15 * fontSize).map(p => p.pitch).sort((a, b) => a - b)
+    return ps.length >= 4 ? ps[ps.length >> 1] : undefined
+  }
 
   /** 줄 글 한 줄을 증거로 더한다 — 탭(큰 갭)으로 나뉜 조각은 다른 칸·단이라 조각 사이는 어절 경계 증거로 쓰지 않는다 */
   addLine(text: string): void {
@@ -452,7 +465,10 @@ export function bodyLineJoins(lines: WrapLine[], lex?: WrapLexicon): string[] {
   for (let i = 0; i + 1 < lines.length; i++) {
     const a = lines[i], b = lines[i + 1]
     const fs = a.fontSize
-    const others = i === i1 ? p2 : p1 // 다른 쌍이 없으면 Infinity — 상대 기준 없이 2em
+    // 다른 쌍이 없으면 쪽 줄 흐름의 본문 줄 간격(lex.bodyPitch), 그것도 없으면 Infinity — 상대 기준 없이 2em
+    // (줄 간격 255% 중문 계약서 "…延长⏎合同期限" 두 줄 묶음이 문단 경계로 끊겼다)
+    const own = i === i1 ? p2 : p1
+    const others = Number.isFinite(own) ? own : lex?.bodyPitch(fs) ?? Infinity
     const maxPitch = Number.isFinite(others) ? Math.min(BODY_MAX_PITCH_ABS_EM * fs, Math.max(BODY_MAX_PITCH_EM * fs, others * BODY_PITCH_REL)) : BODY_MAX_PITCH_EM * fs
     // 다단계 번호("5.1 ", "7.1.2 ")로 여는 줄은 새 조항이다 — ITEM_HEAD 는 한 단계 번호만 본다
     const wordWrap = ragged && !full(a) && nextWordNoRoom(a, b) && !MULTI_LEVEL_NUMBER.test(b.text.trimStart())

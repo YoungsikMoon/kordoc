@@ -88,7 +88,19 @@ export function extractPageBlocksWithLines(
   }
   // 줄 꺾임 이음 판정의 어휘 증거 — 이 쪽 줄 글을 먼저 더해 쪽 안 어디서 판정하든 쪽 전체가 증거가 된다
   const lex = lexicon ?? new WrapLexicon()
-  for (const line of streamLines(items)) lex.addLine(mergeLineSimple(line))
+  {
+    let prev: { y: number; fs: number } | null = null
+    for (const line of streamLines(items)) {
+      lex.addLine(mergeLineSimple(line))
+      // 넓은 줄(글자 크기 12배 이상) 사이 기준선 간격 — 줄 둘뿐인 묶음의 꺾임 판정 근거(bodyLineJoins)
+      const fs = dominantStyle(line)?.fontSize ?? 0
+      const left = Math.min(...line.map(i => i.x)), right = Math.max(...line.map(i => i.x + i.w))
+      const y = line.reduce((n, i) => n + i.y, 0) / line.length
+      const wide = fs > 0 && right - left >= 12 * fs
+      if (wide && prev && Math.abs(prev.fs - fs) <= 0.15 * fs) lex.addPitch(fs, prev.y - y)
+      prev = wide ? { y, fs } : null
+    }
+  }
 
   // 1단계: PDF 그래픽 명령에서 선 추출
   const extracted = extractLines(opList.fnArray, opList.argsArray)
