@@ -337,6 +337,13 @@ describe("circledAt — 원문자 숫자 (모델이 고리를 버리고 숫자�
     rect(g, w, 120, 6, 138, 34) // 한글 글자 (글자 높이 28)
     assert.deepEqual(circledAt(g, w, h, inkStats(g), [20, 61, 100]), [true, false, false])
   })
+  it("앞 붙임표가 고리 옆구리에 붙어도 원문자다(\"-①\")", () => {
+    const w = 80, h = 40, g = canvas(w, h)
+    ring(g, w, 50, 20, 13); rect(g, w, 49, 12, 52, 28) // ①
+    rect(g, w, 22, 19, 38, 22) // 고리 왼 변에 닿는 붙임표
+    rect(g, w, 2, 6, 18, 34) // 한글 글자 (글자 높이 28)
+    assert.deepEqual(circledAt(g, w, h, inkStats(g), [50]), [true])
+  })
 })
 
 describe("gapGlyphs — 쉼표에 맞닿은 날짜 끝 마침표", () => {

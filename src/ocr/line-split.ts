@@ -443,13 +443,25 @@ export function romanStems(gray: Uint8Array, w: number, h: number, ink: InkStats
  * 성분(숫자)을 안에 두면 원문자다. 괄호 숫자 "(1)"·네모 칸은 고리가 아니라 걸리지 않는다
  */
 export function circledAt(gray: Uint8Array, w: number, h: number, ink: InkStats, xs: number[]): boolean[] {
-  const { comps } = components(gray, w, h, ink)
+  const { comps, label } = components(gray, w, h, ink)
   let charH = 0
   for (const c of comps) charH = Math.max(charH, c.y1 - c.y0)
-  const rings = charH < 10 ? [] : comps.filter(r => {
-    const rw = r.x1 - r.x0, rh = r.y1 - r.y0
-    return rh >= charH * 0.55 && rw >= rh * 0.8 && rw <= rh * 1.25
-      && comps.some(d => d !== r && d.x0 > r.x0 && d.x1 < r.x1 && d.y0 > r.y0 && d.y1 < r.y1 && d.y1 - d.y0 >= rh * 0.35)
+  // 고리 폭은 위·아래 30% 띠의 잉크 폭 — 앞 붙임표가 고리 옆구리에 붙으면 한 성분이 돼 외곽이 옆으로 늘었다("-3-①)" → "-3-1)", 농진청 목차)
+  const arcX = (r: Comp): [number, number] => {
+    const band = Math.max(1, Math.round((r.y1 - r.y0) * 0.3))
+    let a = Infinity, b = -Infinity
+    for (let y = r.y0; y < r.y1; y++) {
+      if (y >= r.y0 + band && y < r.y1 - band) continue
+      for (let x = r.x0; x < r.x1; x++) if (label[y * w + x] === r.id) { if (x < a) a = x; if (x > b) b = x }
+    }
+    return a <= b ? [a, b + 1] : [r.x0, r.x1]
+  }
+  const rings = charH < 10 ? [] : comps.flatMap(r => {
+    const rh = r.y1 - r.y0
+    if (rh < charH * 0.55) return []
+    const [x0, x1] = arcX(r), rw = x1 - x0
+    return rw >= rh * 0.8 && rw <= rh * 1.25
+      && comps.some(d => d !== r && d.x0 > x0 && d.x1 < x1 && d.y0 > r.y0 && d.y1 < r.y1 && d.y1 - d.y0 >= rh * 0.35) ? [{ x0, x1 }] : []
   })
   return xs.map(x => rings.some(r => x >= r.x0 && x <= r.x1))
 }
