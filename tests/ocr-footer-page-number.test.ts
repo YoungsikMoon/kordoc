@@ -56,6 +56,11 @@ describe("placeholderSquares — 검출기가 놓친 서식 빈칸 네모", () =
     const got = placeholderSquares(page(), W3, H3, [{ text: "가", x: 195, y: 15, w: 30, h: 30, confidence: 1 }])
     assert.deepEqual(got.map(i => i.text), ["□□-□"])
   })
+  it("잡티가 붙어 막대 꼴이 아닌 막대도 틈 가운데 가로 줄이면 - 로", () => {
+    const rgba = page()
+    for (let y = 32; y < 40; y++) { const p = (y * W3 + 70) * 4; rgba[p] = rgba[p + 1] = rgba[p + 2] = 0 } // 막대 아래로 늘어진 잡티
+    assert.deepEqual(placeholderSquares(rgba, W3, H3, [{ text: "가", x: 195, y: 15, w: 30, h: 30, confidence: 1 }]).map(i => i.text), ["□□-□"])
+  })
 })
 
 describe("rowTailBoxes — 줄 끝 홑 쪽 번호", () => {
@@ -89,6 +94,11 @@ describe("rowHeadDashes — 줄 머리 대시", () => {
   it("한글로 여는 줄 앞 짧은 가로 막대는 - 아이템", () => {
     const got = rowHeadDashes(page(), W5, [{ text: "영농지원과", x: 80, y: 15, w: 120, h: 28, confidence: 1 }])
     assert.deepEqual(got.map(i => i.text), ["-"])
+  })
+  it("상자 테두리에 닿는 조직도 연결선은 대시가 아니다", () => {
+    const rgba = page()
+    for (let y = 5; y < 55; y++) for (const x of [62, 63]) { const p = (y * W5 + x) * 4; rgba[p] = rgba[p + 1] = rgba[p + 2] = 200 }
+    assert.deepEqual(rowHeadDashes(rgba, W5, [{ text: "감사관", x: 80, y: 15, w: 120, h: 28, confidence: 1 }]), [])
   })
   it("한글로 열지 않는 제목(【목차】) 앞 장식 막대는 넣지 않는다", () => {
     assert.deepEqual(rowHeadDashes(page(), W5, [{ text: "【목차】", x: 80, y: 15, w: 120, h: 28, confidence: 1 }]), [])

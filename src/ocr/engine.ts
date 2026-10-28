@@ -179,6 +179,11 @@ export function rowHeadDashes(rgba: Uint8Array, width: number, items: OcrItem[])
     }
     const bw = maxX - minX + 1, bh = maxY - minY + 1, cy = ((minY + maxY) / 2 - y0) / h
     if (groups !== 1 || bh > h * 0.2 || bw < h * 0.3 || bw > h * 1.2 || cy < 0.3 || cy > 0.7) continue
+    // 막대 양끝 2~4px(1px 은 막대 자신의 번짐)에 연한 잉크도 없어야 — 조직도 연결선은 줄기·흐려진 상자 테두리에 닿는다(web068 흐림 판)
+    const faint = (x: number, y: number) => { const p = (y * width + x) * 4; return ((rgba[p] * 77 + rgba[p + 1] * 150 + rgba[p + 2] * 29) >> 8) < 230 }
+    let touch = minX <= x0
+    for (let y = minY; y <= maxY && !touch; y++) for (let d = 2; d <= 4 && !touch; d++) touch = (minX - d >= 0 && faint(minX - d, y)) || faint(maxX + d, y)
+    if (touch) continue
     // 따로 "-" 아이템으로 — 첫 아이템 글에 붙이면 한 자씩 벌린 낱말("영 농 지 원 과") 합치기가 깨진다
     // 붙임표·줄표는 막대 길이로 못 가른다(부천 예산서 줄표 "—" 0.48배 < 함평 목차 "–" 0.67배, 글꼴마다 다르다) — "-"
     out.push({ text: "-", x: minX, y: y0, w: bw, h, confidence: first.confidence })
@@ -201,6 +206,8 @@ export function rowTailBoxes(rgba: Uint8Array, width: number, items: OcrItem[]):
     // 한글 목차·본문 줄만 — 영문 그림의 축 눈금 줄에서 숫자를 지어냈다(ODL 137)
     if (row.reduce((k, o) => k + (o.text.match(/[가-힣]/g)?.length ?? 0), 0) < 2) continue
     const last = row.reduce((m, o) => (o.x + o.w > m.x + m.w ? o : m))
+    // 이미 숫자로 끝난 줄은 뺀다 — 기울인 목차에서 리더 조각이 읽은 쪽 번호 잉크가 상자 밖으로 삐져 한 번 더 넣었다(khs 예산서 기울임 판)
+    if (/\d$/.test(last.text.trim())) continue
     const y0 = Math.min(...row.map(o => o.y)), y1 = Math.max(...row.map(o => o.y + o.h)), h = y1 - y0
     const x0 = last.x + last.w + 4, x1 = Math.floor(width * 0.95)
     if (x1 - x0 < h) continue
@@ -280,7 +287,13 @@ export function placeholderSquares(rgba: Uint8Array, width: number, height: numb
       if (!next) break
       const gap = next.x0 - last.x1
       const bar = bars.find(b => b.x0 > last.x1 && b.x1 < next.x0 && Math.abs((b.y0 + b.y1) / 2 - cy) <= side * 0.3)
-      if (bar) text += "-"
+      // 잡티가 붙은 막대는 막대 꼴 판정을 못 넘는다(잡음 판 "□□-□-□□□" → "□□□-□□□") — 틈 가운데 띠의 가로 잉크 줄 길이로도 본다
+      let stroke = 0
+      if (!bar) for (let y = Math.round(cy - side * 0.15); y <= Math.round(cy + side * 0.15); y++) {
+        let k = 0
+        for (let x = last.x1 + 1; x < next.x0; x++) { k = dark[y * width + x] ? k + 1 : 0; if (k > stroke) stroke = k }
+      }
+      if (bar || stroke >= Math.max(4, side * 0.25)) text += "-"
       else if (gap > side) break
       text += "\u25a1"
       used.add(next); run.push(next)
@@ -555,6 +568,11 @@ export class OcrEngine {
       const raw = tuning.postprocess && job.rot === 0 ? restoreGlyphs(rgba, width, job.box, read, steps, stepPx, note) : read
       let text = tuning.postprocess ? restoreSymbols(raw.trim(), note.ringLead) : raw
       if (!text.trim()) continue
+      // 빗금 하나만 든 칸을 "(/:"·"(/" 로 지어 읽었다(여수 인원표 "현원/정원" 칸) — 키 큰 잉크 덩어리가 하나뿐이면 "/"
+      if (tuning.postprocess && job.rot === 0 && text !== "/" && /^[(:;/)]+$/.test(text) && text.includes("/")) {
+        const g = grayCrop(rgba, width, job.box)
+        if (tallInkCount(g, job.box.w, job.box.h, inkStats(g)) === 1) text = "/"
+      }
       // 사전 밖·작은 점으로 읽히거나 빠지는 글머리(◎ ● ▪ □) — 첫 글리프 모양으로 되살린다 (line-split.ts)
       if (tuning.postprocess && job.rot === 0 && !/^[◎●▪□■▣❐❏○ㅇ◆◇◈]/.test(text)) {
         const chars = [...read], k = chars.findIndex(c => c.trim())
