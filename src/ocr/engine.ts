@@ -211,21 +211,24 @@ export function rowTailBoxes(rgba: Uint8Array, width: number, items: OcrItem[]):
     const y0 = Math.min(...row.map(o => o.y)), y1 = Math.max(...row.map(o => o.y + o.h)), h = y1 - y0
     const x0 = last.x + last.w + 4, x1 = Math.floor(width * 0.95)
     if (x1 - x0 < h) continue
-    // 글자 사이 틈(띠 높이 안)은 한 무리 — 다른 무리는 높이보다 멀리 떨어진 것
-    let groups = 0, minX = -1, maxX = -1, minY = Infinity, maxY = -1
+    // 글자 사이 틈(띠 높이 안)은 한 무리 — 다른 무리는 높이보다 멀리 떨어진 것. 잉크 높이가 띠의 0.3배 안 되는 열(리더 점)은 무리에 넣지
+    // 않는다 — 상자가 제목에서 끊긴 목차 줄은 점 줄과 쪽 번호가 한 무리로 이어져 폭 상한에 걸렸다(나라배움터 계획 "1. 운영 개요 ····· 1")
+    const groups: { minX: number; maxX: number; minY: number; maxY: number }[] = []
     for (let x = x0; x < x1; x++) {
-      let on = false
-      for (let y = y0; y < y1; y++) if (dark(x, y)) { on = true; if (y < minY) minY = y; if (y > maxY) maxY = y }
-      if (!on) continue
-      if (maxX < 0 || x - maxX > h) { groups++; if (groups === 1) minX = x }
-      maxX = x
+      let top = -1, bot = -1
+      for (let y = y0; y < y1; y++) if (dark(x, y)) { if (top < 0) top = y; bot = y }
+      if (top < 0 || bot - top + 1 < h * 0.3) continue
+      const g = groups[groups.length - 1]
+      if (!g || x - g.maxX > h) groups.push({ minX: x, maxX: x, minY: top, maxY: bot })
+      else { g.maxX = x; g.minY = Math.min(g.minY, top); g.maxY = Math.max(g.maxY, bot) }
     }
-    if (groups !== 1 || maxY - minY + 1 < h * 0.5 || maxX - minX + 1 > h * 4) continue
-    // 표 세로 테두리는 띠 밖 위아래로 이어진다 — 무리 위·아래 2px 밖에 잉크가 있으면 뺀다(부천 예산서 표 오른끝)
+    // 표 세로 테두리·틀 선은 띠 밖 위아래로 이어진다 — 무리 위·아래 2px 밖에 잉크가 있으면 무리로 세지 않는다(부천 예산서 표 오른끝·나라배움터 목차 틀)
     const height = Math.floor(rgba.length / 4 / width)
-    let rule = false
-    for (let x = minX; x <= maxX && !rule; x++) rule = (minY > 1 && dark(x, minY - 2)) || (maxY + 2 < height && dark(x, maxY + 2))
-    if (rule) continue
+    const rule = (g: typeof groups[number]) => { for (let x = g.minX; x <= g.maxX; x++) if ((g.minY > 1 && dark(x, g.minY - 2)) || (g.maxY + 2 < height && dark(x, g.maxY + 2))) return true; return false }
+    const ink = groups.filter(g => !rule(g))
+    if (ink.length !== 1) continue
+    const { minX, maxX, minY, maxY } = ink[0]
+    if (maxY - minY + 1 < h * 0.5 || maxX - minX + 1 > h * 4) continue
     const pad = 4
     out.push({ x: Math.max(0, minX - pad), y: Math.max(0, minY - pad), w: maxX - minX + 1 + 2 * pad, h: maxY - minY + 1 + 2 * pad })
   }
