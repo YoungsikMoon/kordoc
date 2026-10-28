@@ -538,6 +538,14 @@ export class OcrEngine {
       const cur = best.get(job.group)
       if (!cur || score(job, r.confidence) > score(cur.job, cur.confidence)) best.set(job.group, { job, ...r })
     })
+    // 지운 crop 만 줄 머리 가운뎃점을 읽은 그룹 — 원본 crop 은 윗줄 끝자락에 묻혀 "·" 를 놓쳤다("·군의원" → "군의원", 선관위 사례집 표
+    // 칸). 공백 빼고 나머지 글이 같으면 원본 결과 앞에 "·" 를 붙인다
+    jobs.forEach((job, i) => {
+      const r = results[i], cur = best.get(job.group)
+      if (!job.keep || !r || !cur || cur.job === job) return
+      const b = cur.text.replace(/\s/g, "")
+      if (r.text.replace(/\s/g, "") === "\u00b7" + b && /^[가-힣]/.test(b)) best.set(job.group, { ...cur, text: "\u00b7" + cur.text, steps: [r.steps[0], ...cur.steps] })
+    })
 
     let items: OcrItem[] = []
     for (const r of best.values()) {
