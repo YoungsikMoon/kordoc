@@ -328,7 +328,7 @@ export function footerInkBox(rgba: Uint8Array, width: number, height: number, bo
 /**
  * 서식 칸에서 멀리 떨어진 닫는 괄호 — "(전화 :            )" 처럼 빈칸 뒤 홀로 선 ")" 는 검출기가 상자로 잡지 않는다(법령 별지서식
  * 신청서 주소 칸). 닫히지 않은 "(" 로 끝나는 줄 박스 오른쪽, 같은 높이 띠에서 다음 박스 앞까지 잉크가 좁고 키 큰 조각 하나뿐이면
- * 그 자리에 ")" 아이템을 낸다(폭 ≤ 띠 높이 0.5·높이 ≥ 0.6, 박스 높이 8배 안)
+ * 그 자리에 ")" 아이템을 낸다(폭 ≤ 띠 높이 0.5·높이 ≥ 0.6, 박스 높이 16배 안 — 건축허가신청서 전화 칸은 14배)
  */
 export function closingParens(rgba: Uint8Array, width: number, items: OcrItem[]): OcrItem[] {
   const out: OcrItem[] = []
@@ -338,7 +338,7 @@ export function closingParens(rgba: Uint8Array, width: number, items: OcrItem[])
     if ((t.match(/\(/g)?.length ?? 0) <= (t.match(/\)/g)?.length ?? 0) || !/\([^()]*$/.test(t)) continue
     const x0 = it.x + it.w + 2
     const next = items.filter(o => o !== it && o.x >= x0 && o.y < it.y + it.h && o.y + o.h > it.y).reduce((m, o) => Math.min(m, o.x), Infinity)
-    let x1 = Math.min(width, next, x0 + it.h * 8)
+    let x1 = Math.min(width, next, x0 + it.h * 16)
     // 칸 세로 테두리(띠 높이 90% 넘게 잉크인 열)에서 끊는다 — ")" 바로 뒤 테두리를 둘째 무리로 세어 놓쳤다(대리인선임허가신청서 "(전화:      )│")
     const pageH = Math.floor(rgba.length / 4 / width)
     const colInk = (x: number) => { let k = 0; for (let y = it.y; y < it.y + it.h; y++) if (dark(x, y)) k++; return k }
@@ -355,10 +355,13 @@ export function closingParens(rgba: Uint8Array, width: number, items: OcrItem[])
       prevOn = on
     }
     if (runs !== 1 || maxX - minX + 1 > it.h * 0.5 || maxY - minY + 1 < it.h * 0.6) continue
-    // 칸 세로 테두리는 띠 밖으로 이어진다 — 위아래 2px 밖에 잉크가 있으면 뺀다
-    let rule = false
-    for (let x = minX; x <= maxX && !rule; x++) rule = (minY > 1 && !ruleRow.has(minY - 2) && dark(x, minY - 2)) || (!ruleRow.has(maxY + 2) && dark(x, Math.min(maxY + 2, pageH - 1)))
-    if (rule) continue
+    // 칸 세로 테두리는 띠 밖으로 멀리 이어진다 — 위아래로 이어진 잉크 줄이 띠 높이 0.6배를 넘으면 뺀다(괄호는 한글 상자보다 몇 px
+    // 삐져나올 뿐이다, 건축허가신청서 "(전화번호:            )")
+    const inkRow = (y: number) => { for (let x = minX; x <= maxX; x++) if (dark(x, y)) return true; return false }
+    let over = 0
+    for (let y = minY - 1; y >= 0 && !ruleRow.has(y) && inkRow(y) && over <= it.h; y--) over++
+    for (let y = maxY + 1; y < pageH && !ruleRow.has(y) && inkRow(y) && over <= it.h; y++) over++
+    if (over > it.h * 0.6) continue
     // ")" 는 가운데가 오른쪽으로 휜다 — 위·아래 20% 줄의 잉크 x 평균보다 가운데 줄이 오른쪽
     const meanX = (ya: number, yb: number) => { let sx = 0, k = 0; for (let y = ya; y < yb; y++) for (let x = minX; x <= maxX; x++) if (dark(x, y)) { sx += x; k++ } return k ? sx / k : NaN }
     const ch = maxY - minY + 1, band = Math.max(1, Math.round(ch * 0.2))

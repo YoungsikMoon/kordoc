@@ -37,6 +37,12 @@ describe("closingParens — 서식 칸에서 멀리 떨어진 닫는 괄호", ()
   it("띠 밖으로 이어지는 칸 테두리는 괄호가 아니다", () => {
     assert.deepEqual(closingParens(line(false, true), W2, [it0]), [])
   })
+  it("한글 상자보다 몇 px 삐져나온 괄호도 ) 다", () => {
+    const rgba = new Uint8Array(W2 * H2 * 4).fill(255)
+    const dot = (x: number, y: number) => { const p = (y * W2 + x) * 4; rgba[p] = rgba[p + 1] = rgba[p + 2] = 0 }
+    for (let y = 15; y < 45; y++) { const x = 200 + Math.round(3 * Math.sin(((y - 15) / 29) * Math.PI)); dot(x, y); dot(x + 1, y) }
+    assert.deepEqual(closingParens(rgba, W2, [it0]).map(i => i.text), [")"])
+  })
   it("괄호 뒤 칸 테두리·상자가 문 위 칸 가로 괘선이 있어도 ) 를 낸다", () => {
     const rgba = line(true, false)
     for (let y = 0; y < H2; y++) for (const x of [215, 216]) { const p = (y * W2 + x) * 4; rgba[p] = rgba[p + 1] = rgba[p + 2] = 0 } // 바로 뒤 테두리
