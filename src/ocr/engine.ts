@@ -738,8 +738,8 @@ export class OcrEngine {
         // 문턱은 본 인식보다 높게 — 그림 속 작은 글("e-learning" → "eleanig" 0.79)이 붙었다(나라배움터 계획)
         if (!r || r.confidence < RETRY_SCORE) return
         const text = restoreSymbols(restoreGlyphs(rgba, width, box, r.text, r.steps, r.stepPx).trim())
-        // 글자·숫자가 있어야 — 장식 띠를 "---" 로 읽었다(경기 학교 매뉴얼 머리)
-        if (/[\p{L}\p{N}]/u.test(text)) items.push({ text, ...this.itemBox(rgba, width, box, tuning), confidence: r.confidence })
+        // 글자·숫자가 두 자 이상이어야 — 장식 띠를 "---" 로 읽었고(경기 학교 매뉴얼 머리), 그림 세로 축 글자 한 자("s")가 끼어 줄 묶음이 바뀌었다(ODL 134)
+        if ((text.match(/[\p{L}\p{N}]/gu) ?? []).length >= 2) items.push({ text, ...this.itemBox(rgba, width, box, tuning), confidence: r.confidence })
       })
     }
     const leaderEnds = new Map<OcrItem, { lead: boolean; trail: boolean }>()
