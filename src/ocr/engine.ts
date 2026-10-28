@@ -233,6 +233,49 @@ export function rowTailBoxes(rgba: Uint8Array, width: number, items: OcrItem[]):
 }
 
 /**
+ * 줄 머리 상자 밖 잉크 무리 — 한글·숫자로 여는 줄(한글 두 자 이상)의 가장 왼쪽 아이템 앞(줄 높이 4배 안), 띠 안 상자 밖 잉크 열이 한 무리뿐이고
+ * 그 무리가 줄 높이(아이템 높이 중앙값) 0.5배 이상·폭 3배 이하면 그 외곽(여백 4px)을 낸다. 무늬 바탕 목차의 장 번호 "Ⅱ."·"Ⅲ." 는
+ * 검출기가 상자를 치지 않았다(함평 계획 — 같은 열 "Ⅰ." 는 잡힘). 받을지는 인식 결과가 번호 꼴인지로 정한다(recognizePage)
+ */
+export function rowHeadBoxes(rgba: Uint8Array, width: number, items: OcrItem[]): Box[] {
+  const out: Box[] = []
+  const dark = (x: number, y: number) => { const p = (y * width + x) * 4; return ((rgba[p] * 77 + rgba[p + 1] * 150 + rgba[p + 2] * 29) >> 8) < 160 }
+  const inBox = (x: number, y: number) => items.some(b => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h)
+  const height = Math.floor(rgba.length / 4 / width)
+  const done = new Set<OcrItem>()
+  for (const it of items) {
+    if (done.has(it) || it.h < 12) continue
+    const row = items.filter(o => Math.min(o.y + o.h, it.y + it.h) - Math.max(o.y, it.y) >= Math.min(o.h, it.h) * 0.6)
+    for (const o of row) done.add(o)
+    if (row.reduce((k, o) => k + (o.text.match(/[가-힣]/g)?.length ?? 0), 0) < 2) continue
+    const first = row.reduce((m, o) => (o.x < m.x ? o : m))
+    // 숫자로 여는 제목("2026년 군정목표")도 — 받을지는 인식 결과로 거른다
+    if (!/^[가-힣\d]/.test(first.text)) continue
+    const hs = row.map(o => o.h).sort((a, b) => a - b), h = hs[hs.length >> 1]
+    const y0 = Math.min(...row.map(o => o.y)), y1 = Math.max(...row.map(o => o.y + o.h))
+    const x0 = Math.max(0, Math.round(first.x - 4 * h)), x1 = first.x - 2
+    if (x1 - x0 < h) continue
+    let groups = 0, minX = -1, maxX = -1, minY = Infinity, maxY = -1
+    for (let x = x0; x < x1; x++) {
+      let on = false
+      for (let y = y0; y < y1; y++) if (dark(x, y) && !inBox(x, y)) { on = true; if (y < minY) minY = y; if (y > maxY) maxY = y }
+      if (!on) continue
+      if (maxX < 0 || x - maxX > h) { groups++; if (groups === 1) minX = x }
+      maxX = x
+    }
+    if (groups !== 1 || minX <= x0 || maxY - minY + 1 < h * 0.5 || maxX - minX + 1 > h * 3) continue
+    // 표 세로 테두리·상자 변은 띠 밖으로 이어진다 — 무리 위·아래 2px 밖에 잉크가 있으면 뺀다
+    let rule = false
+    for (let x = minX; x <= maxX && !rule; x++) rule = (minY > 1 && dark(x, minY - 2) && !inBox(x, minY - 2)) || (maxY + 2 < height && dark(x, maxY + 2) && !inBox(x, maxY + 2))
+    if (rule) continue
+    // 여백은 무리 높이 0.3배 — 4px 로 바투 자르면 인식기가 가장자리 Ⅱ·Ⅲ 를 버리고 "." 만 읽었다
+    const pad = Math.max(4, Math.round((maxY - minY + 1) * 0.3))
+    out.push({ x: Math.max(0, minX - pad), y: Math.max(0, minY - pad), w: maxX - minX + 1 + 2 * pad, h: maxY - minY + 1 + 2 * pad })
+  }
+  return out
+}
+
+/**
  * 검출기가 놓친 서식 빈칸 네모 — 코드 입력 칸 "□□□"·"□□-□□□" 는 글이 아니라 가는 테두리 네모만 늘어서 검출 지도에 글줄로 잡히지
  * 않는다(법령 별지서식 건축허가 신청서 "지역 □□□ 지구 □□□"). 검출 상자에 들지 않은 잉크 성분 가운데 속 빈 정사각(한 변 12~60px —
  * 조직도의 3pt 표시 네모는 뺀다,
@@ -677,6 +720,15 @@ export class OcrEngine {
         tails.forEach((box, k) => {
           const t = res[k]?.text.trim() ?? ""
           if (/^\d{1,4}$/.test(t) && (res[k]?.confidence ?? 0) >= tuning.textScore) items.push({ text: t, ...this.itemBox(rgba, width, box, tuning), confidence: res[k]!.confidence })
+        })
+      }
+      // 줄 머리 장 번호 — 같은 방식으로 앞쪽 무리를 다시 인식해 번호 꼴("Ⅱ."·"III."·"3.")만 받는다
+      const heads = rowHeadBoxes(rgba, width, items)
+      if (heads.length) {
+        const res = await this.recognizeJobs(rgba, width, heads.map((box, k) => ({ box, rot: 0 as const, group: k })), tuning.recBatch)
+        heads.forEach((box, k) => {
+          const t = res[k]?.text.trim() ?? ""
+          if (/^(?:[IVXⅠ-Ⅻ]{1,4}|\d{1,2})\s?\.$/.test(t) && (res[k]?.confidence ?? 0) >= tuning.textScore) items.push({ text: t, ...this.itemBox(rgba, width, box, tuning), confidence: res[k]!.confidence })
         })
       }
     }

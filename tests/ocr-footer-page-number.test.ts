@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { closingParens, footerInkBox, placeholderSquares, rowHeadDashes, rowTailBoxes } from "../src/ocr/engine.js"
+import { closingParens, footerInkBox, placeholderSquares, rowHeadBoxes, rowHeadDashes, rowTailBoxes } from "../src/ocr/engine.js"
 
 const W = 400, H = 600
 function page(): Uint8Array {
@@ -93,6 +93,28 @@ describe("rowTailBoxes — 줄 끝 홑 쪽 번호", () => {
   it("무리가 둘이면·한글 없는 줄이면 내지 않는다", () => {
     assert.equal(rowTailBoxes(page(true), W4, row).length, 0)
     assert.equal(rowTailBoxes(page(false), W4, [{ ...row[0], text: "1. Overview" }]).length, 0)
+  })
+})
+
+describe("rowHeadBoxes — 줄 머리 장 번호", () => {
+  const W6 = 400, H6 = 60
+  function page(rule: boolean): Uint8Array {
+    const rgba = new Uint8Array(W6 * H6 * 4).fill(255)
+    const rect = (x0: number, y0: number, x1: number, y1: number) => {
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const p = (y * W6 + x) * 4; rgba[p] = rgba[p + 1] = rgba[p + 2] = 0 }
+    }
+    rect(60, 14, 63, 34); rect(68, 14, 71, 34); rect(76, 30, 79, 34) // "Ⅱ."
+    if (rule) rect(60, 0, 63, 60) // 띠 밖으로 이어지는 세로 테두리
+    return rgba
+  }
+  const row = [{ text: "군정 여건 및 과제", x: 120, y: 12, w: 200, h: 24, confidence: 1 }]
+  it("한글 줄 앞 상자 밖 잉크 무리 하나면 높이 0.3배 여백으로 상자를 낸다", () => {
+    assert.deepEqual(rowHeadBoxes(page(false), W6, row), [{ x: 54, y: 8, w: 31, h: 32 }])
+  })
+  it("띠 밖으로 이어지는 테두리·한글 없는 줄·이미 상자에 든 잉크는 내지 않는다", () => {
+    assert.equal(rowHeadBoxes(page(true), W6, row).length, 0)
+    assert.equal(rowHeadBoxes(page(false), W6, [{ ...row[0], text: "Overview" }]).length, 0)
+    assert.equal(rowHeadBoxes(page(false), W6, [...row, { text: "Ⅱ.", x: 58, y: 12, w: 24, h: 24, confidence: 1 }]).length, 0)
   })
 })
 
