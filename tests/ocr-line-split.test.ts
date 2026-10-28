@@ -581,3 +581,13 @@ describe("leadingBullet — 마름모 ◆ ◇ ◈", () => {
     assert.ok(!["◆", "◇", "◈"].includes(leadingBullet(g, W, H, inkStats(g), 50)?.mark ?? ""))
   })
 })
+
+describe("leadingBullet — 큰 속 찬 네모 ■", () => {
+  it("글자 높이만 한 속 찬 정사각은 ■, 작은 것은 ▪", () => {
+    const W = 120, H = 40
+    const big = canvas(W, H); rect(big, W, 10, 9, 32, 31); rect(big, W, 60, 6, 110, 34)
+    assert.deepEqual(leadingBullet(big, W, H, inkStats(big), 50), { mark: "■", covers: false })
+    const small = canvas(W, H); rect(small, W, 14, 16, 24, 26); rect(small, W, 60, 6, 110, 34)
+    assert.equal(leadingBullet(small, W, H, inkStats(small), 50)?.mark, "▪")
+  })
+})

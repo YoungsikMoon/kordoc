@@ -823,7 +823,7 @@ export function bracketShape(f: BracketFeatures, close: boolean): string | null 
  * 맨 앞 덩어리(x 가 겹치는 성분 묶음)가 글자 높이 대비 크기·채움·겹침으로:
  *   ◎ 이중 원 — 성분 둘 이상이 안팎으로 겹치고 속이 빈 둥근 조각 (함평 계획 21개가 "O")
  *   ● 큰 속 찬 원 — 채움 0.65~0.88(원 π/4≈0.79), 글자 높이 0.45배 이상 (교육청 안내문 17개가 "•"·누락)
- *   ▪ 작은 속 찬 네모 — 채움 0.9 이상, 글자 높이 0.28~0.6배 (가운뎃점 "·" 은 0.21배 안팎)
+ *   ▪ 작은 속 찬 네모 — 채움 0.9 이상, 글자 높이 0.28~0.6배 (가운뎃점 "·" 은 0.21배 안팎), 그보다 크면(1.0배까지) ■
  *   ❐·❏ 그림자 진 네모 — 오른쪽과 위(❐)·아래(❏) 변이 맞은편보다 1.8배 넘게 두꺼운 네모 (모델은 자모 ㅁ 으로 읽는다)
  *   ‣ 오른쪽 삼각 — 줄마다 한 토막이 왼끝에서 시작하고 가운데 줄이 가장 긴 글자 높이 0.3~0.7배 조각 (모델은 → 로 읽는다)
  *   ▣ 속 찬 네모를 품은 네모 — 바깥 네모 테두리 + 가운데 속 찬 정사각, 글자 높이 0.6~0.92배
@@ -831,7 +831,7 @@ export function bracketShape(f: BracketFeatures, close: boolean): string | null 
  * 네모는 그림으로 그린 도형이기 쉽다, eval-perf-2024), 박스 바깥으로 떨어진 줄 머리는 따로 정한다. firstX 는 첫 인식 글자의 CTC 자리(박스 로컬) —
  * 덩어리가 그 앞에서 끝나면 인식에서 빠진 것, 그 글자 자리에 걸치면 그 글자가 이 기호를 잘못 읽은 것이다
  */
-export function leadingBullet(gray: Uint8Array, w: number, h: number, ink: InkStats, firstX: number, squareMax = 0.92): { mark: "◎" | "●" | "▪" | "□" | "▣" | "❐" | "❏" | "‣" | "◆" | "◇" | "◈"; covers: boolean } | null {
+export function leadingBullet(gray: Uint8Array, w: number, h: number, ink: InkStats, firstX: number, squareMax = 0.92): { mark: "◎" | "●" | "▪" | "■" | "□" | "▣" | "❐" | "❏" | "‣" | "◆" | "◇" | "◈"; covers: boolean } | null {
   const { comps, label } = components(gray, w, h, ink)
   let charH = 0
   for (const c of comps) charH = Math.max(charH, c.y1 - c.y0)
@@ -913,7 +913,7 @@ export function leadingBullet(gray: Uint8Array, w: number, h: number, ink: InkSt
     }
     return ok >= ch * 0.85
   })()
-  let mark: "\u25ce" | "\u25cf" | "\u25aa" | "\u25a1" | "\u25a3" | "\u2750" | "\u274f" | "\u25c6" | "\u25c7" | "\u25c8" | null = null
+  let mark: "\u25ce" | "\u25cf" | "\u25aa" | "\u25a0" | "\u25a1" | "\u25a3" | "\u2750" | "\u274f" | "\u25c6" | "\u25c7" | "\u25c8" | null = null
   if (diamond) mark = cl.length >= 2 && core ? "\u25c8" : cl.length === 1 && fill >= 0.4 ? "\u25c6" : cl.length === 1 ? "\u25c7" : null
   if (mark) return { mark, covers: firstX <= x1 + ch * 0.3 }
   if (shadow && rel >= 0.6 && rel <= 0.92) mark = shadow
@@ -921,6 +921,8 @@ export function leadingBullet(gray: Uint8Array, w: number, h: number, ink: InkSt
   else if (filledSquare && rel >= 0.6 && rel <= 0.92) mark = "\u25a3"
   else if (nested && fill < 0.45 && rel >= 0.6) mark = "\u25ce"
   else if (cl.length === 1 && fill >= 0.9 && rel >= 0.28 && rel <= 0.6) mark = "\u25aa"
+  // 큰 속 찬 네모 ■ — 서식 머리 "■ 국토의 계획 및 이용에 관한 법률 시행규칙 [별지 …]"(모델은 빠뜨림). 글자 높이 0.6~1.0배
+  else if (cl.length === 1 && fill >= 0.9 && rel > 0.6 && rel <= 1.0) mark = "\u25a0"
   else if (cl.length === 1 && fill >= 0.65 && fill <= 0.88 && rel >= 0.5 && rel <= 0.8) mark = "\u25cf"
   if (!mark) return null
   return { mark, covers: firstX <= x1 + ch * 0.3 }
