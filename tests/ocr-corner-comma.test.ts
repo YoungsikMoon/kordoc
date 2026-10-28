@@ -103,3 +103,14 @@ describe("C 로 읽은 줄 머리 고리", () => {
     assert.equal(restoreGlyphs(headPage(true), W, box, "C제2차", [1, 3.4, 4.8, 6.2], 10), "C제2차")
   })
 })
+
+describe("가운뎃점으로 읽은 작은 고리 。", () => {
+  it("· 자리 잉크가 아래쪽 작은 고리면 。", () => {
+    const rgba = new Uint8Array(W * H * 4).fill(255)
+    const dot = (x: number, y: number) => { const p = (y * W + x) * 4; rgba[p] = rgba[p + 1] = rgba[p + 2] = 0 }
+    for (let y = 4; y < 30; y++) for (let x = 4; x < 24; x++) dot(x, y) // 한글 칸
+    for (let y = 0; y < H; y++) for (let x = 26; x < 38; x++) { const d = Math.hypot(x + 0.5 - 32, y + 0.5 - 25); if (d <= 4.5 && d > 3) dot(x, y) } // 。
+    for (let y = 4; y < 30; y++) for (let x = 40; x < 60; x++) dot(x, y)
+    assert.equal(restoreGlyphs(rgba, W, box, "가·나", [1, 3.1, 5], 10), "가。나")
+  })
+})

@@ -211,6 +211,8 @@ function gaps({ chars, cx, gray, w, h, ink }: Ctx) {
     }
     if (cover.length) {
       if (g.mark.startsWith("\u25a1") && cover.length === 1 && /^[0Oo\u25cb]$/.test(chars[cover[0]])) chars[cover[0]] = "\u25a1"
+      // 작은 고리 。 를 가운뎃점으로 읽은 자리("2회。관용차량" → "2회·관용차량", 예산서 산출 내역) — 그 글자를 。 로
+      if (g.mark === "\u3002" && cover.length === 1 && /^[\u00b7\u2022\u318d]$/.test(chars[cover[0]])) chars[cover[0]] = "\u3002"
       continue
     }
     if (g.mark === "\u25a1\u0000") continue
