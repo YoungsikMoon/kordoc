@@ -29,7 +29,7 @@ import { parse, parseImage } from "../src/index.js"
 import { cliOcrEngineOptions } from "../src/cli/convert.js"
 import { validateOcrOptions } from "../src/ocr/options.js"
 import {
-  ALL_OCR_MODELS, DEFAULT_OCR_MODELS, OCR_DET_MODEL, OCR_HANDWRITING_REC_MODEL, OCR_REC_DICT, OCR_REC_MODEL, OCR_SERVER_DET_MODEL,
+  ALL_OCR_MODELS, DEFAULT_OCR_MODELS, OCR_DET_MODEL, OCR_HANDWRITING_REC_MODEL, OCR_REC_DICT, OCR_REC_MODEL, OCR_SERVER_DET_MODEL, OCR_V6_MEDIUM_DET_MODEL,
   getOcrModelStatus, ocrModelPath, ocrSelectionKey, parseCharacterDict, resolveOcrModels,
 } from "../src/ocr/models.js"
 import { DEFAULT_BUILTIN_OCR, builtinOcrConfig, pageLines } from "../src/ocr/pdf-ocr.js"
@@ -119,6 +119,17 @@ describe("모델 선택·기본 설정", () => {
     // 명시한 로컬 사전은 그대로 쓴다
     const dict = resolveOcrModels({ ocrRec: "handwriting", ocrRecDict: { path: "/m/d.yml", sha256: HEX } })
     assert.deepEqual(dict.dict, { file: { path: "/m/d.yml", sha256: HEX } })
+  })
+
+  it("ocrDet: \"medium\" → PP-OCRv6 medium det(고정 SHA-256), 튜닝·rec 는 기본 그대로, 기본 묶음에 들지 않는다", async () => {
+    const c = builtinOcrConfig({ ocrDet: "medium" })
+    assert.equal("spec" in c.models.det && c.models.det.spec, OCR_V6_MEDIUM_DET_MODEL)
+    assert.equal(c.models.rec, DEFAULT_OCR_MODELS.rec)
+    assert.deepEqual({ ...c.tuning }, { ...DEFAULT_OCR_TUNING })
+    assert.equal(OCR_V6_MEDIUM_DET_MODEL.sha256, "eb13b44b25bb36f89528b68720af8a61d9cf381176107f465db1757b65d086e1")
+    assert.equal(new Set([DEFAULT_OCR_MODELS, resolveOcrModels({ ocrDet: "server" }), c.models].map(ocrSelectionKey)).size, 3)
+    const { MODEL_GROUPS } = await import("../src/shared/model-bundle.js")
+    assert.ok(!MODEL_GROUPS.flatMap(g => g.specs).some(s => s.filename === OCR_V6_MEDIUM_DET_MODEL.filename))
   })
 
   it("손글씨 rec 는 기본 다운로드(kordoc models)·모델 번들 묶음에 들지 않는다", async () => {

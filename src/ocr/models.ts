@@ -2,7 +2,7 @@
  * 내장 텍스트 OCR 모델 (PP-OCRv5 korean) 스펙 + 다운로드/검증.
  *
  * 캐시 위치: `~/.cache/kordoc/models/ppocr/` — 총 ~18MB (det 4.6 + rec 12.8 + dict 0.1).
- * 선택 모델 server det(88MB, `ocrDet: "server"`)·손글씨 rec(15MB, `ocrRec: "handwriting"`)는 고를 때만 같은 곳에 받는다. 로컬 모델 파일(`ocrDet`·`ocrRec`·`ocrRecDict`
+ * 선택 모델 server det(88MB, `ocrDet: "server"`)·v6 medium det(62MB, `ocrDet: "medium"`)·손글씨 rec(15MB, `ocrRec: "handwriting"`)는 고를 때만 같은 곳에 받는다. 로컬 모델 파일(`ocrDet`·`ocrRec`·`ocrRecDict`
  * {path, sha256})은 캐시에 복사하지 않고 엔진이 그 경로에서 읽어 대조한다.
  * 다운로드 인프라는 수식 OCR 과 공용 (formula/models.ts ensureModelsIn).
  *
@@ -42,6 +42,17 @@ export const OCR_SERVER_DET_MODEL: ModelSpec = {
   sizeMb: 88,
   // models --export/--import 묶음에 들지 않으니 그 안내 대신
   offlineHint: "온라인 PC에서 받은 파일을 이 PC 모델 캐시의 ppocr/det_server.onnx 로 반입하거나(SHA-256 을 검증한다), ocrDet 에 로컬 파일 {path, sha256} 을 지정하세요",
+}
+
+/** 선택 모델 (`ocrDet: "medium"`) — PP-OCRv6 medium det. 열화 입력(기울임·흐림·스캔·잡음)에 강하지만 깨끗한 PDF 는 기본 mobile 이
+ *  낫다(OCR 벤치 CER 0.0305 vs 0.0250 — 표 묶기·읽기 순서가 v5 상자 모양에 맞춰져 있다). 입출력이 v5 det 와 같아 전·후처리는 그대로 쓴다 */
+export const OCR_V6_MEDIUM_DET_MODEL: ModelSpec = {
+  name: "PP-OCRv6 medium det",
+  filename: "det_v6_medium.onnx",
+  url: "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_det_onnx/resolve/main/inference.onnx",
+  sha256: "eb13b44b25bb36f89528b68720af8a61d9cf381176107f465db1757b65d086e1",
+  sizeMb: 62,
+  offlineHint: "온라인 PC에서 받은 파일을 이 PC 모델 캐시의 ppocr/det_v6_medium.onnx 로 반입하거나(SHA-256 을 검증한다), ocrDet 에 로컬 파일 {path, sha256} 을 지정하세요",
 }
 
 export const OCR_REC_MODEL: ModelSpec = {
@@ -109,7 +120,7 @@ export function resolveOcrModels(o: Pick<ParseOptions, "ocrDet" | "ocrRec" | "oc
   const file = (f: OcrModelFile): OcrModelSource => ({ file: { path: f.path, sha256: f.sha256.toLowerCase() } })
   const det = o?.ocrDet
   return {
-    det: det === undefined || det === "mobile" ? DEFAULT_OCR_MODELS.det : det === "server" ? { spec: OCR_SERVER_DET_MODEL } : file(det),
+    det: det === undefined || det === "mobile" ? DEFAULT_OCR_MODELS.det : det === "server" ? { spec: OCR_SERVER_DET_MODEL } : det === "medium" ? { spec: OCR_V6_MEDIUM_DET_MODEL } : file(det),
     rec: o?.ocrRec === "handwriting" ? { spec: OCR_HANDWRITING_REC_MODEL } : o?.ocrRec ? file(o.ocrRec) : DEFAULT_OCR_MODELS.rec,
     dict: o?.ocrRecDict ? file(o.ocrRecDict) : DEFAULT_OCR_MODELS.dict,
   }

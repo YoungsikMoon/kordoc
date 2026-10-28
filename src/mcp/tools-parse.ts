@@ -24,8 +24,8 @@ export function registerParseTools(server: McpServer): void {
         .describe("PDF 수식 OCR 활성화 (MFD+MFR ONNX, 첫 사용 시 모델 ~155MB 자동 다운로드, CLI --formula-ocr 대응)"),
       ocr_rec: z.enum(["handwriting"]).optional()
         .describe("OCR 글자 인식 모델 — \"handwriting\": 수기 서류용 한국어 손글씨 rec(첫 사용 시 ~15MB 다운로드). 손글씨 칸이 많은 서식용이며 금액·날짜·전화번호의 쉼표·마침표·하이픈을 빠뜨리는 경우가 있다. OCR 이 도는 곳(이미지, PDF 는 ocr: true·\"force\" — ocr 을 빼면 고른 모델이 캐시에 있을 때만 자동 OCR)에 적용 (CLI --ocr-rec handwriting 대응)"),
-      ocr_det: z.enum(["mobile", "server"]).optional()
-        .describe("OCR 글줄 검출 모델 — \"mobile\"(기본) | \"server\"(첫 사용 시 ~88MB 다운로드) (CLI --ocr-det 대응)"),
+      ocr_det: z.enum(["mobile", "server", "medium"]).optional()
+        .describe("OCR 글줄 검출 모델 — \"mobile\"(기본) | \"server\"(첫 사용 시 ~88MB 다운로드) | \"medium\"(PP-OCRv6, 첫 사용 시 ~62MB 다운로드 — 기울임·흐림·스캔 같은 열화 입력용) (CLI --ocr-det 대응)"),
       ocr_det_long_side: z.number().int().min(32).max(4096).optional()
         .describe("OCR 글줄 검출 입력 긴 변 픽셀 (32~4096, 기본 960) — 키우면 작은 글씨를 더 잡고 느려진다 (CLI --ocr-det-long-side 대응)"),
       dedupe_running_headers: z.boolean().optional()

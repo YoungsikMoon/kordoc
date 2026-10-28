@@ -11,8 +11,8 @@ export function validateOcrOptions(o: Pick<ParseOptions, "ocrLines" | "ocrDet" |
   if (!o) return null
   if (o.ocrLines !== undefined && typeof o.ocrLines !== "boolean" && o.ocrLines !== "all") return `ocrLines 는 true·false·"all" 입니다 (받은 값: ${JSON.stringify(o.ocrLines)})`
   const det = o.ocrDet
-  if (det !== undefined && det !== "mobile" && det !== "server") {
-    if (typeof det === "string" || !det || typeof det !== "object") return `ocrDet 은 "mobile"·"server" 또는 {path, sha256} 입니다 (받은 값: ${JSON.stringify(det)})`
+  if (det !== undefined && det !== "mobile" && det !== "server" && det !== "medium") {
+    if (typeof det === "string" || !det || typeof det !== "object") return `ocrDet 은 "mobile"·"server"·"medium" 또는 {path, sha256} 입니다 (받은 값: ${JSON.stringify(det)})`
     const bad = modelFileError("ocrDet", det)
     if (bad) return bad
   }

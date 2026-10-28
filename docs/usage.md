@@ -82,7 +82,7 @@ if (result.success) {
 | `pages` | `-p, --pages` | `"1-3"`·`"1,3,5-7"`·`[1, 5, 10]` — PDF·한컴 저장본은 실제 쪽, 조판 캐시 없으면 섹션 근사 |
 | `ocr` | `--ocr` · `--ocr-force` | 기본: 스캔 쪽 + 큰 그림 속 글(모델 캐시 있을 때) · `true`: + 작은 그림·로고까지(모델 ~18MB 자동 다운로드) · `"force"`: 전 쪽 · `false`: 끔 · 함수: 외부 OCR · HWP·HWPX 삽입 그림은 `true`·`"force"`·함수일 때만 읽음(기본은 원문 글만, DOCX 등 다른 형식 그림은 대상 아님) |
 | `ocrLines` | `--ocr-lines` · `--ocr-lines-all` | 내장 OCR 이 읽은 줄(상자·신뢰도)을 결과 `ocrLines` 로(PDF·이미지). `"all"` 은 저신뢰로 버린 줄도 `dropped: true` 로 — 아래 [OCR 줄·모델 선택](#ocr-줄모델-선택) |
-| `ocrDet` · `ocrDetLongSide` | `--ocr-det` · `--ocr-det-long-side` | 글줄 검출 모델 `"mobile"`(기본)·`"server"`(~88MB, 첫 사용 시 다운로드)·로컬 파일 `{path, sha256}`, 검출 입력 긴 변(32~4096, 기본 960) |
+| `ocrDet` · `ocrDetLongSide` | `--ocr-det` · `--ocr-det-long-side` | 글줄 검출 모델 `"mobile"`(기본)·`"server"`(~88MB, 첫 사용 시 다운로드)·`"medium"`(PP-OCRv6, ~62MB, 첫 사용 시 다운로드 — 기울임·흐림·스캔 입력용)·로컬 파일 `{path, sha256}`, 검출 입력 긴 변(32~4096, 기본 960) |
 | `ocrRec` · `ocrRecDict` | `--ocr-rec` · `--ocr-rec-dict` (+ `--ocr-*-sha256`) | 글자 인식 모델 `"handwriting"`(수기 서류용 한국어 손글씨 rec, ~15MB, 첫 사용 시 다운로드)·로컬 파일 `{path, sha256}`(미세조정 rec 등), 사전은 로컬 파일. SHA-256 이 다르면 로드하지 않음 |
 | `formulaOcr` | `--formula-ocr` | PDF 수식 OCR(MFD+MFR, 모델 ~155MB) — 감지한 수식을 `$…$`·`$$…$$` 로 |
 | `scriptTags` | `--script-tags` · `--no-script-tags` | 위·아래첨자를 `<sup>`·`<sub>` 로("10⁴ m²" 가 "104 m2" 로 펴지지 않게). 기본: HWPX·HWP·DOCX 켬, PDF 끔(논문·수식 PDF 는 `true` 권장) |
@@ -277,7 +277,7 @@ await parse("수기 신청서.pdf", { ocr: true, ocrRec: "handwriting" })       
 - `ocrRec: "handwriting"` 은 PP-OCRv5 korean rec 를 손글씨·공문서 데이터로 추가 학습한 공개 모델([korean-handwriting-rec](https://github.com/VerifiedIdiot/korean-handwriting-rec), Apache-2.0)입니다.
   사전은 내장 한국어 사전을 그대로 씁니다. 수기 신청서·조사표처럼 손글씨가 많은 문서용이며, 장평이 좁은 숫자·빗금(쪽 표기 `1/2` 등)은 기본 모델보다 잘못 읽는 경우가 있어 기본값은 바꾸지 않았습니다.
   고른 모델을 받지 못하거나 열지 못하면 기본 모델로 바꾸지 않고 실패(PDF 는 `OCR_FAILED` 경고)로 알립니다.
-- MCP `parse_document` 는 프리셋 이름만 받습니다 — `ocr_rec: "handwriting"`·`ocr_det: "mobile" | "server"`·`ocr_det_long_side`(32~4096). 로컬 모델 파일은 CLI·라이브러리에서 지정합니다.
+- MCP `parse_document` 는 프리셋 이름만 받습니다 — `ocr_rec: "handwriting"`·`ocr_det: "mobile" | "server" | "medium"`·`ocr_det_long_side`(32~4096). 로컬 모델 파일은 CLI·라이브러리에서 지정합니다.
 - 모델 선택마다 엔진 세션을 하나씩 캐시합니다(상주 워커에서 여러 조합을 쓰면 그만큼 메모리를 씁니다).
 
 ### PDF 텍스트 품질 신호

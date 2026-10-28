@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- OCR: 선택 검출 모델 `ocrDet: "medium"`(CLI `--ocr-det medium`, MCP `ocr_det: "medium"`) — PP-OCRv6 medium det(~62MB, 첫 사용 시 다운로드, SHA-256 고정). 기본값은 그대로 v5 mobile(#176). 같은 코퍼스로 잰 결과 열화 입력은 medium 이 낫고(기울임 +1° 4.9 → 4.3%·흐림 5.5 → 5.1%·스캔 6.9 → 6.1%·잡음 4.9 → 4.6%) 깨끗한 PDF 는 기본이 낫다(OCR CER 0.0250 vs 0.0305 — 표 묶기·읽기 순서가 v5 상자 모양에 맞춰져 있다). 쪽당 시간은 1.01 → 1.19초. v6 tiny·small 은 깨끗한 PDF 에서 기본보다 CER 이 높아(0.0347·0.0304) 넣지 않았다(열화 입력은 medium 만 쟀다).
+
 ## [4.24.16] - 2026-10-28
 
 ### Fixed

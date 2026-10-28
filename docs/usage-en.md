@@ -82,7 +82,7 @@ if (result.success) {
 | `pages` | `-p, --pages` | `"1-3"` · `"1,3,5-7"` · `[1, 5, 10]` — real pages for PDF and Hancom-saved files, section approximation without a typesetting cache |
 | `ocr` | `--ocr` · `--ocr-force` | default: scanned pages + text in large images (when the model is cached) · `true`: + small images and logos (~18MB model auto-download) · `"force"`: every page · `false`: off · function: external OCR · images embedded in HWP/HWPX are read only with `true`, `"force"` or a function (default: source text only; images in DOCX and other formats are not covered) |
 | `ocrLines` | `--ocr-lines` · `--ocr-lines-all` | built-in OCR lines (box, confidence) as `result.ocrLines` (PDF, images). `"all"` also lists lines dropped for low confidence with `dropped: true` — see [OCR lines and models](#ocr-lines-and-models) |
-| `ocrDet` · `ocrDetLongSide` | `--ocr-det` · `--ocr-det-long-side` | text detection model `"mobile"` (default), `"server"` (~88MB, downloaded on first use) or a local file `{path, sha256}`; detector input long side (32–4096, default 960) |
+| `ocrDet` · `ocrDetLongSide` | `--ocr-det` · `--ocr-det-long-side` | text detection model `"mobile"` (default), `"server"` (~88MB, downloaded on first use), `"medium"` (PP-OCRv6, ~62MB, downloaded on first use; for skewed, blurred or scanned input) or a local file `{path, sha256}`; detector input long side (32–4096, default 960) |
 | `ocrRec` · `ocrRecDict` | `--ocr-rec` · `--ocr-rec-dict` (+ `--ocr-*-sha256`) | recognition model `"handwriting"` (Korean handwriting rec for handwritten forms, ~15MB, downloaded on first use) or a local file `{path, sha256}` (e.g. a fine-tuned rec); dictionary from a local file. Not loaded if the SHA-256 differs |
 | `formulaOcr` | `--formula-ocr` | PDF formula OCR (MFD+MFR, ~155MB models) — detected formulas as `$…$` / `$$…$$` |
 | `scriptTags` | `--script-tags` · `--no-script-tags` | superscripts/subscripts as `<sup>`/`<sub>` (so "10⁴ m²" does not flatten to "104 m2"). Default: on for HWPX · HWP · DOCX, off for PDF (`true` recommended for papers and math) |
@@ -277,7 +277,7 @@ await parse("handwritten-form.pdf", { ocr: true, ocrRec: "handwriting" })       
 - `ocrRec: "handwriting"` is a public model fine-tuned from PP-OCRv5 korean rec on handwriting and government-form data ([korean-handwriting-rec](https://github.com/VerifiedIdiot/korean-handwriting-rec), Apache-2.0).
   It uses the built-in Korean dictionary. It is meant for documents with a lot of handwriting such as handwritten applications and survey forms; it can misread narrow digits and slashes (e.g. the page mark `1/2`) that the default model reads correctly, so the default is unchanged.
   If the selected model cannot be downloaded or opened, kordoc does not fall back to the default model and reports a failure (an `OCR_FAILED` warning for PDFs).
-- MCP `parse_document` accepts preset names only: `ocr_rec: "handwriting"`, `ocr_det: "mobile" | "server"` and `ocr_det_long_side` (32 to 4096). Local model files are set through the CLI or the library.
+- MCP `parse_document` accepts preset names only: `ocr_rec: "handwriting"`, `ocr_det: "mobile" | "server" | "medium"` and `ocr_det_long_side` (32 to 4096). Local model files are set through the CLI or the library.
 - One engine session is cached per model selection (a resident worker using several selections keeps each in memory).
 
 ### PDF text-quality signals

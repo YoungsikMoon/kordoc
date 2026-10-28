@@ -18,7 +18,7 @@ export function cliOcrEngineOptions(opts: OptionValues): Pick<ParseOptions, "ocr
   if (opts.ocrLinesAll) out.ocrLines = "all"
   else if (opts.ocrLines) out.ocrLines = true
   if (opts.ocrDet !== undefined) {
-    out.ocrDet = opts.ocrDet === "mobile" || opts.ocrDet === "server" ? opts.ocrDet : file(String(opts.ocrDet), opts.ocrDetSha256)
+    out.ocrDet = opts.ocrDet === "mobile" || opts.ocrDet === "server" || opts.ocrDet === "medium" ? opts.ocrDet : file(String(opts.ocrDet), opts.ocrDetSha256)
   }
   // 숫자가 아니면 받은 글 그대로 넘겨 parse() 가 그 값을 들어 거부한다
   if (opts.ocrDetLongSide !== undefined) out.ocrDetLongSide = /^\d+$/.test(String(opts.ocrDetLongSide)) ? Number(opts.ocrDetLongSide) : opts.ocrDetLongSide as number

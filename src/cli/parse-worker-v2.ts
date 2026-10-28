@@ -55,7 +55,7 @@ const optionsSchema = z.object({
   inlineImages: z.boolean(),
   ocr: z.union([z.boolean(), z.literal("force")]),
   ocrLines: z.union([z.boolean(), z.literal("all")]),
-  ocrDet: z.union([z.enum(["mobile", "server"]), modelFileSchema]),
+  ocrDet: z.union([z.enum(["mobile", "server", "medium"]), modelFileSchema]),
   ocrDetLongSide: z.number().int(),
   ocrRec: z.union([z.literal("handwriting"), modelFileSchema]),
   ocrRecDict: modelFileSchema,

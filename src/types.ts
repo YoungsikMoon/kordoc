@@ -235,8 +235,9 @@ export interface ParseOptions {
    *  사용자 OcrProvider·HWP 삽입 그림 OCR 에는 줄 좌표가 없어 해당 없음 */
   ocrLines?: boolean | "all"
   /** 내장 OCR 글줄 검출 모델. 기본 `"mobile"`(PP-OCRv5 mobile det, ~5MB). `"server"`: PP-OCRv5 server det(~88MB, 첫 사용 시
-   *  다운로드 — 작은 글자에 강하지만 느리다). 객체: 로컬 ONNX 파일(`path` 절대 경로 + `sha256` 필수, 다르면 로드 거부) */
-  ocrDet?: "mobile" | "server" | OcrModelFile
+   *  다운로드 — 작은 글자에 강하지만 느리다). `"medium"`: PP-OCRv6 medium det(~62MB, 첫 사용 시 다운로드 — 기울임·흐림·스캔·잡음 같은
+   *  열화 입력에 강하고 깨끗한 PDF 는 기본이 낫다). 객체: 로컬 ONNX 파일(`path` 절대 경로 + `sha256` 필수, 다르면 로드 거부) */
+  ocrDet?: "mobile" | "server" | "medium" | OcrModelFile
   /** 글줄 검출 입력 긴 변(px, 32~4096 정수). 기본 960 (PP-OCRv5 공식 resize_long) — 키우면 작은 글자를 더 잡고 느려진다 */
   ocrDetLongSide?: number
   /** 내장 OCR 글자 인식 모델. 기본은 PP-OCRv5 korean rec. `"handwriting"`: 손글씨·공문서 데이터로 추가 학습한 한국어 rec(~15MB,
