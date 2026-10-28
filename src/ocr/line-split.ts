@@ -844,12 +844,15 @@ const BRACKET_SOLID = 0.4
 const BRACKET_WIDE = 0.265
 const BRACKET_LENS = 0.35
 
-/** 괄호 모양 판별 — 모를 때 null (인식 결과 [ ] 를 둔다). 곧은 ㄱ·ㄴ 꼴은 「」, 휜 조각(기울기 줄)은 ( ) */
+/** 괄호 모양 판별 — 모를 때 null (인식 결과 [ ] 를 둔다). 곧은 ㄱ·ㄴ 꼴은 「」, 휜 조각(기울기 줄)은 ( ), 넓고 속 빈 꺾인 조각은 〔〕 */
 export function bracketShape(f: BracketFeatures, close: boolean): string | null {
   const [near, far] = close ? [f.bottom, f.top] : [f.top, f.bottom]
   const paren = close ? ")" : "("
   if (near >= 0.7 && far <= 0.5) return f.taper < BRACKET_TAPER ? (close ? "\u300d" : "\u300c") : paren
   if (near >= 0.7 && far >= 0.7 && f.taper >= BRACKET_TAPER) {
+    // 거북등 괄호 〔〕 — 끝이 꺾인 가는 줄기라 속이 비고(채움 0.37~0.43) 폭이 높이의 0.35배 안팎으로 넓다. 소괄호는 0.22~0.25배,
+    // 【】 는 속이 차 채움 0.65 이상(기록관리 지침 목차 "〔기록물생산자〕" 가 "(…】")
+    if (f.fill < 0.45 && f.cw >= f.ch * 0.3 && f.taper < BRACKET_LENS) return close ? "\u3015" : "\u3014"
     return f.fill >= BRACKET_SOLID && (f.cw >= f.ch * BRACKET_WIDE || f.taper >= BRACKET_LENS) ? (close ? "\u3011" : "\u3010") : paren
   }
   return null

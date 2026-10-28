@@ -218,6 +218,12 @@ describe("bracketFeatures·bracketShape — 사전 밖 괄호 「」【】", () 
     assert.ok(f.taper >= 0.16 && f.cw < f.ch * 0.28, `taper=${f.taper} cw=${f.cw} ch=${f.ch}`)
     assert.equal(bracketShape(f, false), "(")
   })
+  it("넓고 속 빈 꺾인 조각은 〔〕 — 실측 기록관리 지침 목차 〔 채움 0.37·폭 0.35배, 〕 0.43·0.35배(소괄호는 폭 0.22~0.25배)", () => {
+    const tort = { top: 1, bottom: 1, taper: 0.235, fill: 0.37, cw: 12, ch: 34, charH: 34 }
+    assert.equal(bracketShape(tort, false), "\u3014")
+    assert.equal(bracketShape({ ...tort, fill: 0.43 }, true), "\u3015")
+    assert.equal(bracketShape({ ...tort, cw: 8 }, false), "(")
+  })
   it("윗변 가로 획만 있는 글자 높이 절반의 조각은 「, 뒤집으면 」", () => {
     const { g, w, h } = setup(corner)
     assert.equal(bracketShape(bracketFeatures(g, w, h, inkStats(g), 14)!, false), "\u300c")
