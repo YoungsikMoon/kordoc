@@ -308,11 +308,13 @@ function roman({ chars, cx, gray, w, h, ink }: Ctx) {
   // 세로 막대 | 로 읽은 로마 숫자 — 한글 바로 뒤("희망키움통장|")·마침표 앞("|.직업계고")·붙임표 사이("63-|-")의 홑 막대만, 그 자리 세로
   // 획 수로 Ⅰ~Ⅲ. 겹 막대 "||"·빈칸 사이 홑 막대는 장식 괘선이 튄 것이라 두지 않는다(목차 "목 차 ||")
   for (let i = 0; i < chars.length; i++) {
-    if (chars[i] !== "|" || chars[i - 1] === "|" || chars[i + 1] === "|") continue
+    // 한글 파·피 로 읽은 Ⅲ — 과제 번호 괄호 머리("(Ⅲ-1-①)" → "(파-1-①)", 농진청 성과계획 목차)만
+    const hangul = /^[파피]$/.test(chars[i])
+    if ((chars[i] !== "|" && !hangul) || chars[i - 1] === "|" || chars[i + 1] === "|") continue
     let p = i - 1, q = i + 1
     while (p >= 0 && !chars[p].trim()) p--
     while (q < chars.length && !chars[q].trim()) q++
-    const glued = /[가-힣]$/.test(chars[i - 1] ?? "") || (chars[i + 1] ?? "") === "." || (chars[p] === "-" && chars[q] === "-")
+    const glued = hangul ? chars[p] === "(" && chars[q] === "-" : /[가-힣]$/.test(chars[i - 1] ?? "") || (chars[i + 1] ?? "") === "." || (chars[p] === "-" && chars[q] === "-")
     if (!glued) continue
     const n = romanStems(gray, w, h, ink, p >= 0 ? cx(p) : -Infinity, q < chars.length ? cx(q) : Infinity)
     if (n) chars[i] = String.fromCharCode(0x215f + n)

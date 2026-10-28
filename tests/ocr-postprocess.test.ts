@@ -17,6 +17,9 @@ import { dateCommas, dateDots, dropNestedFragments, isDotFragment, joinDigitGrou
 describe("restoreSymbols — 사전 밖 기호 복원", () => {
   it("줄 머리 O/o + 한글 → ○", () => {
     assert.equal(restoreSymbols("O사회적경제 육성"), "○사회적경제 육성")
+    // 네모 친 번호의 왼 변을 읽은 "[" 는 지우고, 닫는 "]" 가 있는 대괄호는 둔다
+    assert.equal(restoreSymbols("[②식량산업 활성화"), "②식량산업 활성화")
+    assert.equal(restoreSymbols("[②번 서식] 참조"), "[②번 서식] 참조")
     assert.equal(restoreSymbols("o 추진계획"), "○ 추진계획")
   })
   it("라틴 약어·숫자·ㅇ 글머리는 그대로", () => {

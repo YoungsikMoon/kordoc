@@ -37,6 +37,9 @@ export function restoreSymbols(text: string, ringDecided = false): string {
   // 붙임표 든 전화번호가 이어질 때만("(G20)" 같은 괄호 속 낱말은 붙임표 번호가 아니다)
   // 붙여 쓴다(코퍼스 텍스트층 ☎ 뒤 숫자 292 : 공백 12)
   s = s.replace(/([(（])\s?[A-Za-z@&]\s?(?=(?:0\d{1,2}-)?\d{3,4}-\d{4}\b)/g, "$1\u260e")
+  // 네모 친 번호를 "[②" 로 읽은 줄 머리 — 상자 왼 변을 여는 대괄호로 읽었다(농진청 성과계획 목차, 텍스트층은 ①②). 닫는 "]" 가 없는
+  // 줄의 머리 "[" 바로 뒤가 원문자일 때만 지운다
+  if (!s.includes("]")) s = s.replace(/^\[(?=[\u2460-\u2473])/, "")
   return smartQuotes(dateDots(dateCommas(joinDigitGroups(s))))
 }
 
