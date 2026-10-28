@@ -108,12 +108,23 @@ function cornerQuotes({ chars, cx, gray, w, h, ink }: Ctx) {
 }
 
 function brackets({ chars, cx, gray, w, h, ink }: Ctx) {
-  for (let i = 0; i < chars.length; i++) {
-    if (chars[i] !== "[" && chars[i] !== "]") continue
+  const shape = chars.map((c, i) => {
+    if (c !== "[" && c !== "]") return null
     const f = bracketFeatures(gray, w, h, ink, cx(i))
-    const shape = f && bracketShape(f, chars[i] === "]")
-    if (shape) chars[i] = shape
+    return f && bracketShape(f, c === "]")
+  })
+  // 짝이 어긋나면 [ ] 로 둔다 — 흐리거나 기울인 판에서 한쪽 끝만 번져 렌즈 꼴(【)·휜 조각(()로 잡혔다("[표3-17]" → "【표3-17]",
+  // 기후 계획 1° 판). 【】·( ) 는 양쪽이 같은 글꼴 모양이라 함께 바뀐다
+  const pair: Record<string, string> = { "\u3010": "\u3011", "(": ")" }
+  for (let i = 0; i < chars.length; i++) {
+    if (chars[i] !== "[") continue
+    const j = chars.findIndex((c, k) => k > i && (c === "[" || c === "]"))
+    if (j < 0 || chars[j] !== "]") continue
+    const a = shape[i], b = shape[j]
+    const opens = a === "\u3010" || a === "(", closes = b === "\u3011" || b === ")"
+    if ((opens || closes) && (!a || !b || pair[a] !== b)) { if (opens) shape[i] = null; if (closes) shape[j] = null }
   }
+  for (let i = 0; i < chars.length; i++) if (shape[i]) chars[i] = shape[i]!
 }
 
 /**
