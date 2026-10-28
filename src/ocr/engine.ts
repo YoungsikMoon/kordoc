@@ -148,7 +148,46 @@ interface SharpChain {
 interface LineJob { box: Box; rot: 0 | 90 | 270; group: number; footer?: boolean; join?: number; dotsBefore?: boolean; trimDots?: boolean; keep?: { x0: number; x1: number; y0: number; y1: number; bg: number } }
 
 /**
- * 줄 끝 상자 밖 잉크 무리 — 한글 두 자 이상 아이템이 든 줄(같은 높이 띠)의 가장 오른쪽 아이템 뒤에서 쪽 오른 여백(폭 95%) 앞까지, 띠 안 잉크 열이 한
+ * 검출기가 놓친 줄 머리 대시 — 목차 하위 항목 "–  영농지원과" 의 짧은 가로 막대는 상자 밖에 홀로 남아 빠졌다(함평 목차). 한글이 두 자
+ * 이상인 줄(한 자씩 벌린 칸은 아이템마다 한 자)의 가장 왼쪽 아이템 앞(띠 높이 2.5배 안), 띠 안 상자 밖 잉크가 가로 막대 하나뿐이면(높이 띠의 0.2배 이하·폭
+ * 0.3~1.2배·세로 가운데 30~70%), 첫 아이템이 한글로 열면 그 자리에 "-" 아이템을 낸다
+ */
+export function rowHeadDashes(rgba: Uint8Array, width: number, items: OcrItem[]): OcrItem[] {
+  const out: OcrItem[] = []
+  const dark = (x: number, y: number) => { const p = (y * width + x) * 4; return ((rgba[p] * 77 + rgba[p + 1] * 150 + rgba[p + 2] * 29) >> 8) < 160 }
+  const inBox = (x: number, y: number) => items.some(b => x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h)
+  const done = new Set<OcrItem>()
+  for (const it of [...items]) {
+    if (done.has(it) || it.h < 12) continue
+    const row = items.filter(o => Math.min(o.y + o.h, it.y + it.h) - Math.max(o.y, it.y) >= Math.min(o.h, it.h) * 0.6)
+    for (const o of row) done.add(o)
+    if (row.reduce((k, o) => k + (o.text.match(/[가-힣]/g)?.length ?? 0), 0) < 2) continue
+    const first = row.reduce((m, o) => (o.x < m.x ? o : m))
+    // 한글로 여는 항목만 — 제목 "【목차】" 앞 장식 막대를 대시로 넣었다(나라배움터 계획)
+    if (!/^[가-힣]/.test(first.text)) continue
+    // 숫자 칸이 둘 이상인 표 줄은 뺀다 — 예산표 "—전기요금 5,600,000원 5,600 …" 의 줄표를 "-" 로 넣었다(부천 예산서)
+    if (row.filter(o => /\d/.test(o.text)).length >= 2) continue
+    const y0 = Math.min(...row.map(o => o.y)), y1 = Math.max(...row.map(o => o.y + o.h)), h = y1 - y0
+    const x0 = Math.max(0, Math.round(first.x - 2.5 * h)), x1 = first.x - 2
+    let minX = -1, maxX = -1, minY = Infinity, maxY = -1, groups = 0
+    for (let x = x0; x < x1; x++) {
+      let on = false
+      for (let y = y0; y < y1; y++) if (dark(x, y) && !inBox(x, y)) { on = true; if (y < minY) minY = y; if (y > maxY) maxY = y }
+      if (!on) continue
+      if (maxX < 0 || x - maxX > 2) { groups++; if (groups === 1) minX = x }
+      maxX = x
+    }
+    const bw = maxX - minX + 1, bh = maxY - minY + 1, cy = ((minY + maxY) / 2 - y0) / h
+    if (groups !== 1 || bh > h * 0.2 || bw < h * 0.3 || bw > h * 1.2 || cy < 0.3 || cy > 0.7) continue
+    // 따로 "-" 아이템으로 — 첫 아이템 글에 붙이면 한 자씩 벌린 낱말("영 농 지 원 과") 합치기가 깨진다
+    // 붙임표·줄표는 막대 길이로 못 가른다(부천 예산서 줄표 "—" 0.48배 < 함평 목차 "–" 0.67배, 글꼴마다 다르다) — "-"
+    out.push({ text: "-", x: minX, y: y0, w: bw, h, confidence: first.confidence })
+  }
+  return out
+}
+
+/**
+ * 줄 끝 상자 밖 잉크 무리 — 한글이 두 자 이상인 줄(같은 높이 띠)의 가장 오른쪽 아이템 뒤에서 쪽 오른 여백(폭 95%) 앞까지, 띠 안 잉크 열이 한
  * 무리뿐이고 그 무리가 띠 높이 0.5배 이상·폭 4배 이하면 그 외곽(여백 4px)을 낸다. 다른 무리가 섞이면(표 칸·글) 내지 않는다
  */
 export function rowTailBoxes(rgba: Uint8Array, width: number, items: OcrItem[]): Box[] {
@@ -160,7 +199,7 @@ export function rowTailBoxes(rgba: Uint8Array, width: number, items: OcrItem[]):
     const row = items.filter(o => Math.min(o.y + o.h, it.y + it.h) - Math.max(o.y, it.y) >= Math.min(o.h, it.h) * 0.6)
     for (const o of row) done.add(o)
     // 한글 목차·본문 줄만 — 영문 그림의 축 눈금 줄에서 숫자를 지어냈다(ODL 137)
-    if (!row.some(o => (o.text.match(/[가-힣]/g)?.length ?? 0) >= 2)) continue
+    if (row.reduce((k, o) => k + (o.text.match(/[가-힣]/g)?.length ?? 0), 0) < 2) continue
     const last = row.reduce((m, o) => (o.x + o.w > m.x + m.w ? o : m))
     const y0 = Math.min(...row.map(o => o.y)), y1 = Math.max(...row.map(o => o.y + o.h)), h = y1 - y0
     const x0 = last.x + last.w + 4, x1 = Math.floor(width * 0.95)
@@ -175,6 +214,11 @@ export function rowTailBoxes(rgba: Uint8Array, width: number, items: OcrItem[]):
       maxX = x
     }
     if (groups !== 1 || maxY - minY + 1 < h * 0.5 || maxX - minX + 1 > h * 4) continue
+    // 표 세로 테두리는 띠 밖 위아래로 이어진다 — 무리 위·아래 2px 밖에 잉크가 있으면 뺀다(부천 예산서 표 오른끝)
+    const height = Math.floor(rgba.length / 4 / width)
+    let rule = false
+    for (let x = minX; x <= maxX && !rule; x++) rule = (minY > 1 && dark(x, minY - 2)) || (maxY + 2 < height && dark(x, maxY + 2))
+    if (rule) continue
     const pad = 4
     out.push({ x: Math.max(0, minX - pad), y: Math.max(0, minY - pad), w: maxX - minX + 1 + 2 * pad, h: maxY - minY + 1 + 2 * pad })
   }
@@ -586,6 +630,7 @@ export class OcrEngine {
     if (tuning.postprocess) for (const it of items) this.outerSquare(rgba, width, it, items)
     if (tuning.postprocess) items.push(...closingParens(rgba, width, items))
     if (tuning.postprocess) items.push(...placeholderSquares(rgba, width, height, items))
+    if (tuning.postprocess) items.push(...rowHeadDashes(rgba, width, items))
     if (tuning.postprocess) {
       // 줄 끝 쪽 번호 — 목차 줄 오른쪽 끝의 홑 숫자("1. 사업 개요 … 1")는 획이 가늘고 홀로 서서 검출기가 놓친다(같은 열의 "9" 는 잡힌다).
       // 아이템 줄 오른쪽, 같은 높이 띠에 상자 밖 잉크 무리가 하나뿐이면 다시 인식해 숫자만 받는다

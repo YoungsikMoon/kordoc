@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { closingParens, footerInkBox, placeholderSquares, rowTailBoxes } from "../src/ocr/engine.js"
+import { closingParens, footerInkBox, placeholderSquares, rowHeadDashes, rowTailBoxes } from "../src/ocr/engine.js"
 
 const W = 400, H = 600
 function page(): Uint8Array {
@@ -76,5 +76,21 @@ describe("rowTailBoxes — 줄 끝 홑 쪽 번호", () => {
   it("무리가 둘이면·한글 없는 줄이면 내지 않는다", () => {
     assert.equal(rowTailBoxes(page(true), W4, row).length, 0)
     assert.equal(rowTailBoxes(page(false), W4, [{ ...row[0], text: "1. Overview" }]).length, 0)
+  })
+})
+
+describe("rowHeadDashes — 줄 머리 대시", () => {
+  const W5 = 300, H5 = 60
+  function page(): Uint8Array {
+    const rgba = new Uint8Array(W5 * H5 * 4).fill(255)
+    for (let y = 26; y < 29; y++) for (let x = 40; x < 60; x++) { const p = (y * W5 + x) * 4; rgba[p] = rgba[p + 1] = rgba[p + 2] = 0 }
+    return rgba
+  }
+  it("한글로 여는 줄 앞 짧은 가로 막대는 - 아이템", () => {
+    const got = rowHeadDashes(page(), W5, [{ text: "영농지원과", x: 80, y: 15, w: 120, h: 28, confidence: 1 }])
+    assert.deepEqual(got.map(i => i.text), ["-"])
+  })
+  it("한글로 열지 않는 제목(【목차】) 앞 장식 막대는 넣지 않는다", () => {
+    assert.deepEqual(rowHeadDashes(page(), W5, [{ text: "【목차】", x: 80, y: 15, w: 120, h: 28, confidence: 1 }]), [])
   })
 })
