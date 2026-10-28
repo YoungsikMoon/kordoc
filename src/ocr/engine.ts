@@ -338,18 +338,26 @@ export function closingParens(rgba: Uint8Array, width: number, items: OcrItem[])
     if ((t.match(/\(/g)?.length ?? 0) <= (t.match(/\)/g)?.length ?? 0) || !/\([^()]*$/.test(t)) continue
     const x0 = it.x + it.w + 2
     const next = items.filter(o => o !== it && o.x >= x0 && o.y < it.y + it.h && o.y + o.h > it.y).reduce((m, o) => Math.min(m, o.x), Infinity)
-    const x1 = Math.min(width, next, x0 + it.h * 8)
+    let x1 = Math.min(width, next, x0 + it.h * 8)
+    // 칸 세로 테두리(띠 높이 90% 넘게 잉크인 열)에서 끊는다 — ")" 바로 뒤 테두리를 둘째 무리로 세어 놓쳤다(대리인선임허가신청서 "(전화:      )│")
+    const pageH = Math.floor(rgba.length / 4 / width)
+    const colInk = (x: number) => { let k = 0; for (let y = it.y; y < it.y + it.h; y++) if (dark(x, y)) k++; return k }
+    for (let x = x0; x < x1; x++) if (colInk(x) >= it.h * 0.9) { x1 = x; while (x1 > x0 && colInk(x1 - 1) >= it.h * 0.5) x1--; break }
+    // 상자가 문 칸 가로 괘선 줄(그 구간 80% 넘게 잉크)은 빼고 본다 — 위 칸 괘선까지 문 상자는 띠 전체가 한 무리가 됐다
+    const ruleRow = new Set<number>()
+    // 괘선 줄 위아래 한 줄도 — 테두리와 만나는 모서리 번짐이 따로 한 무리가 됐다
+    for (let y = it.y; y < it.y + it.h; y++) { let k = 0; for (let x = x0; x < x1; x++) if (dark(x, y)) k++; if (k > (x1 - x0) * 0.8) for (const d of [-1, 0, 1]) ruleRow.add(y + d) }
     let minX = Infinity, maxX = -1, minY = Infinity, maxY = -1, cols = 0, prevOn = false, runs = 0
     for (let x = x0; x < x1; x++) {
       let on = false
-      for (let y = it.y; y < it.y + it.h; y++) if (dark(x, y)) { on = true; if (y < minY) minY = y; if (y > maxY) maxY = y }
+      for (let y = it.y; y < it.y + it.h; y++) if (!ruleRow.has(y) && dark(x, y)) { on = true; if (y < minY) minY = y; if (y > maxY) maxY = y }
       if (on) { cols++; if (!prevOn) runs++; if (x < minX) minX = x; maxX = x }
       prevOn = on
     }
     if (runs !== 1 || maxX - minX + 1 > it.h * 0.5 || maxY - minY + 1 < it.h * 0.6) continue
     // 칸 세로 테두리는 띠 밖으로 이어진다 — 위아래 2px 밖에 잉크가 있으면 뺀다
     let rule = false
-    for (let x = minX; x <= maxX && !rule; x++) rule = (minY > 1 && dark(x, minY - 2)) || dark(x, Math.min(maxY + 2, Math.floor(rgba.length / 4 / width) - 1))
+    for (let x = minX; x <= maxX && !rule; x++) rule = (minY > 1 && !ruleRow.has(minY - 2) && dark(x, minY - 2)) || (!ruleRow.has(maxY + 2) && dark(x, Math.min(maxY + 2, pageH - 1)))
     if (rule) continue
     // ")" 는 가운데가 오른쪽으로 휜다 — 위·아래 20% 줄의 잉크 x 평균보다 가운데 줄이 오른쪽
     const meanX = (ya: number, yb: number) => { let sx = 0, k = 0; for (let y = ya; y < yb; y++) for (let x = minX; x <= maxX; x++) if (dark(x, y)) { sx += x; k++ } return k ? sx / k : NaN }
