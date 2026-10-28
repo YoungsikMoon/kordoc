@@ -1,6 +1,6 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { closingParens, footerInkBox, placeholderSquares } from "../src/ocr/engine.js"
+import { closingParens, footerInkBox, placeholderSquares, rowTailBoxes } from "../src/ocr/engine.js"
 
 const W = 400, H = 600
 function page(): Uint8Array {
@@ -55,5 +55,26 @@ describe("placeholderSquares — 검출기가 놓친 서식 빈칸 네모", () =
   it("같은 줄 네모를 이어 □ 무리로, 막대는 - 로", () => {
     const got = placeholderSquares(page(), W3, H3, [{ text: "가", x: 195, y: 15, w: 30, h: 30, confidence: 1 }])
     assert.deepEqual(got.map(i => i.text), ["□□-□"])
+  })
+})
+
+describe("rowTailBoxes — 줄 끝 홑 쪽 번호", () => {
+  const W4 = 400, H4 = 60
+  function page(extra: boolean): Uint8Array {
+    const rgba = new Uint8Array(W4 * H4 * 4).fill(255)
+    const rect = (x0: number, y0: number, x1: number, y1: number) => {
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const p = (y * W4 + x) * 4; rgba[p] = rgba[p + 1] = rgba[p + 2] = 0 }
+    }
+    rect(340, 12, 343, 32) // 가는 "1"
+    if (extra) rect(250, 12, 270, 32) // 다른 무리(표 칸 글)
+    return rgba
+  }
+  const row = [{ text: "1. 사업 개요", x: 20, y: 10, w: 150, h: 24, confidence: 1 }]
+  it("한글 줄 오른쪽 끝 잉크 무리 하나면 상자를 낸다", () => {
+    assert.equal(rowTailBoxes(page(false), W4, row).length, 1)
+  })
+  it("무리가 둘이면·한글 없는 줄이면 내지 않는다", () => {
+    assert.equal(rowTailBoxes(page(true), W4, row).length, 0)
+    assert.equal(rowTailBoxes(page(false), W4, [{ ...row[0], text: "1. Overview" }]).length, 0)
   })
 })

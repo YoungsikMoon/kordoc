@@ -148,6 +148,40 @@ interface SharpChain {
 interface LineJob { box: Box; rot: 0 | 90 | 270; group: number; footer?: boolean; join?: number; dotsBefore?: boolean; trimDots?: boolean; keep?: { x0: number; x1: number; y0: number; y1: number; bg: number } }
 
 /**
+ * 줄 끝 상자 밖 잉크 무리 — 한글 두 자 이상 아이템이 든 줄(같은 높이 띠)의 가장 오른쪽 아이템 뒤에서 쪽 오른 여백(폭 95%) 앞까지, 띠 안 잉크 열이 한
+ * 무리뿐이고 그 무리가 띠 높이 0.5배 이상·폭 4배 이하면 그 외곽(여백 4px)을 낸다. 다른 무리가 섞이면(표 칸·글) 내지 않는다
+ */
+export function rowTailBoxes(rgba: Uint8Array, width: number, items: OcrItem[]): Box[] {
+  const out: Box[] = []
+  const dark = (x: number, y: number) => { const p = (y * width + x) * 4; return ((rgba[p] * 77 + rgba[p + 1] * 150 + rgba[p + 2] * 29) >> 8) < 160 }
+  const done = new Set<OcrItem>()
+  for (const it of items) {
+    if (done.has(it) || it.h < 12) continue
+    const row = items.filter(o => Math.min(o.y + o.h, it.y + it.h) - Math.max(o.y, it.y) >= Math.min(o.h, it.h) * 0.6)
+    for (const o of row) done.add(o)
+    // 한글 목차·본문 줄만 — 영문 그림의 축 눈금 줄에서 숫자를 지어냈다(ODL 137)
+    if (!row.some(o => (o.text.match(/[가-힣]/g)?.length ?? 0) >= 2)) continue
+    const last = row.reduce((m, o) => (o.x + o.w > m.x + m.w ? o : m))
+    const y0 = Math.min(...row.map(o => o.y)), y1 = Math.max(...row.map(o => o.y + o.h)), h = y1 - y0
+    const x0 = last.x + last.w + 4, x1 = Math.floor(width * 0.95)
+    if (x1 - x0 < h) continue
+    // 글자 사이 틈(띠 높이 안)은 한 무리 — 다른 무리는 높이보다 멀리 떨어진 것
+    let groups = 0, minX = -1, maxX = -1, minY = Infinity, maxY = -1
+    for (let x = x0; x < x1; x++) {
+      let on = false
+      for (let y = y0; y < y1; y++) if (dark(x, y)) { on = true; if (y < minY) minY = y; if (y > maxY) maxY = y }
+      if (!on) continue
+      if (maxX < 0 || x - maxX > h) { groups++; if (groups === 1) minX = x }
+      maxX = x
+    }
+    if (groups !== 1 || maxY - minY + 1 < h * 0.5 || maxX - minX + 1 > h * 4) continue
+    const pad = 4
+    out.push({ x: Math.max(0, minX - pad), y: Math.max(0, minY - pad), w: maxX - minX + 1 + 2 * pad, h: maxY - minY + 1 + 2 * pad })
+  }
+  return out
+}
+
+/**
  * 검출기가 놓친 서식 빈칸 네모 — 코드 입력 칸 "□□□"·"□□-□□□" 는 글이 아니라 가는 테두리 네모만 늘어서 검출 지도에 글줄로 잡히지
  * 않는다(법령 별지서식 건축허가 신청서 "지역 □□□ 지구 □□□"). 검출 상자에 들지 않은 잉크 성분 가운데 속 빈 정사각(한 변 12~60px —
  * 조직도의 3pt 표시 네모는 뺀다,
@@ -552,6 +586,18 @@ export class OcrEngine {
     if (tuning.postprocess) for (const it of items) this.outerSquare(rgba, width, it, items)
     if (tuning.postprocess) items.push(...closingParens(rgba, width, items))
     if (tuning.postprocess) items.push(...placeholderSquares(rgba, width, height, items))
+    if (tuning.postprocess) {
+      // 줄 끝 쪽 번호 — 목차 줄 오른쪽 끝의 홑 숫자("1. 사업 개요 … 1")는 획이 가늘고 홀로 서서 검출기가 놓친다(같은 열의 "9" 는 잡힌다).
+      // 아이템 줄 오른쪽, 같은 높이 띠에 상자 밖 잉크 무리가 하나뿐이면 다시 인식해 숫자만 받는다
+      const tails = rowTailBoxes(rgba, width, items)
+      if (tails.length) {
+        const res = await this.recognizeJobs(rgba, width, tails.map((box, k) => ({ box, rot: 0 as const, group: k })), tuning.recBatch)
+        tails.forEach((box, k) => {
+          const t = res[k]?.text.trim() ?? ""
+          if (/^\d{1,4}$/.test(t) && (res[k]?.confidence ?? 0) >= tuning.textScore) items.push({ text: t, ...this.itemBox(rgba, width, box, tuning), confidence: res[k]!.confidence })
+        })
+      }
+    }
     if (tuning.postprocess) restoreBulletItems(items)
     items.sort((a, b) => (a.y - b.y) || (a.x - b.x))
     return items
