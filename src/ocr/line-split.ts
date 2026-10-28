@@ -404,6 +404,29 @@ export function bracketFeatures(gray: Uint8Array, w: number, h: number, ink: Ink
 }
 
 /**
+ * 평행 기호 ∥ — 앞뒤 글자 CTC 자리(글자 높이 0.35배 안쪽) 사이에 중심이 든 키 큰 성분(글자 높이 35% 이상) 가운데 가늘고(폭이 높이의
+ * 절반 이하) 기운(위·아래 25% 줄 잉크 중심 차가 높이의 12% 이상) 것이 꼭 둘이고 같은 쪽으로 나란하면 참. 로마 숫자 Ⅱ 는 곧고 세리프가 있다
+ */
+export function slantedPair(gray: Uint8Array, w: number, h: number, ink: InkStats, prevX: number, nextX: number): boolean {
+  const { comps, label } = components(gray, w, h, ink)
+  let charH = 0
+  for (const c of comps) charH = Math.max(charH, c.y1 - c.y0)
+  if (charH < 10) return false
+  const m = charH * 0.35
+  const slant = (c: Comp) => {
+    const H = c.y1 - c.y0, q = Math.max(1, Math.round(H / 4))
+    const mid = (y0: number, y1: number) => { let n = 0, sx = 0; for (let y = y0; y < y1; y++) for (let x = c.x0; x < c.x1; x++) if (label[y * w + x] === c.id) { n++; sx += x } return n ? sx / n : 0 }
+    return (mid(c.y0, c.y0 + q) - mid(c.y1 - q, c.y1)) / H
+  }
+  // 이웃 글자 조각(곧은 획)도 범위에 들 수 있어 기운 가는 성분만 센다
+  const bars = comps.filter(c => c.y1 - c.y0 >= m && (c.x0 + c.x1) / 2 > prevX + m && (c.x0 + c.x1) / 2 < nextX - m && c.x1 - c.x0 <= (c.y1 - c.y0) * 0.5 && Math.abs(slant(c)) >= 0.12)
+  if (bars.length !== 2) return false
+  const [a, b] = bars, ha = a.y1 - a.y0, hb = b.y1 - b.y0
+  // 가는 획 끝은 문턱에 따라 몇 px 잘린다(17·13px) — 높이 차 35% 까지
+  return Math.sign(slant(a)) === Math.sign(slant(b)) && Math.abs(ha - hb) <= Math.max(ha, hb) * 0.35 && Math.abs((a.x0 + a.x1) - (b.x0 + b.x1)) / 2 <= Math.max(ha, hb)
+}
+
+/**
  * 로마 숫자 세로 획 수 — 사전에 Ⅰ~Ⅲ 가 있어도 모델은 한 글리프 Ⅲ 을 "II"·"I" 로, Ⅱ 를 "I" 로 줄여 읽는다(코퍼스 장 제목·목차).
  * 앞뒤 글자의 CTC 자리(prevX·nextX, 박스 로컬) 사이에 중심이 든 키 큰 성분(글자 높이 60% 이상)의 가운데 절반 줄에서 잉크 토막을 센다 —
  * CTC 자리는 글리프 한쪽에 치우치기도 해 가운데 금이 아니라 이웃 글자 자리에서 글자 높이 0.35배 떨어진 곳까지 본다.

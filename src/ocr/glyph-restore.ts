@@ -3,7 +3,7 @@
  * 모델이 줄여·바꿔·빠뜨려 읽는 글자를 고친다(괄호 「」【】·여는 따옴표·원문자·로마 숫자·두 글자 사이에서 빠진 기호). 모양 판정은
  * line-split.ts, 여기는 글자열 배선만. 글자 배열은 CTC 글자와 1:1 로 두고 칸마다 바꿔 넣거나(빈 글·여러 글자 허용) 끝에 잇는다
  */
-import { bracketFeatures, bracketShape, circledAt, dashRatio, discAt, gapGlyphs, grayCrop, inkStats, leadingBullet, quoteHead, ringBullet, romanStems, serifOne, starRun } from "./line-split.js"
+import { bracketFeatures, bracketShape, circledAt, dashRatio, discAt, gapGlyphs, grayCrop, inkStats, leadingBullet, quoteHead, ringBullet, romanStems, serifOne, slantedPair, starRun } from "./line-split.js"
 import type { InkStats } from "./line-split.js"
 import type { Box } from "./crop.js"
 
@@ -29,6 +29,7 @@ export function restoreGlyphs(rgba: Uint8Array, pageW: number, box: Box, text: s
   // 「 는 brackets("[" → 「)·gaps(빠진 「 되살림)가 넣은 것일 수 있어 그 뒤에 본다
   if (chars.some(t => t.includes("\u300c")) && chars.includes(",")) cornerCommas(c)
   note.ringLead = ring(c)
+  if (/[I|]/.test(text)) parallels(c)
   if (/[I1Ⅰ-Ⅲ|]|^\s*\./.test(text)) roman(c)
   return chars.join("")
 }
@@ -302,6 +303,28 @@ function ring({ chars, cx, gray, w, h, ink }: Ctx): boolean {
   if (/^[Cc]$/.test(chars[k]) && r !== "\u25cb") return false
   if (r) chars[k] = r
   return r !== null
+}
+
+/**
+ * 평행 기호 ∥ — 사전에 있어도 모델은 "II"·"I" 로 읽는다(경기교육청 공문 작성 안내 "근거 ∥ 행정업무의 운영…"). 라틴 글자에 붙지 않은
+ * I·| 한두 칸 토막 자리에 기운 가는 두 획이 나란하면(line-split slantedPair) ∥ 한 글자로(토막 첫 칸에 넣고 나머지는 비운다)
+ */
+function parallels({ chars, cx, gray, w, h, ink }: Ctx) {
+  for (let s = 0; s < chars.length;) {
+    if (!/^[I|]$/.test(chars[s])) { s++; continue }
+    let e = s
+    while (e + 1 < chars.length && /^[I|]$/.test(chars[e + 1])) e++
+    if (e - s <= 1 && !/[A-Za-z]/.test((chars[s - 1] ?? "") + (chars[e + 1] ?? ""))) {
+      let p = s - 1, q = e + 1
+      while (p >= 0 && !chars[p].trim()) p--
+      while (q < chars.length && !chars[q].trim()) q++
+      if (slantedPair(gray, w, h, ink, p >= 0 ? cx(p) : -Infinity, q < chars.length ? cx(q) : Infinity)) {
+        chars[s] = "\u2225"
+        for (let k = s + 1; k <= e; k++) chars[k] = ""
+      }
+    }
+    s = e + 1
+  }
 }
 
 /**

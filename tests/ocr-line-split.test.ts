@@ -12,7 +12,7 @@
  */
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
-import { arrowGlyph, bracketFeatures, bracketShape, circledAt, edgeTrim, gapGlyphs, inkStats, ringBullet, serifOne, starRun, leaderRuns, leadingBullet, leadingTriangle, quoteHead, romanStems, splitRowBands, tallInkCount } from "../src/ocr/line-split.js"
+import { arrowGlyph, bracketFeatures, bracketShape, circledAt, edgeTrim, gapGlyphs, inkStats, ringBullet, serifOne, slantedPair, starRun, leaderRuns, leadingBullet, leadingTriangle, quoteHead, romanStems, splitRowBands, tallInkCount } from "../src/ocr/line-split.js"
 
 function canvas(w: number, h: number, bg = 255): Uint8Array {
   return new Uint8Array(w * h).fill(bg)
@@ -485,6 +485,19 @@ describe("ringBullet — 줄 머리 고리 ○ / ㅇ (모델이 같은 글리프
   it("속 찬 원·고리 아닌 글자는 null", () => {
     const w = 120, h = 40, g = canvas(w, h); ring(g, w, 22, 20, 10, 10); text(g, w)
     assert.equal(ringBullet(g, w, h, inkStats(g), 22), null)
+  })
+})
+
+describe("slantedPair — II·I 로 읽은 평행 기호 ∥", () => {
+  const glyph = (g: Uint8Array, w: number, x: number) => rect(g, w, x, 6, x + 20, 34) // 앞뒤 글자
+  it("같은 쪽으로 기운 가는 두 획은 ∥, 곧은 세리프 Ⅱ 는 아니다", () => {
+    const w = 120, h = 40
+    const par = canvas(w, h); glyph(par, w, 5); glyph(par, w, 80)
+    for (let y = 14; y < 32; y++) { const x = 48 - Math.round((y - 14) * 0.3); rect(par, w, x, y, x + 2, y + 1); rect(par, w, x + 8, y, x + 10, y + 1) }
+    assert.equal(slantedPair(par, w, h, inkStats(par), 15, 90), true)
+    const roman = canvas(w, h); glyph(roman, w, 5); glyph(roman, w, 80)
+    rect(roman, w, 44, 8, 47, 32); rect(roman, w, 52, 8, 55, 32); rect(roman, w, 40, 8, 59, 10); rect(roman, w, 40, 30, 59, 32)
+    assert.equal(slantedPair(roman, w, h, inkStats(roman), 15, 90), false)
   })
 })
 
