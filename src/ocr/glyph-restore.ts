@@ -114,16 +114,16 @@ function brackets({ chars, cx, gray, w, h, ink }: Ctx) {
     const f = bracketFeatures(gray, w, h, ink, cx(i))
     return f && bracketShape(f, c === "]")
   })
-  // 짝이 어긋나면 [ ] 로 둔다 — 흐리거나 기울인 판에서 한쪽 끝만 번져 렌즈 꼴(【)·휜 조각(()로 잡혔다("[표3-17]" → "【표3-17]",
-  // 기후 계획 1° 판). 【】·( ) 는 양쪽이 같은 글꼴 모양이라 함께 바뀐다
-  const pair: Record<string, string> = { "\u3010": "\u3011", "(": ")", "\u3014": "\u3015" }
+  // 한쪽만 바뀌면 [ ] 로 둔다 — 흐리거나 기울인 판에서 한쪽 끝만 번져 렌즈 꼴(【)·휜 조각(()로 잡혔다("[표3-17]" → "【표3-17]",
+  // 기후 계획 1° 판). 【】·( ) 는 양쪽이 같은 글꼴 모양이라 함께 바뀐다. 양쪽이 서로 다른 꼴로 바뀐 짝("(R&D】")은 어느 쪽이 맞는지
+  // 몰라 그대로 둔다 — 둘 다 [ ] 로 돌리면 맞던 한쪽까지 틀렸다(산림청 공고 2° 판·경기 학교 매뉴얼 150dpi 판)
   for (let i = 0; i < chars.length; i++) {
     if (chars[i] !== "[") continue
     const j = chars.findIndex((c, k) => k > i && (c === "[" || c === "]"))
     if (j < 0 || chars[j] !== "]") continue
     const a = shape[i], b = shape[j]
     const opens = a === "\u3010" || a === "(" || a === "\u3014", closes = b === "\u3011" || b === ")" || b === "\u3015"
-    if ((opens || closes) && (!a || !b || pair[a] !== b)) { if (opens) shape[i] = null; if (closes) shape[j] = null }
+    if ((opens || closes) && (!a || !b)) { if (opens) shape[i] = null; if (closes) shape[j] = null }
   }
   for (let i = 0; i < chars.length; i++) if (shape[i]) chars[i] = shape[i]!
 }
