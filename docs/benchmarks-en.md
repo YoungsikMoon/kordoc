@@ -2,6 +2,18 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.17: OCR · 2026-10-29
+
+Compared document by document against 4.24.16 with the same corpora and scorers across the full suite (rounds 172–185; 174, 175 and 182 rejected). The only decreases are the character precision of one OCR document (its CER improved) and one page of the blur degraded-input set, both listed under measurement exceptions in the CHANGELOG.
+
+| Metric | 4.24.16 | 4.24.17 |
+| --- | --- | --- |
+| OCR CER (fair · strict) | 0.02499 · 0.05628 | **0.02442 · 0.05583** |
+| OCR character recall · precision | 0.99266 · 0.99544 | **0.99318 · 0.99557** |
+| Degraded-input OCR CER (clean · skew +1° · −2° · +3°) | 0.0394 · 0.0487 · 0.0547 · 0.0555 | **0.0386 · 0.0467 · 0.0535 · 0.0527** |
+| Degraded-input OCR CER (noise · blur · 150 dpi · JPEG · scan) | 0.0485 · 0.0550 · 0.0445 · 0.0450 · 0.0693 | **0.0472 · 0.0522 · 0.0438 · 0.0439 · 0.0668** |
+| PDF text · PDF tables · statute annexes · ODL · HWPX · round trip · generation · rendering | — | unchanged |
+
 ## 4.24.16: OCR · 2026-10-28
 
 Compared document by document against 4.24.15 with the same corpora and scorers across the full suite (rounds 162–171; 165, 169, 170 and 171 rejected). The only decrease is one page of the scan degraded-input set (web051, listed under measurement exceptions in the CHANGELOG).
