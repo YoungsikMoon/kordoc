@@ -658,6 +658,7 @@ export class OcrEngine {
         if (tallInkCount(g, job.box.w, job.box.h, inkStats(g)) === 1) text = "/"
       }
       // 사전 밖·작은 점으로 읽히거나 빠지는 글머리(◎ ● ▪ □) — 첫 글리프 모양으로 되살린다 (line-split.ts)
+      let ringByShape = false
       if (tuning.postprocess && job.rot === 0 && !/^[◎●▪□■▣❐❏○ㅇ◆◇◈]/.test(text)) {
         const chars = [...read], k = chars.findIndex(c => c.trim())
         if (k >= 0 && steps.length === chars.length) {
@@ -667,7 +668,8 @@ export class OcrEngine {
           // 표 칸의 큰 가운뎃점("·수학"·"·승합", 글꼴에 따라 네모·원으로 그려짐)은 정답도 "·" 다
           const body = (text.match(/[가-힣]/g) ?? []).length >= 4
           const miss = /^[Oo0•·ㆍ∙‧○]/.test(text)
-          if (b?.mark === "\u25ce" && b.covers && /^[Oo0○]/.test(text)) text = b.mark + " " + text.slice(1).trimStart()
+          // © 로도 읽는다(1° 기울인 함평 목차 ◎ 열)
+          if (b?.mark === "\u25ce" && b.covers && /^[Oo0○©]/.test(text)) { text = b.mark + " " + text.slice(1).trimStart(); ringByShape = true }
           // □ 는 인식에서 빠진 자리만(첫 글자 앞) — 모델은 사전에 □ 가 있어도 내지 않고 통째로 빠뜨린다
           else if (b?.mark === "\u25a1" || b?.mark === "\u25a3") { if (!b.covers && body) text = b.mark + " " + text }
           // 마름모 ◆◇◈ 는 사전 밖이라 다른 기호(√ 등)로 읽거나 빠뜨린다 — 기호 글자 자리면 바꾸고, 빠졌으면 본문 줄에 붙인다
@@ -699,7 +701,8 @@ export class OcrEngine {
         text = text.replace(/[\u2013\u2014]/g, "-")
       }
       if (tuning.postprocess && isDotFragment(text)) continue
-      if (confidence < tuning.textScore) {
+      // 모양으로 정한 ◎ 하나만 든 상자(목차 ◎ 열)는 인식 신뢰도와 상관없이 받는다 — 기울기 보정 뒤 "◎" 를 0.27~0.43 으로 읽어 열 절반이 빠졌다
+      if (confidence < tuning.textScore && !(ringByShape && text.trim() === "\u25ce")) {
         if (tuning.postprocess && job.rot === 0 && job.join === undefined && !job.footer) retry.push(job.box)
         if (stats) {
           stats.droppedLowConf++
