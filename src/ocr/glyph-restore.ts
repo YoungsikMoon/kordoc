@@ -316,7 +316,7 @@ function roman({ chars, cx, gray, w, h, ink }: Ctx) {
     while (q < chars.length && !chars[q].trim()) q++
     const glued = hangul ? chars[p] === "(" && chars[q] === "-" : /[가-힣]$/.test(chars[i - 1] ?? "") || (chars[i + 1] ?? "") === "." || (chars[p] === "-" && chars[q] === "-")
     if (!glued) continue
-    const n = romanStems(gray, w, h, ink, p >= 0 ? cx(p) : -Infinity, q < chars.length ? cx(q) : Infinity)
+    const n = romanStems(gray, w, h, ink, p >= 0 ? cx(p) : -Infinity, q < chars.length ? cx(q) : Infinity, /[가-힣]$/.test(chars[p] ?? ""))
     if (n) chars[i] = String.fromCharCode(0x215f + n)
   }
   // 로마 숫자에 붙은 1 은 같은 토막으로 센다 ("[표 Ⅱ-4]" → "[표I1-4]")
@@ -329,14 +329,15 @@ function roman({ chars, cx, gray, w, h, ink }: Ctx) {
   }
   for (let s = 0; s < chars.length;) {
     if (!inRoman(s) || (s > 0 && LATIN.test(chars[s - 1]))) { s++; continue }
+    // 로마 숫자 바로 뒤 홑 막대 "|" 는 같은 글리프의 획("통장Ⅱ" → "통장Ⅱ|" — "|" 자리가 둘째 획 위라 창에서 그 획이 빠졌다)
     let e = s
-    while (e < chars.length && inRoman(e)) e++
+    while (e < chars.length && (inRoman(e) || (e > s && chars[e] === "|" && chars[e + 1] !== "|"))) e++
     const tok = chars.slice(s, e).join("")
     if (e < chars.length && /^[A-Za-z]/.test(chars[e])) { s = e; continue }
     let p = s - 1, q = e
     while (p >= 0 && !chars[p].trim()) p--
     while (q < chars.length && !chars[q].trim()) q++
-    const n = romanStems(gray, w, h, ink, p >= 0 ? cx(p) : -Infinity, q < chars.length ? cx(q) : Infinity)
+    const n = romanStems(gray, w, h, ink, p >= 0 ? cx(p) : -Infinity, q < chars.length ? cx(q) : Infinity, /[가-힣]$/.test(chars[p] ?? ""))
     const canon = n ? [["Ⅰ", "I"], ["Ⅱ", "II"], ["Ⅲ", "III"]][n - 1] : null
     if (canon && !canon.includes(tok)) { chars[s] = canon[0]; for (let i = s + 1; i < e; i++) chars[i] = "" }
     s = e

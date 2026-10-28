@@ -315,6 +315,15 @@ describe("romanStems — 로마 숫자 세로 획 수 (모델이 Ⅲ 을 II·I �
       assert.equal(romanStems(g, w, h, inkStats(g), -Infinity, 84), n)
     }
   })
+  it("앞 글자가 한글이면 그 모음 세로획(ㅏ)은 세지 않는다", () => {
+    const w = 110, h = 40, g = canvas(w, h)
+    rect(g, w, 2, 10, 12, 30) // 앞 한글 자음 덩어리 (중심 10)
+    rect(g, w, 18, 6, 21, 34); rect(g, w, 21, 18, 26, 21) // ㅏ 세로획 + 곁가지
+    rect(g, w, 50, 6, 53, 34) // Ⅰ
+    rect(g, w, 70, 6, 98, 34) // 뒤 한글
+    assert.equal(romanStems(g, w, h, inkStats(g), 10, 84, true), 1)
+    assert.equal(romanStems(g, w, h, inkStats(g), 10, 84), 2)
+  })
   it("굵은 획(한글 글자 덩어리)은 세로 획이 아니다 → null", () => {
     const w = 110, h = 40, g = canvas(w, h)
     rect(g, w, 10, 8, 34, 32); text(g, w)

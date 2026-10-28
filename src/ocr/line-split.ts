@@ -409,13 +409,15 @@ export function bracketFeatures(gray: Uint8Array, w: number, h: number, ink: Ink
  * CTC 자리는 글리프 한쪽에 치우치기도 해 가운데 금이 아니라 이웃 글자 자리에서 글자 높이 0.35배 떨어진 곳까지 본다.
  * 세리프 Ⅲ 은 위아래 가로대로 이어진 한 성분이어도 가운데 줄은 세 토막이다. 줄의 70% 이상이 같은 수이고 토막이 가늘 때(세로 획)만 낸다
  */
-export function romanStems(gray: Uint8Array, w: number, h: number, ink: InkStats, prevX: number, nextX: number): number | null {
+export function romanStems(gray: Uint8Array, w: number, h: number, ink: InkStats, prevX: number, nextX: number, prevHangul = false): number | null {
   const { comps, label } = components(gray, w, h, ink)
   let charH = 0
   for (const c of comps) charH = Math.max(charH, c.y1 - c.y0)
   if (charH < 10) return null
   const x0 = prevX + charH * 0.35, x1 = nextX - charH * 0.35
-  const sel = comps.filter(c => c.y1 - c.y0 >= charH * 0.6 && (c.x0 + c.x1) / 2 >= x0 && (c.x0 + c.x1) / 2 < x1)
+  // 앞 글자가 한글이면 그 중심에서 글자 높이 0.75배 안에서 시작하는 성분은 그 글자 것 — ㅏ 세로획을 획으로 더 셌다("통장Ⅰ" → "통장Ⅱ",
+  // 괴산 예산서). 로마 숫자 획은 1.2배 넘게 떨어진다
+  const sel = comps.filter(c => c.y1 - c.y0 >= charH * 0.6 && (c.x0 + c.x1) / 2 >= x0 && (c.x0 + c.x1) / 2 < x1 && !(prevHangul && c.x0 < prevX + charH * 0.75))
   if (!sel.length) return null
   const ids = new Set(sel.map(c => c.id))
   const ux0 = Math.min(...sel.map(c => c.x0)), ux1 = Math.max(...sel.map(c => c.x1))
