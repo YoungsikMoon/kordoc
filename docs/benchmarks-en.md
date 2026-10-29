@@ -2,6 +2,19 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.21: rendering · 2026-10-29
+
+Every benchmark was compared document by document against 4.24.20 with the same corpora and scorers (rounds 226–235; rejected 226, 227, 232, 234). Render text position is measured only on documents whose page count matches the PDF, so documents whose page counts now match enter the denominator.
+
+| Metric | 4.24.20 | 4.24.21 |
+| --- | --- | --- |
+| Render page count match · mismatch · render failure (1,565 pairs) | 1,505 · 46 · 14 | **1,507 · 44 · 14** |
+| Render text position (±1.5pt) | 100,019 / 105,145 | **106,570 / 111,416** (4 existing documents up, 0 down, 3 newly measured) |
+| Render image position (±2pt) | 4,149 / 4,240 | **4,167 / 4,259** |
+| PDF text · tables · statute annexes · ODL · HWPX · round trip · generation · OCR · degraded input | — | unchanged |
+
+One measurement exception: another saved copy of the same textbook went from 46 to 47 pages (PDF 46). Its cache creates an empty page that the same-edition PDF re-laid away; its page count had only matched by accident because trailing empty sections were dropped. Most remaining page-count mismatches are press-release PDFs printed two pages per landscape A4 sheet, PDFs that add or omit pages not in the HWPX (statistical table bundles, a later section), and editions Hancom re-laid when printing.
+
 ## 4.24.20: rendering · 2026-10-29
 
 Compared document by document against 4.24.19 with the same corpora and scorers across the full suite (rounds 206–225; 206–219, 221 and 223 rejected). No document decreased.
