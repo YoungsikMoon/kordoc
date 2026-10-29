@@ -41,6 +41,17 @@ describe("render: 여러 행 칸이 행들보다 높으면 행이 자란다", ()
     assert.equal(h[6], 1500)
     assert.equal(h[9], 1000)
   })
+  it("표 높이보다 큰(쪽을 걸친) 여러 행 칸은 한 행 칸 없는 행의 높이를 정하지 않는다", () => {
+    // 3행 칸 71182(표 sz 64653 초과)가 끝나는 셋째 행 — 같은 셋째 행에서 시작하는 2행 칸 내용 28646 에 맞춘다
+    const h = solveRowHeights([
+      { rowAddr: 0, rowSpan: 3, height: 71182 },
+      { rowAddr: 0, rowSpan: 1, height: 42086 },
+      { rowAddr: 1, rowSpan: 1, height: 666 },
+      { rowAddr: 2, rowSpan: 2, height: 28646 },
+      { rowAddr: 3, rowSpan: 1, height: 874 },
+    ], 4, 64653)
+    assert.equal(h[2] + h[3], 28646)
+  })
   it("한 행 칸이 없는 행은 위에서부터 그 행에서 끝나는 칸으로 정한다 — 먼저 나온 큰 병합 칸이 정하지 않는다", () => {
     // 같은 판 서식: 3행 큰 칸 5000 이 문서 순서로 먼저 나와도 둘째 행은 2행 칸 1666 − 1382 = 284, 셋째 행은 3행 칸 3866 에 맞춰 자란다
     const h = solveRowHeights([

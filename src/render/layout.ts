@@ -143,6 +143,9 @@ export function solveRowHeights(
     const missing = rows.filter(r => h[r] === 0)
     if (missing.length === 0) { done.add(k); return false }
     if (evenOnly && missing.length !== 1) return false
+    // 저장 높이가 표 높이(sz, 첫 쪽 조각)보다 큰 칸은 쪽을 걸친 칸이라 행을 정하지 않는다 — 같은 행에서 끝나는 다른 칸이 정한다
+    // (같은 판 한컴 PDF: 3·4쪽에 걸친 3행 칸 71182 가 셋째 행을 284pt 로 정했는데, 한컴은 그 행과 다음 행을 2행 병합 칸 내용 28646 에 맞춤)
+    if (evenOnly && c.height > maxTotal) return false
     done.add(k)
     if (c.height <= known) return false
     const each = (c.height - known) / missing.length
@@ -155,7 +158,7 @@ export function solveRowHeights(
   for (let r = 0; r < rowCount; r++) {
     if (h[r] !== 0) continue
     let need = 0
-    for (const { c, rows } of spans) if (rows[rows.length - 1] === r && rows.slice(0, -1).every(q => h[q] > 0)) need = Math.max(need, c.height - rows.slice(0, -1).reduce((t, q) => t + h[q], 0))
+    for (const { c, rows } of spans) if (rows[rows.length - 1] === r && rows.slice(0, -1).every(q => h[q] > 0) && c.height <= maxTotal) need = Math.max(need, c.height - rows.slice(0, -1).reduce((t, q) => t + h[q], 0))
     if (need > 0) h[r] = need
   }
   for (let again = true; again;) { again = false; for (let k = 0; k < spans.length; k++) if (!done.has(k) && solve(k, true)) again = true }
