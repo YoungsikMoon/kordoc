@@ -508,6 +508,15 @@ function renderSectionToPages(
     const vs: number[] = []
     for (const q of paras) { const lsa = findChildByLocalName(q, "linesegarray"); for (const sg of lsa ? elements(lsa) : []) if (ln(sg) === "lineseg") vs.push(num(sg, "vertpos")) }
     if (vs.length >= 3 && (vs.every(v => v === vs[0]) || vs.some((v, i) => i >= 2 && v === vs[i - 1] && v === vs[i - 2]))) for (const q of paras) { const lsa = findChildByLocalName(q, "linesegarray"); if (lsa) q.removeChild(lsa) }
+    // 글만 든 칸 문단의 줄 글 높이가 글자 크기의 1.5배를 넘는 캐시 — 한컴이 저장한 줄일 수 없다(rhwp 시험 문서: 10pt 글에 글 높이 2518).
+    // 한컴 PDF 는 다시 짜 칸 가운데에 놓았다(저장 기준선대로 그리면 4pt 아래). 그 칸 문단 캐시를 버리고 다시 조판한다
+    else if (paras.some(q => {
+      const runs = elements(q).filter(r => ln(r) === "run")
+      if (!runs.length || runs.some(r => elements(r).some(c => ln(c) !== "t"))) return false
+      const ch = Math.max(...runs.map(r => (ctxBase.styles.charPr.get(r.getAttribute("charPrIDRef") ?? "") ?? DEFAULT_CHAR).height))
+      const lsa = findChildByLocalName(q, "linesegarray")
+      return (lsa ? elements(lsa) : []).some(sg => ln(sg) === "lineseg" && num(sg, "textheight") > ch * 1.5)
+    })) for (const q of paras) { const lsa = findChildByLocalName(q, "linesegarray"); if (lsa) q.removeChild(lsa) }
   }
   // 쪽 절대 좌표로 적힌 캐시 — 본문·칸·글상자 줄이 모두 쪽 기준이라(칸 줄 시작 24610, 글상자 줄 = 상자 쪽 위치) 전부 버리고 다시 조판한다.
   // 그대로 쓰면 본문이 왼 여백만큼 오른쪽으로 밀려 잘리고 글상자 글은 상자 좌표의 두 배 자리(쪽 밖)에 그려졌다
