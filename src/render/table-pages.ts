@@ -175,7 +175,9 @@ export function planTableRows(tbl: Element, cells: CellModel[], rowH: number[], 
     const pieces: RowPiece[] = []
     // 여러 행 칸을 한컴이 쪽에서 갈라 저장했으면 다음 부분이 시작하는 행부터 다음 쪽(같은 판 PDF: 세 행 칸 "다음 상한까지 …" 의
     // 둘째 부분 50~1000 이 다음 쪽 "범주Ⅲ" 행부터, 앞 쪽은 첫 부분 높이를 채운 행까지)
-    if (!first && r >= hdrRows && spanStarts.has(r)) { page++; y = contTop; first = true }
+    // 앞 행이 이미 다음 쪽으로 갈려 넘어가 그 병합 칸이 시작한 쪽보다 뒤에 있으면 또 넘기지 않는다(같은 판 한컴 PDF: 두 행 병합 칸의 둘째 줄을
+    // 쪽 나눔으로 저장한 별표 — 넘기면 다음 쪽에 앞 행 나머지만 두고 빈 쪽이 하나 더 생겼다, 짝 8건이 쪽 수 +1)
+    if (!first && r >= hdrRows && spanStarts.has(r) && !cells.some(c => c.rs > 1 && c.ra < r && c.ra + c.rs > r && (out[c.ra]?.[0]?.page ?? page) < page)) { page++; y = contTop; first = true }
     // 칸 안 나눔은 이 행의 한 행짜리 칸 줄로 가른다(reflow 와 같다) — 여러 행에 걸친 칸은 가르지 않고 그 행 위치에 그린다
     const rowCells = cells.filter(c => c.ra === r && c.rs === 1)
     const splittable = cellSplit && r >= hdrRows && rowCells.length > 0
