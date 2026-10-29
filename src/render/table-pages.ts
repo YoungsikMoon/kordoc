@@ -141,7 +141,10 @@ export function planTableRows(tbl: Element, cells: CellModel[], rowH: number[], 
     const declared = num(findChildByLocalName(tbl, "sz"), "height")
     if (rowY.some((v, k) => k > 0 && k < nRows && Math.abs(v - declared) <= 2)) slack = 0
   }
-  if (BODY_H <= 0 || (ty + rowY[nRows] <= pageBottom + slack) && !stackOver) return plain()
+  // 칸을 쪽 나눔으로 저장했고 칸 저장 높이가 표 높이(첫 쪽 조각)보다 크면 표가 이 쪽에 드는 것처럼 보여도 저장 자리에서 가른다
+  // (같은 판 한컴 PDF: 칸 121618·표 sz 73897 인 별표 틀 칸 안 둘째 문단의 표가 2쪽 맨 위 — 표 높이로 재면 한 쪽에 겹쳐 그렸다)
+  const savedParts = tbl.getAttribute("pageBreak") === "CELL" && cells.some(c => c.h > rowY[nRows] && cellLineBoxes(c).some(b => b.part > 0))
+  if (BODY_H <= 0 || (ty + rowY[nRows] <= pageBottom + slack) && !stackOver && !savedParts) return plain()
   // 글자처럼 취급하는 표는 쪽에서 가르지 않는다 — 쪽 맨 위에 있으면 그 쪽에 잘리고(한컴 PDF: 용지를 6567 넘는 인라인 서식 표도 1쪽),
   // 아니면 표째 다음 쪽 맨 위로(한컴 PDF: 앞 표 아래 49105 에 저장된 인라인 표가 다음 쪽에 찍힌다)
   if (findChildByLocalName(tbl, "pos")?.getAttribute("treatAsChar") === "1") {
