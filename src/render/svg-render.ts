@@ -500,14 +500,14 @@ function renderSectionToPages(
     for (const p of elements(root)) if (ln(p) === "p") { const lsa = findChildByLocalName(p, "linesegarray"); if (lsa) p.removeChild(lsa) }
     ctxBase.warnings.push("조판 캐시가 맞지 않아(최상위 문단이 모두 같은 자리) 다시 조판해 렌더")
   }
-  // 칸 안 줄이 모두 같은 vertpos 인 캐시(줄이 나아가지 않는 저장) — 같은 vertpos 를 쪽 나눔으로 읽어 줄마다 새 쪽이 됐다(조문대비표 55줄 → 쪽 54개).
-  // 그 칸 문단 캐시를 버리고 다시 조판한다
+  // 칸 안 줄이 모두(또는 연달아 셋 이상) 같은 vertpos 인 캐시(줄이 나아가지 않는 저장) — 같은 vertpos 를 쪽 나눔으로 읽어 줄마다 새 쪽이 됐다
+  // (조문대비표 55줄 → 쪽 54개, 쪽 되돌림 뒤 마지막 19줄이 모두 0 인 칸 → 머리 행만 든 쪽 18개). 그 칸 문단 캐시를 버리고 다시 조판한다
   for (const tc of Array.from(root.getElementsByTagName("*") as unknown as Element[]).filter(e => ln(e) === "tc")) {
     const sub = findChildByLocalName(tc, "subList")
     const paras = sub ? elements(sub).filter(q => ln(q) === "p") : []
     const vs: number[] = []
     for (const q of paras) { const lsa = findChildByLocalName(q, "linesegarray"); for (const sg of lsa ? elements(lsa) : []) if (ln(sg) === "lineseg") vs.push(num(sg, "vertpos")) }
-    if (vs.length >= 3 && vs.every(v => v === vs[0])) for (const q of paras) { const lsa = findChildByLocalName(q, "linesegarray"); if (lsa) q.removeChild(lsa) }
+    if (vs.length >= 3 && (vs.every(v => v === vs[0]) || vs.some((v, i) => i >= 2 && v === vs[i - 1] && v === vs[i - 2]))) for (const q of paras) { const lsa = findChildByLocalName(q, "linesegarray"); if (lsa) q.removeChild(lsa) }
   }
   // 쪽 절대 좌표로 적힌 캐시 — 본문·칸·글상자 줄이 모두 쪽 기준이라(칸 줄 시작 24610, 글상자 줄 = 상자 쪽 위치) 전부 버리고 다시 조판한다.
   // 그대로 쓰면 본문이 왼 여백만큼 오른쪽으로 밀려 잘리고 글상자 글은 상자 좌표의 두 배 자리(쪽 밖)에 그려졌다
