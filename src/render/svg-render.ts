@@ -446,6 +446,19 @@ function staleTopCache(root: Element, BODY_H: number): boolean {
   return false
 }
 
+/** 최상위 줄이 쪽으로 되돌아가지 않고 본문 높이를 넘는 자리까지 이어지는 캐시 — 한컴 저장본은 쪽마다 0 부터 다시 센다(쪽 바닥을 넘친 줄은
+ *  쪽마다 한 줄 몫이다). 본문 높이를 넘는 줄이 연달아 셋이면 쪽 좌표가 아니다(한컴이 아닌 도구가 1600 씩 늘려 적은 캐시 — 1쪽에 1740pt 까지 그렸다) */
+function overrunTopCache(root: Element, BODY_H: number): boolean {
+  if (BODY_H <= 0) return false
+  let over = 0
+  for (const p of elements(root)) {
+    if (ln(p) !== "p") continue
+    const lsa = findChildByLocalName(p, "linesegarray")
+    for (const sg of lsa ? elements(lsa) : []) if (ln(sg) === "lineseg") { over = num(sg, "vertpos") > BODY_H ? over + 1 : 0; if (over >= 3) return true }
+  }
+  return false
+}
+
 /**
  * 조판 캐시가 쪽 절대 좌표로 적혔는지 — 왼 여백 자리 이후에서 시작해 본문 폭을 넘는 최상위 줄이 셋 이상이고 줄의 1/5 이상.
  * 본문 기준 캐시의 줄은 본문 폭 안이다(쪽 기준으로 적은 문서: 줄 시작 7090·9185 = 왼 여백 6750 + 들여쓰기, 줄 끝 54110 > 본문 폭 47800)
@@ -482,7 +495,7 @@ function renderSectionToPages(
   if (hasDeletionMarkers) prepareDeletedRanges(root)
   // 망가진 조판 캐시 — 쪽 나누기 없는 최상위 문단이 셋 이상 잇달아 vertpos 0 인데 앞 문단들 높이 합이 쪽 절반도 안 되면 한컴 캐시일 수 없다
   // (rhwp 시험 문서: 전 문단 vertpos 0 → 문단마다 새 쪽 33쪽, 한컴 PDF 2쪽). 최상위 문단 캐시를 버리고 다시 조판한다
-  const degenerate = staleTopCache(root, BODY_H)
+  const degenerate = staleTopCache(root, BODY_H) || overrunTopCache(root, BODY_H)
   if (degenerate) {
     for (const p of elements(root)) if (ln(p) === "p") { const lsa = findChildByLocalName(p, "linesegarray"); if (lsa) p.removeChild(lsa) }
     ctxBase.warnings.push("조판 캐시가 맞지 않아(최상위 문단이 모두 같은 자리) 다시 조판해 렌더")
