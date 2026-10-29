@@ -5,7 +5,7 @@
  * 칸마다 (칸 위 여백 + 줄 바닥) ≤ 남은 높이 − 칸 아래 여백 인 줄까지 이 쪽, 남은 줄에 칸 위아래 여백을 더한 높이가 다음 쪽 조각.
  */
 
-import { elements, ln, num, cellColumns, cellContentExtent, type CellModel } from "./para-model.js"
+import { elements, ln, num, cellColumns, cellContentExtent, measureTableHeight, measureTableRowHeights, type CellModel } from "./para-model.js"
 import { findChildByLocalName } from "../hwpx/parser-shared.js"
 import { subFloatBottoms } from "./reflow-tables.js"
 
@@ -36,17 +36,29 @@ function stackedFloats(c: CellModel): Array<{ el: Element; vo: number; h: number
  * 되돌아간다(한컴 저장본: 20020 → 0) — 되돌아가는 곳마다 앞 줄 끝(+간격)에 잇는다. 첫 줄(vertpos 0)만 앞 쪽에 남기고 가른 칸은
  * 다음 줄도 0 이라 되돌아가지 않는다 — 같은 vertpos 가 같거나 왼쪽 가로 위치에서 다시 오면 그것도 쪽 나눔이다(본문 쪽 판정과 같다)
  */
-export function cellLineBoxes(c: CellModel): Array<{ seg: Element; top: number; bottom: number; part: number; origin: number }> {
+export function cellLineBoxes(c: CellModel, bodyH?: number): Array<{ seg: Element; top: number; bottom: number; part: number; origin: number }> {
   const out: Array<{ seg: Element; top: number; bottom: number; part: number; origin: number }> = []
   let shift = 0, prevV = Number.NEGATIVE_INFINITY, prevH = 0, prevSavedEnd = 0, prevEnd = 0, part = 0
   // 칸 안 다단은 되돌아감이 다음 단이다 — 쪽 나눔으로 잇지 않는다
   const cols = cellColumns(c.sub)
+  /** 앞 문단에 앵커한 위아래 배치 표의 저장 바닥(문단 첫 줄 + 오프셋 + 높이) — 다음 문단 첫 줄이 그보다 위면 표가 쪽을 넘어 그 끝 쪽에 저장된 줄이다 */
+  let floatBottom = Number.NEGATIVE_INFINITY
+  // 본문 표 칸만 — 칸 안 표의 칸은 바깥 칸 조판에 따른다
+  let nestedCell = false
+  for (let a = c.el.parentNode as Element | null; a; a = a.parentNode as Element | null) if (a !== c.el && a.nodeType === 1 && ln(a) === "tc") { nestedCell = true; break }
   for (const p of c.sub ? elements(c.sub) : []) if (ln(p) === "p") {
     const lsa = findChildByLocalName(p, "linesegarray")
+    let first = true, pTop = 0
     for (const sg of lsa ? elements(lsa) : []) if (ln(sg) === "lineseg") {
       const v = num(sg, "vertpos"), hz = num(sg, "horzpos")
       // 앞 줄이 그 자리에서 끝났으면(간격 음수로 겹친 빈 문단) 같은 vertpos 라도 쪽 나눔이 아니다
       if ((v < prevV || (v === prevV && hz <= prevH && prevSavedEnd > v)) && !cols) { shift = prevEnd - v; part++ }
+      // 앞 문단의 쪽을 넘는 떠 있는 표 바닥보다 위에 저장된 다음 문단 첫 줄은 그 표가 끝나는 쪽의 줄이다 — 되돌아가지 않아도 쪽 나눔
+      // (같은 판 한컴 PDF: 별표 틀 칸 안 75·67·40행 표 뒤 문단 32865·63726·72077 이 각 표가 끝나는 쪽 — 같은 쪽으로 보면 6쪽이 겹쳤다)
+      else if (!nestedCell && bodyH !== undefined && floatBottom > bodyH && first && !cols && v >= prevV && v < floatBottom - 1000) { shift = prevEnd - v; part++ }
+      // 문단 영역 위 = 앞 줄 끝(글 있는 앵커 문단은 첫 줄이 표 아래로 밀려 저장된다)
+      if (first) pTop = prevSavedEnd > 0 && prevSavedEnd <= v ? prevSavedEnd : v
+      first = false
       prevV = v
       prevH = hz
       prevSavedEnd = v + num(sg, "vertsize") + num(sg, "spacing")
@@ -55,11 +67,22 @@ export function cellLineBoxes(c: CellModel): Array<{ seg: Element; top: number; 
       // origin = 이 부분(쪽)의 저장 좌표 0 의 연속 좌표 — 쪽 안 줄 위치는 저장 vertpos 그대로(앞 간격 포함)
       out.push({ seg: sg, top, bottom, part, origin: shift })
     }
+    floatBottom = Number.NEGATIVE_INFINITY
+    for (const run of elements(p)) if (ln(run) === "run") for (const o of elements(run)) {
+      if (ln(o) !== "tbl" || (o.getAttribute("textWrap") ?? "TOP_AND_BOTTOM") !== "TOP_AND_BOTTOM") continue
+      const pos = findChildByLocalName(o, "pos")
+      if (!pos || pos.getAttribute("treatAsChar") === "1" || (pos.getAttribute("vertRelTo") ?? "PARA") !== "PARA") continue
+      // 한컴이 쪽에서 가른 표는 sz 에 첫 쪽 조각만 적는다 — 잰 높이가 sz 보다 크게 자란 표만 쪽을 넘는 표로 본다
+      const om = findChildByLocalName(o, "outMargin"), vo = num(pos, "vertOffset"), sz = num(findChildByLocalName(o, "sz"), "height"), full = measureTableHeight(o)
+      const top = pTop + (vo < 2 ** 31 ? vo : 0) + num(om, "top")
+      // 첫 행이 이 쪽에 안 들면 표째 다음 쪽으로 가고 뒤 글은 이 쪽에 남는다 — 그때는 쪽 나눔이 아니다
+      if (full > sz + 1000 && (bodyH === undefined || top + (measureTableRowHeights(o)[0] ?? 0) <= bodyH)) floatBottom = Math.max(floatBottom, top + full + num(om, "bottom"))
+    }
   }
   return out
 }
-function cellLines(c: CellModel): [number, number][] {
-  return cellLineBoxes(c).map(b => [b.top, b.bottom])
+function cellLines(c: CellModel, bodyH?: number): [number, number][] {
+  return cellLineBoxes(c, bodyH).map(b => [b.top, b.bottom])
 }
 
 /**
@@ -77,11 +100,11 @@ export type CellFloatSpan = (seg: Element, top: number, contMT?: number) => { pa
  * 여러 행 칸의 저장 부분(칸 줄 vertpos 되돌아감) 경계 행 — 부분마다 그 높이(+칸 여백)를 채운 다음 행에서 다음 부분이 시작한다.
  * 부분 높이를 채우는 행 경계가 칸 안에 없으면 버린다
  */
-export function spanPartRows(cells: CellModel[], rowY: number[]): Set<number> {
+export function spanPartRows(cells: CellModel[], rowY: number[], bodyH?: number): Set<number> {
   const out = new Set<number>()
   for (const c of cells) {
     if (c.rs < 2) continue
-    const bs = cellLineBoxes(c)
+    const bs = cellLineBoxes(c, bodyH)
     const parts = bs.length ? bs[bs.length - 1].part : 0
     let s = c.ra
     for (let k = 0; k < parts; k++) {
@@ -134,7 +157,7 @@ export function planTableRows(tbl: Element, cells: CellModel[], rowH: number[], 
   })
   // 한컴이 칸 줄을 쪽에서 갈라 저장한 표(칸 안 줄 vertpos 가 되돌아감)는 아래 여백으로 넘치지 않는다 — 저장본이 이미 다음 쪽 조각을 적었다
   // (한컴 PDF: 아래 여백 안에서 끝날 서식 표가 칸 줄 되돌아간 자리부터 2쪽)
-  if (slack > 0 && ty + rowY[nRows] > pageBottom && ty + rowY[nRows] <= pageBottom + slack && cells.some(c => cellLineBoxes(c).some(b => b.part > 0))) slack = 0
+  if (slack > 0 && ty + rowY[nRows] > pageBottom && ty + rowY[nRows] <= pageBottom + slack && cells.some(c => cellLineBoxes(c, BODY_H).some(b => b.part > 0))) slack = 0
   // 저장 표 높이(sz)가 안쪽 행 경계와 같아도 — 한컴이 첫 쪽 조각만 sz 에 적었다(행 사이에서 가른 표) — 넘침 여유를 주지 않는다
   // (같은 판이 저장·인쇄한 한컴 PDF: sz 71,649 = 26행 경계인 27행 표의 마지막 행이 다음 쪽)
   if (slack > 0 && ty + rowY[nRows] > pageBottom && ty + rowY[nRows] <= pageBottom + slack) {
@@ -143,7 +166,7 @@ export function planTableRows(tbl: Element, cells: CellModel[], rowH: number[], 
   }
   // 칸을 쪽 나눔으로 저장했고 칸 저장 높이가 표 높이(첫 쪽 조각)보다 크면 표가 이 쪽에 드는 것처럼 보여도 저장 자리에서 가른다
   // (같은 판 한컴 PDF: 칸 121618·표 sz 73897 인 별표 틀 칸 안 둘째 문단의 표가 2쪽 맨 위 — 표 높이로 재면 한 쪽에 겹쳐 그렸다)
-  const savedParts = tbl.getAttribute("pageBreak") === "CELL" && cells.some(c => c.h > rowY[nRows] && cellLineBoxes(c).some(b => b.part > 0))
+  const savedParts = tbl.getAttribute("pageBreak") === "CELL" && cells.some(c => c.h > rowY[nRows] && cellLineBoxes(c, BODY_H).some(b => b.part > 0))
   if (BODY_H <= 0 || (ty + rowY[nRows] <= pageBottom + slack) && !stackOver && !savedParts) return plain()
   // 글자처럼 취급하는 표는 쪽에서 가르지 않는다 — 쪽 맨 위에 있으면 그 쪽에 잘리고(한컴 PDF: 용지를 6567 넘는 인라인 서식 표도 1쪽),
   // 아니면 표째 다음 쪽 맨 위로(한컴 PDF: 앞 표 아래 49105 에 저장된 인라인 표가 다음 쪽에 찍힌다)
@@ -172,7 +195,7 @@ export function planTableRows(tbl: Element, cells: CellModel[], rowH: number[], 
     const outT = num(findChildByLocalName(tbl, "outMargin"), "top")
     if (outT + rowY[nRows] + outB <= BODY_H) return rowH.map((h, r) => [{ page: 1, y: contMT + outT + rowY[r], h }])
   }
-  const spanStarts = cellSplit ? spanPartRows(cells, rowY) : new Set<number>()
+  const spanStarts = cellSplit ? spanPartRows(cells, rowY, BODY_H) : new Set<number>()
   for (let r = 0; r < nRows; r++) {
     let h = rowH[r]
     const pieces: RowPiece[] = []
@@ -209,7 +232,7 @@ export function planTableRows(tbl: Element, cells: CellModel[], rowH: number[], 
       }
     }
     // 한컴이 이 행을 이미 쪽에서 갈라 저장했으면(칸 줄 vertpos 되돌아감) 그 자리 그대로 가른다
-    const boxes = splittable ? new Map(rowCells.map(c => [c.el, cellLineBoxes(c)] as const)) : undefined
+    const boxes = splittable ? new Map(rowCells.map(c => [c.el, cellLineBoxes(c, BODY_H)] as const)) : undefined
     const hParts = boxes ? Math.max(0, ...[...boxes.values()].flatMap(bs => bs.map(b => b.part))) : 0
     if (boxes && hParts > 0) {
       // 첫 조각의 첫 줄도 이 쪽 남은 자리에 안 들면 행째 다음 쪽에서 가른다 — 칸 줄 나눔과 같은 판정(위 여백 + 줄 바닥 ≤ 남은 높이 − 아래 여백)
@@ -310,10 +333,10 @@ export function planTableRows(tbl: Element, cells: CellModel[], rowH: number[], 
     // (같은 판 한컴 PDF: 남은 10,527 에 행 바닥 10,389 가 들어도 바깥 아래 283 을 더하면 넘어 그 행부터 다음 쪽, 저장 sz 9,107 = 앞 쪽 몫)
     if (splittable && y + h + outB > pageBottom) {
       const from = new Map<Element, number>()
-      const lines = new Map(rowCells.map(c => [c.el, cellLines(c)] as const))
+      const lines = new Map(rowCells.map(c => [c.el, cellLines(c, BODY_H)] as const))
       // 행 첫 줄은 뒤 줄이 있으면 줄 간격까지 이 쪽에 들어야 한다 — 아니면 행째 다음 쪽(같은 판 한컴 PDF: 남은 19pt 에 첫 줄 12pt + 칸 여백은 들지만
       // 간격 7.2pt 를 더하면 넘치는 과태료 표 행이 다음 쪽 맨 위. 줄 하나뿐인 칸은 간격을 안 본다 — 가운데 정렬 한 줄 칸은 그 쪽에서 갈린다)
-      const sp0 = new Map(rowCells.map(c => { const b = cellLineBoxes(c)[0]; return [c.el, b ? num(b.seg, "spacing") : 0] as const }))
+      const sp0 = new Map(rowCells.map(c => { const b = cellLineBoxes(c, BODY_H)[0]; return [c.el, b ? num(b.seg, "spacing") : 0] as const }))
       while (y + h + outB > pageBottom && BODY_H > rowY[hdrRows]) {
         const avail = pageBottom - y - outB
         let rem = 0, placed = false, allFit = true, blocked = false
@@ -338,7 +361,7 @@ export function planTableRows(tbl: Element, cells: CellModel[], rowH: number[], 
           // 이 행에서 시작하는 여러 행 칸의 글도 이 쪽 조각에 들어야 한다(같은 판 한컴 PDF: 두 줄 병합 칸이 쪽 바닥 남은 자리에 안 드는 연락처 표가 통째 다음 쪽)
           const spanCells = cells.filter(c => c.ra === r && c.rs > 1)
           // 쪽 나눔으로 저장한 여러 행 칸은 첫 부분만 이 쪽에 들면 된다(같은 판 한컴 PDF: 첫 줄 뒤를 나눠 저장한 두 행 병합 칸 다섯이 쪽 바닥에 첫 줄만 두고 다음 행부터 다음 쪽)
-          const spanExt = (c: CellModel): number => { const bs = cellLineBoxes(c); return bs.some(b => b.part > 0) ? Math.max(...bs.filter(b => b.part === 0).map(b => b.bottom)) : cellContentExtent(c) }
+          const spanExt = (c: CellModel): number => { const bs = cellLineBoxes(c, BODY_H); return bs.some(b => b.part > 0) ? Math.max(...bs.filter(b => b.part === 0).map(b => b.bottom)) : cellContentExtent(c) }
           if (!first && h <= pageBottom - contTop && [...rowCells.map(c => cellContentExtent(c) + c.marginT + c.marginB), ...spanCells.map(c => spanExt(c) + c.marginT + c.marginB)].some(e => e > avail)) { page++; y = contTop; first = true; break }
           // 갈린 칸 안의 표는 남는 행 높이를 버리지 않고 다음 쪽 맨 위에 잇는다(같은 PDF: 빈 행 조각 34pt). 본문 표는 이 쪽 바닥까지 —
           // 다만 한 쪽에 드는 행이고 칸 정렬대로 놓은 글이 이 쪽에 다 들며 남는 높이가 크면(1000 넘게) 그 몫도 다음 쪽 맨 위 빈 조각으로 잇는다

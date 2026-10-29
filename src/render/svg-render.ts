@@ -186,7 +186,7 @@ function drawTable(tbl: Element, tx: number, ty: number, ctx: Ctx, depth: number
       const span = plan.slice(c.ra, Math.min(c.ra + c.rs, nRows)).flat()
       const pages = [...new Set(span.map(pc => pc.page))]
       if (pages.length > 1) {
-        const bs = cellLineBoxes(c)
+        const bs = cellLineBoxes(c, ctx.geom.BODY_H)
         const partTop = (k: number) => bs.find(b => b.part === k)
         const groups: RowPiece[] = pages.map((pg, k) => {
           const on = span.filter(pc => pc.page === pg)
@@ -219,7 +219,7 @@ function drawTable(tbl: Element, tx: number, ty: number, ctx: Ctx, depth: number
     if (g.pieces) {
       // 갈린 칸 — 줄마다 그 줄이 든 조각의 쪽·위치로(첫 조각 위 기준 vertpos 로 잠시 바꿔 그린 뒤 되돌린다)
       const base = g.pieces[0].y + c.marginT
-      const boxes = cellLineBoxes(c)
+      const boxes = cellLineBoxes(c, ctx.geom.BODY_H)
       const contV = new Map(boxes.map(b => [b.seg, b.top]))
       const pieceOf = (v: number): number => Math.max(0, g.pieces!.findIndex(pc => { const r = pc.range?.get(c.el); return !!r && v >= r[0] && v < r[1] }))
       // 세로 가운데·아래 칸은 첫 쪽 조각이 그 조각 내용([조각 원점, 마지막 줄 바닥])을 조각 안에서 맞춘다(한컴 PDF: 두 쪽에 갈린 가운데 칸의 첫 쪽이 8pt 내려옴).
