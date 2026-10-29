@@ -489,7 +489,10 @@ export function drawPara(p: Element, ox: number, oy: number, areaW: number, ctx:
         : o.tag === "tbl" ? Math.max(o.height, measureTableHeight(o.el, ctx.extentMemo)) : o.height
       // 바깥 여백: 개체(+아래 여백)는 기준선 위에 얹되 줄 위 + 위 여백보다 위로는 안 간다(한컴 PDF: 줄을 채우는 인라인 표 = 줄 위 + outMargin 위)
       const iom = findChildByLocalName(o.el, "outMargin"), iomT = num(iom, "top"), iomB = num(iom, "bottom")
-      const yTop = oy + plan.seg.vertpos + Math.max(iomT, plan.seg.baseline - eqAsc - iomB - captionExtra(o.el))
+      // 표는 바깥 여백까지 든 높이의 85% 가 기준선 위다(reflow 기준선 모델과 같다 — 같은 판 한컴 PDF: 기준선 9841 줄에 나란한 인라인 표 11578·8452 중
+      // 작은 표 위가 줄 위 아래 26.6pt = 9841 − 0.85 × 8452 + 140, 바닥을 기준선에 두면 13.9pt)
+      const capX = captionExtra(o.el)
+      const yTop = oy + plan.seg.vertpos + Math.max(iomT, o.tag === "tbl" && capX === 0 ? plan.seg.baseline - Math.round((eqAsc + iomT + iomB) * 0.85) + iomT : plan.seg.baseline - eqAsc - iomB - capX)
       drawObject(o, x, yTop, baseV, areaW, ctx, depth)
     } else {
       // 앵커 좌표는 첫 seg(baseV) 기준이므로 첫 seg 의 페이지에 귀속
