@@ -188,6 +188,12 @@ export function planTableRows(tbl: Element, cells: CellModel[], rowH: number[], 
   // (같은 판이 저장·인쇄한 한컴 PDF: 쪽 바닥 72749 에 앵커한 위아래 배치 10행 표가 통째 다음 쪽 — 저장본도 표 뒤 문단이 다음 쪽 vertpos 23096 = 표 sz)
   const flows = (findChildByLocalName(tbl, "pos")?.getAttribute("vertRelTo") ?? "PARA") === "PARA"
   let page = 0, y = ty, first = !flows || ty - MT < 2000
+  // 나누지 않는 표(pageBreak NONE)는 쪽 위가 아닌 자리에서 넘치면 한 쪽에 드는 한 표째 다음 쪽 맨 위로 — 조판(splitTableRows)도 가르지 않는다
+  // (한컴 PDF: 쪽 바닥 77049 에 앵커한 7행 방화 등급표가 첫 행만 남기지 않고 다음 쪽 맨 위에서 시작)
+  if (!first && (tbl.getAttribute("pageBreak") ?? "NONE") === "NONE") {
+    const outT = num(findChildByLocalName(tbl, "outMargin"), "top")
+    if (outT + rowY[nRows] + outB <= BODY_H) return rowH.map((h, r) => [{ page: 1, y: contMT + outT + rowY[r], h }])
+  }
   // 같은 문단에 앞 위아래 배치 개체와 함께 앵커해 그 아래 쌓인 표는 한 쪽에 다 들면 가르지 않고 표째 다음 쪽 맨 위로
   // (한컴 PDF: 쪽 높이 표 아래 쌓인 21행 표가 1쪽에 머리 행만 남기지 않고 2쪽 본문 위 + 바깥 위 여백에서 시작,
   // 별표 머리 글 문단에 앵커한 둘째 별표 표도 1쪽 아래에서 가르지 않고 2쪽 맨 위)
