@@ -743,6 +743,8 @@ function carryZones(zones: WrapZone[], bodyH: number, oneColumn: boolean): void 
 
 /** 자란 표로 볼 높이 차(HWPUNIT) — 다시 짠 칸 줄과 한컴 줄의 글꼴 근사 차이보다 크고 한 줄보다 작게 */
 const STALE_SLACK = 500
+/** 캐시 없는 문단 뒤 캐시 문단을 다시 짠 바닥으로 옮기는 최대 차이 — 쪽 넘김 차이(수만)는 넘는다 */
+const STALE_CACHE_SHIFT = 2000
 
 /** 문단에 든 글자처럼 취급 표 중 캐시 없는 칸 문단이 있는 표 — 칸 글을 다시 짜므로 저장 높이보다 자랄 수 있다 */
 function regrownInlineTables(p: Element): Element[] {
@@ -887,6 +889,8 @@ function reflowBlockFlow(
   let cellCols = 1, cellCol = 0
   /** 칸 글로 자란 표를 지났다 — 뒤 문단의 저장 자리는 모두 옛 표 높이 기준이라 흐름 끝까지 다시 짠다 */
   let staleRest = false
+  /** 앞 문단을 다시 짰다 · 뒤 캐시 문단에 줄 이동량 · 앞 캐시 문단의 저장 바닥 */
+  let prevReflowed = false, cacheShift = 0, lastStored = 0
   for (const p of elements(container)) {
     if (ln(p) !== "p") continue
     if (bodyFlow) { const colW = columnWidthIn(p, counter.bodyW!); if (colW !== undefined) areaW = colW }
@@ -934,6 +938,19 @@ function reflowBlockFlow(
       // 문단이 흐름 위치 대신 0에 겹쳐 그려지던 결함 수정 (36264961 실측: 캐시 문단
       // p18 57165+1300+780 → 캐시 없는 p19가 정확히 59245에 붙는다).
       const lsa = findChildByLocalName(p, "linesegarray")
+      // 캐시 없는 문단 바로 뒤 캐시 문단의 저장 자리는 앞 문단의 옛 높이 기준이다 — 한컴은 열 때 다시 짜서 다시 짠 바닥에 붙인다.
+      // 어긋난 만큼 이 문단과 같은 쪽의 뒤 캐시 문단을 함께 옮긴다(한컴 PDF: 줄 정보 없는 9pt 머리 문단 1440 뒤 표 문단의 저장 자리 1920 이 1440 에).
+      // 쪽 넘김으로 생긴 차이(수만)와 쪽에 걸친 문단은 건드리지 않는다
+      if (lsa && bodyFlow) {
+        const segs = elements(lsa).filter(e => ln(e) === "lineseg")
+        const vs = segs.map(e => num(e, "vertpos")), v0 = vs[0] ?? 0
+        const mono = vs.every((v, i) => i === 0 || v >= vs[i - 1])
+        if (prevReflowed) { const d = startV - v0; cacheShift = mono && v0 > 0 && Math.abs(d) <= STALE_CACHE_SHIFT ? d : 0 }
+        else if (cacheShift && (!mono || v0 < lastStored)) cacheShift = 0
+        if (segs.length) lastStored = vs[vs.length - 1] + num(segs[segs.length - 1], "vertsize")
+        if (cacheShift) shiftParaVert(p, cacheShift)
+      }
+      prevReflowed = false
       if (lsa) {
         const bottom = cachedParagraphBottom(lsa, bodyFlow)
         if (Number.isFinite(bottom)) {
@@ -944,6 +961,7 @@ function reflowBlockFlow(
       continue
     }
     const paraH = res.paraBottom - startV
+    prevReflowed = true
     // 페이지 넘김은 줄 단위다: 줄 vertpos + vertsize 가 본문 높이를 넘으면 그 줄부터 다음 쪽 맨 위(0)에서 이어진다
     // (간격 몫은 넣지 않는다 — 한컴 저장본에서 쪽에 걸친 문단 97개 중 86개, 나머지는 칸 안 쪽 나눔). 문단 첫 줄은 쪽보다 높아도
     // 쪽 중간에서 넘치면 새 쪽 맨 위로(한컴 저장본: 쪽 높이 표 75704 뒤 쪽보다 153 높은 표 문단이 새 쪽 0, 68984 의 표 줄 71603 도 새 쪽 0).

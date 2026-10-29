@@ -1,0 +1,32 @@
+import { describe, it } from "node:test"
+import assert from "node:assert/strict"
+import { createXmlParser } from "../src/hwpx/parser-shared.js"
+import { parseRenderStyles } from "../src/render/head-styles.js"
+import { reflowSection } from "../src/render/reflow.js"
+
+const ns = 'xmlns:hh="http://www.hancom.co.kr/hwpml/2011/head" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"'
+const head = `<hh:head ${ns}><hh:refList><hh:charProperties><hh:charPr id="0" height="1200"/><hh:charPr id="1" height="900"/></hh:charProperties><hh:paraProperties><hh:paraPr id="0"/></hh:paraProperties></hh:refList></hh:head>`
+const seg = (y: number) => `<hp:linesegarray><hp:lineseg textpos="0" vertpos="${y}" vertsize="1200" textheight="1200" spacing="720"/></hp:linesegarray>`
+
+function positions(cached: number[]) {
+  const ps = cached.map(y => `<hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>저장 문단</hp:t></hp:run>${seg(y)}</hp:p>`).join("")
+  const doc = createXmlParser().parseFromString(`<hs:sec ${ns}><hp:p paraPrIDRef="0"><hp:run charPrIDRef="1"><hp:t>■ 줄 정보 없는 머리 문단</hp:t></hp:run></hp:p>${ps}</hs:sec>`, "text/xml")
+  const root = doc.documentElement as unknown as Element
+  reflowSection(root, parseRenderStyles(head), { BODY_W: 48190, BODY_H: 70018 })
+  const all = root.getElementsByTagName("hp:lineseg")
+  const s0 = all[0]
+  const bottom = Number(s0.getAttribute("vertpos")) + Number(s0.getAttribute("vertsize")) + Number(s0.getAttribute("spacing"))
+  return { bottom, cached: Array.from({ length: cached.length }, (_, i) => Number(all[i + 1].getAttribute("vertpos"))) }
+}
+
+describe("캐시 없는 문단 뒤의 낡은 저장 자리", () => {
+  it("뒤 캐시 문단은 다시 짠 바닥에 붙고, 같은 쪽의 다음 캐시 문단도 같이 옮긴다", () => {
+    const r = positions([1920, 3840])
+    assert.notEqual(r.bottom, 1920)
+    assert.deepEqual(r.cached, [r.bottom, r.bottom + 1920])
+  })
+  it("쪽 넘김으로 생긴 차이는 옮기지 않는다", () => {
+    const r = positions([1920, 0])
+    assert.deepEqual(r.cached, [r.bottom, 0])
+  })
+})
