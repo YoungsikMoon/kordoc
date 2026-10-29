@@ -952,7 +952,9 @@ export function renderSectionRoots(sections: SectionRoot[], input: SectionRender
     return pm.objs.length > 0 || pm.chars.some(c => c.ch.trim() !== "" || !!c.ctrlText)
   })
   let lastIdx = sections.length - 1
-  while (lastIdx > 0 && !hasContent(sections[lastIdx].root)) lastIdx--
+  // 바탕쪽을 단 빈 구역은 찍는다 — 바탕쪽 머리글이 그 쪽의 내용이다(한컴 PDF: 교재 끝 빈 구역이 다음 장 바탕쪽 머리글만 든 쪽으로 찍힘.
+  // 버리는 근거 문서 4건은 모두 masterPageCnt 0)
+  while (lastIdx > 0 && !hasContent(sections[lastIdx].root) && !sections[lastIdx].masterPages?.length) lastIdx--
   for (const [k, { root, index, masterPages, hasDeletionMarkers }] of sections.entries()) {
     if (k > lastIdx) break
     const geom = readSectionGeom(root)

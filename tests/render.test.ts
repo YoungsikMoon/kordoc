@@ -626,6 +626,15 @@ describe("render: 문서 끝 빈 구역", () => {
     assert.equal(await build(["본문", "", ""]), 1)
     assert.equal(await build(["본문", "", "끝"]), 3)
   })
+
+  it("바탕쪽을 단 빈 구역은 문서 끝이어도 찍는다(바탕쪽 머리글만 든 쪽)", async () => {
+    const zip = await JSZip.loadAsync(await markdownToHwpx("본문"))
+    const sec0 = await zip.file("Contents/section0.xml")!.async("string")
+    zip.file("Contents/section1.xml", sec0.replace("본문</hp:t>", "</hp:t>").replace(/(<hp:secPr\b[^>]*>)/, '$1<hp:masterPage idRef="mp0"/>'))
+    zip.file("Contents/masterpage0.xml", '<?xml version="1.0" encoding="UTF-8"?><hm:masterPage xmlns:hm="http://www.hancom.co.kr/hwpml/2011/master-page" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" id="mp0" type="BOTH" pageNumber="0" pageDuplicate="0" pageFront="0"><hp:subList></hp:subList></hm:masterPage>')
+    const r = await renderHwpxPages(new Uint8Array(await zip.generateAsync({ type: "nodebuffer" })), { reflow: true })
+    assert.equal(r.pageSvgs.size, 2)
+  })
 })
 
 describe("render: 한컴 기호 PUA 표시", () => {
