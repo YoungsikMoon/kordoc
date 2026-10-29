@@ -18,4 +18,13 @@ describe("render: 병합 칸 저장 부분이 시작하는 행", () => {
     const plan = planTableRows(t, collectCells(t), measureTableRowHeights(t), 3000, 0, 7000).map(ps => ps.map(p => [p.page, p.y]))
     assert.deepEqual(plan, [[[0, 3000]], [[0, 5000], [1, 0]], [[1, 1000]]])
   })
+  it("쪽 나눔으로 저장한 병합 칸은 첫 부분만 이 쪽에 들면 행을 이 쪽에 둔다", async () => {
+    const { planTableRows } = await import("../src/render/table-pages.js")
+    const { collectCells, measureTableRowHeights } = await import("../src/render/para-model.js")
+    const t = createXmlParser().parseFromString(`<hp:tbl ${hp} pageBreak="CELL" rowCnt="3" colCnt="2"><hp:sz width="10000" height="9000"/><hp:pos treatAsChar="0" vertRelTo="PARA"/>` +
+      `<hp:tr>${tc(0, 0, 1, 2000, [0])}${tc(1, 0, 1, 2000, [0])}</hp:tr><hp:tr>${tc(0, 1, 2, 6000, [0, 0, 1600])}${tc(1, 1, 1, 2500, [0])}</hp:tr><hp:tr>${tc(1, 2, 1, 3500, [0])}</hp:tr></hp:tbl>`, "text/xml").documentElement as unknown as Element
+    // 둘째 행 위 5000, 남은 2000: 병합 칸 전체(세 줄)는 안 들어도 첫 부분(한 줄)은 든다 — 행은 이 쪽, 셋째 행이 다음 쪽(종전엔 둘째 행째 넘겨 쪽 하나 더)
+    const plan = planTableRows(t, collectCells(t), measureTableRowHeights(t), 3000, 0, 7000).map(ps => ps.map(p => p.page))
+    assert.deepEqual(plan, [[0], [0], [1]])
+  })
 })

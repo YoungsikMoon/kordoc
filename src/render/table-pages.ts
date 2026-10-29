@@ -334,7 +334,9 @@ export function planTableRows(tbl: Element, cells: CellModel[], rowH: number[], 
           // 쪽 바닥에서 잘리지 않고 다음 쪽 맨 위에서 시작), 다음 쪽에도 안 들어가면 이 쪽 바닥까지(남는 높이는 버린다)
           // 이 행에서 시작하는 여러 행 칸의 글도 이 쪽 조각에 들어야 한다(같은 판 한컴 PDF: 두 줄 병합 칸이 쪽 바닥 남은 자리에 안 드는 연락처 표가 통째 다음 쪽)
           const spanCells = cells.filter(c => c.ra === r && c.rs > 1)
-          if (!first && h <= pageBottom - contTop && [...rowCells, ...spanCells].some(c => cellContentExtent(c) + c.marginT + c.marginB > avail)) { page++; y = contTop; first = true; break }
+          // 쪽 나눔으로 저장한 여러 행 칸은 첫 부분만 이 쪽에 들면 된다(같은 판 한컴 PDF: 첫 줄 뒤를 나눠 저장한 두 행 병합 칸 다섯이 쪽 바닥에 첫 줄만 두고 다음 행부터 다음 쪽)
+          const spanExt = (c: CellModel): number => { const bs = cellLineBoxes(c); return bs.some(b => b.part > 0) ? Math.max(...bs.filter(b => b.part === 0).map(b => b.bottom)) : cellContentExtent(c) }
+          if (!first && h <= pageBottom - contTop && [...rowCells.map(c => cellContentExtent(c) + c.marginT + c.marginB), ...spanCells.map(c => spanExt(c) + c.marginT + c.marginB)].some(e => e > avail)) { page++; y = contTop; first = true; break }
           // 갈린 칸 안의 표는 남는 행 높이를 버리지 않고 다음 쪽 맨 위에 잇는다(같은 PDF: 빈 행 조각 34pt). 본문 표는 이 쪽 바닥까지 —
           // 다만 한 쪽에 드는 행이고 칸 정렬대로 놓은 글이 이 쪽에 다 들며 남는 높이가 크면(1000 넘게) 그 몫도 다음 쪽 맨 위 빈 조각으로 잇는다
           // (같은 판 한컴 PDF: 저장 높이 4954 가운데 정렬 한 줄 행이 쪽 바닥 3111 에서 갈려 다음 쪽 맨 위 20.4pt 조각. 남는 높이 281·437 은 버린다)
