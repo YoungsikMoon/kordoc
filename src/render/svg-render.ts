@@ -21,7 +21,7 @@
  */
 
 import JSZip from "jszip"
-import { KordocError, compareSectionPaths, precheckZipSize } from "../utils.js"
+import { KordocError, compareSectionPaths, precheckZipSize, stripDtd } from "../utils.js"
 import { createXmlParser, findChildByLocalName, MAX_DECOMPRESS_SIZE, MAX_ZIP_ENTRIES } from "../hwpx/parser-shared.js"
 import { toInt32, tableColumnBoundaries, type SpanConstraint } from "./layout.js"
 import { measureTextWidth, faceClassOf, type WrapMode } from "../hwpx/text-metrics.js"
@@ -968,7 +968,8 @@ async function renderHwpxInternal(input: ArrayBuffer | Uint8Array, options?: Ren
   const verFile = zip.file("version.xml")
   const verXml = verFile ? await readZipEntry(verFile, "text") : undefined
   const appMajor = hwpxAppMajor(verXml), appBuild = hwpxAppBuild(verXml)
-  const headXml = headFile ? await readZipEntry(headFile, "text") : undefined
+  // 파서와 같게 UTF-8 BOM·DOCTYPE 을 걷는다(BOM 붙은 header·구역 XML 은 "xml 선언이 1번째 자리" 로 파싱이 죽었다)
+  const headXml = headFile ? stripDtd(await readZipEntry(headFile, "text")) : undefined
   let styles: RenderStyles = headXml
     ? parseRenderStyles(headXml, { appMajor, appBuild })
     : { charPr: new Map(), paraAlign: new Map(), paraGeom: new Map(), borderFill: new Map() }
@@ -977,7 +978,7 @@ async function renderHwpxInternal(input: ArrayBuffer | Uint8Array, options?: Ren
   // 구역 XML 선로딩 + 크기 가드
   const secXmls: string[] = []
   for (const f of secFiles) {
-    const xml = await readZipEntry(f, "text")
+    const xml = stripDtd(await readZipEntry(f, "text"))
     if (xml.length > MAX_DECOMPRESS_SIZE) throw new KordocError("섹션 XML이 허용 크기를 초과")
     secXmls.push(xml)
   }
@@ -991,7 +992,7 @@ async function renderHwpxInternal(input: ArrayBuffer | Uint8Array, options?: Ren
   const masterPages = new Map<string, Element>()
   const masterXmls: string[] = []
   for (const file of zip.file(/Contents\/masterpage[^/]*\.xml$/i)) {
-    const xml = await readZipEntry(file, "text")
+    const xml = stripDtd(await readZipEntry(file, "text"))
     if (xml.length > MAX_DECOMPRESS_SIZE) throw new KordocError("바탕쪽 XML이 허용 크기를 초과")
     const root = createXmlParser().parseFromString(xml, "text/xml").documentElement as unknown as Element
     if (root && ln(root) === "masterPage") {
