@@ -113,6 +113,9 @@ function coAnchoredFollower(tbl: Element): boolean {
   return false
 }
 
+/** 쪽 바닥에서 갈린 본문 표 행의 남는 높이를 다음 쪽 조각으로 잇는 최소값 */
+const ROW_CARRY_MIN = 1000
+
 export function planTableRows(tbl: Element, cells: CellModel[], rowH: number[], ty: number, MT: number, BODY_H: number, slack = 0, floatSpan?: CellFloatSpan, nested = false, contMT = MT): RowPiece[][] {
   // 갈린 칸 안의 표는 아래 여백으로 넘치지 않는다 — 본문 바닥에서 가른다(한컴 PDF: 칸 안 서식 표가 본문 바닥 아래 34pt 를 다음 쪽 맨 위에)
   if (nested) slack = 0
@@ -327,8 +330,14 @@ export function planTableRows(tbl: Element, cells: CellModel[], rowH: number[], 
           // 이 행에서 시작하는 여러 행 칸의 글도 이 쪽 조각에 들어야 한다(같은 판 한컴 PDF: 두 줄 병합 칸이 쪽 바닥 남은 자리에 안 드는 연락처 표가 통째 다음 쪽)
           const spanCells = cells.filter(c => c.ra === r && c.rs > 1)
           if (!first && h <= pageBottom - contTop && [...rowCells, ...spanCells].some(c => cellContentExtent(c) + c.marginT + c.marginB > avail)) { page++; y = contTop; first = true; break }
-          // 갈린 칸 안의 표는 남는 행 높이를 버리지 않고 다음 쪽 맨 위에 잇는다(같은 PDF: 빈 행 조각 34pt). 본문 표는 이 쪽 바닥까지
-          if (nested && avail > 0) {
+          // 갈린 칸 안의 표는 남는 행 높이를 버리지 않고 다음 쪽 맨 위에 잇는다(같은 PDF: 빈 행 조각 34pt). 본문 표는 이 쪽 바닥까지 —
+          // 다만 한 쪽에 드는 행이고 칸 정렬대로 놓은 글이 이 쪽에 다 들며 남는 높이가 크면(1000 넘게) 그 몫도 다음 쪽 맨 위 빈 조각으로 잇는다
+          // (같은 판 한컴 PDF: 저장 높이 4954 가운데 정렬 한 줄 행이 쪽 바닥 3111 에서 갈려 다음 쪽 맨 위 20.4pt 조각. 남는 높이 281·437 은 버린다)
+          const carry = !nested && h - avail > ROW_CARRY_MIN && h <= pageBottom - contTop && rowCells.every(c => {
+            const e = cellContentExtent(c) + c.marginT + c.marginB, va = c.sub?.getAttribute("vertAlign") ?? "TOP"
+            return (va === "CENTER" ? (h + e) / 2 : va === "BOTTOM" ? h : e) <= avail
+          })
+          if ((nested || carry) && avail > 0) {
             pieces.push({ page, y, h: avail, range: new Map(rowCells.map(c => [c.el, [from.get(c.el) ?? 0, Number.POSITIVE_INFINITY]])) })
             for (const c of rowCells) from.set(c.el, Number.POSITIVE_INFINITY)
             page++; y = contTop; first = true; h -= avail

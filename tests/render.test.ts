@@ -402,12 +402,12 @@ describe("render: 쪽을 넘는 표 행 조각 (planTableRows)", () => {
     // 첫 쪽 조각 높이는 저장된 표 sz 높이(한컴이 첫 쪽 높이를 담는다), 가운데 쪽은 다음 쪽 첫 줄 위까지 + 칸 여백, 마지막 쪽은 내용 + 칸 여백
     const three = tbl("CELL", [0, 1600, 1000, 1600, 1000], 3500)
     assert.deepEqual(planTableRows(three, collectCells(three), measureTableRowHeights(three), 0, 0, 6000).map(ps => ps.map(p => [p.page, p.y, p.h])), [[[0, 0, 3500], [1, 0, 3482], [2, 0, 2282]]])
-    // 칸 글은 다 들어가도 떠 있는 그림 칸이 남은 높이보다 크면 행째 다음 쪽(가를 수 없는 그림) — 그림 없으면 이 쪽 바닥까지
+    // 칸 글은 다 들어가도 떠 있는 그림 칸이 남은 높이보다 크면 행째 다음 쪽(가를 수 없는 그림) — 그림 없으면 이 쪽 바닥에서 갈라 남는 1500 은 다음 쪽 맨 위
     const twoRows = (pic: boolean) => createXmlParser().parseFromString(`<hp:tbl xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" pageBreak="CELL" rowCnt="2" colCnt="1"><hp:sz width="10000" height="7500"/>` +
       [3000, 4500].map((h, r) => `<hp:tr><hp:tc><hp:subList><hp:p><hp:run>${pic && r === 1 ? `<hp:pic><hp:sz width="5000" height="4000"/><hp:pos treatAsChar="0" vertRelTo="PARA" vertOffset="0"/><hp:outMargin left="0" right="0" top="0" bottom="0"/></hp:pic>` : ""}<hp:t>가</hp:t></hp:run><hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000" textheight="1000" baseline="850" spacing="600" horzpos="0" horzsize="9000"/></hp:linesegarray></hp:p></hp:subList><hp:cellAddr colAddr="0" rowAddr="${r}"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="10000" height="${h}"/><hp:cellMargin left="0" right="0" top="141" bottom="141"/></hp:tc></hp:tr>`).join("") + `</hp:tbl>`, "text/xml").documentElement as unknown as Element
     const plan2 = (pic: boolean) => { const t = twoRows(pic); return planTableRows(t, collectCells(t), measureTableRowHeights(t), 0, 0, 6000).map(ps => ps.map(p => [p.page, p.y, p.h])) }
     assert.deepEqual(plan2(true)[1], [[1, 0, 4500]])
-    assert.deepEqual(plan2(false)[1], [[0, 3000, 3000]])
+    assert.deepEqual(plan2(false)[1], [[0, 3000, 3000], [1, 0, 1500]])
   })
 
   it("한컴이 갈라 저장한 세로 가운데 칸은 조각마다 그 조각 내용을 조각 안에서 가운데 맞추고, 쪽 첫 줄 저장 vertpos 를 살린다", async () => {
