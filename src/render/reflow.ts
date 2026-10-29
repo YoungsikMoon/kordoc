@@ -970,6 +970,10 @@ function reflowBlockFlow(
         if (Number.isFinite(bottom)) {
           cursorV = bottom
           prevSpaceAfter = g?.spaceAfter ?? 0
+          const segsL = elements(lsa).filter(e => ln(e) === "lineseg"), lastL = segsL[segsL.length - 1]
+          // 쪽 바닥을 넘친 끝 줄 — 한컴은 그 줄을 다음 쪽 맨 위에 그린다(그리기의 넘친 줄 옮기기와 같은 조건). 뒤에 다시 짜는 문단은 새 쪽의
+          // 그 줄 아래(줄 높이 + 간격)부터(한컴 PDF: 본문 69786 을 넘은 빈 줄 70746 뒤 줄 정보 없는 문단이 새 쪽 둘째 줄 25.2pt 아래)
+          if (bodyFlow && lastL && num(lastL, "vertpos") + num(lastL, "vertsize") > bodyH) { cursorV = num(lastL, "vertsize") + num(lastL, "spacing"); prevSpaceAfter = 0 }
         }
       }
       continue
