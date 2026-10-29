@@ -2,6 +2,18 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.20: rendering · 2026-10-29
+
+Compared document by document against 4.24.19 with the same corpora and scorers across the full suite (rounds 206–225; 206–219, 221 and 223 rejected). No document decreased.
+
+| Metric | 4.24.19 | 4.24.20 |
+| --- | --- | --- |
+| Render page count match · mismatch · render failure (1,565 pairs) | 1,504 · 47 · 14 | **1,505 · 46 · 14** |
+| Rendered text position (±1.5pt) | 100,015 / 105,137 | **100,019 / 105,145** |
+| PDF text · PDF tables · statute annexes · ODL · HWPX · round trip · generation · OCR · degraded input | — | unchanged |
+
+Documents whose page counts still differ now overlap far less: a regulatory impact report went from 116 to 66 pages (PDF 64), another from 142 to 155 (PDF 156), and a document drawn off the page from 2 to 6 pages (PDF 5).
+
 ## 4.24.19: rendering · 2026-10-29
 
 Compared document by document against 4.24.18 with the same corpora and scorers across the full suite (rounds 196–205; 196, 197, 199, 200 and 205 rejected). Rendered text position counts only documents whose page count matches the PDF, so documents whose page counts now match add to the denominator.
