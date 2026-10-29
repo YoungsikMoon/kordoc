@@ -2,6 +2,19 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.22: OCR tables and rendering · 2026-10-30
+
+Every benchmark was compared document by document against 4.24.21 with the same corpora and scorers (rounds 238–247; suite x239e had no per-document decrease in any stage). Rendering was compared document by document on the Hancom PDF pairs.
+
+| Metric | 4.24.21 | 4.24.22 |
+| --- | --- | --- |
+| OCR table structure match · cell F1 | 26/67 · 0.5759 | **31/67 · 0.5850** |
+| Render text position (±1.5pt) | 106,570 / 111,416 | **106,790 / 111,423** (5 documents up, 0 down) |
+| Render page-count match · image position | 1,507 · 4,167 / 4,259 | unchanged |
+| PDF text · tables · statute annexes · ODL · HWPX · round trip · generation · OCR characters · degraded input | — | unchanged |
+
+Of the 10 documents scoring 0 on render text position, 7 are Hancom PDFs whose whole page was shifted uniformly at print time (9.4–12pt in both directions) and 1 was printed at 70% scale. Scoring is unchanged and these are recorded as a measurement limit. The 58 remaining page-count mismatches are 14 render failures (13 HWP5 files with a .hwpx extension and 1 distribution-encrypted HWPX), about 31 PDFs printed two pages per sheet, and about 13 others.
+
 ## 4.24.21: rendering · 2026-10-29
 
 Every benchmark was compared document by document against 4.24.20 with the same corpora and scorers (rounds 226–235; rejected 226, 227, 232, 234). Render text position is measured only on documents whose page count matches the PDF, so documents whose page counts now match enter the denominator.
