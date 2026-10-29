@@ -2,6 +2,19 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.19: rendering · 2026-10-29
+
+Compared document by document against 4.24.18 with the same corpora and scorers across the full suite (rounds 196–205; 196, 197, 199, 200 and 205 rejected). Rendered text position counts only documents whose page count matches the PDF, so documents whose page counts now match add to the denominator.
+
+| Metric | 4.24.18 | 4.24.19 |
+| --- | --- | --- |
+| Render page count match · mismatch · render failure (1,565 pairs) | 1,492 · 56 · 17 | **1,504 · 47 · 14** |
+| Rendered text position (±1.5pt) | 97,156 / 101,352 | **100,015 / 105,137** (3 existing documents up, none down; 8 newly measured) |
+| Rendered image position (±2pt) | 4,149 / 4,240 | 4,149 / 4,240 |
+| PDF text · PDF tables · statute annexes · ODL · HWPX · round trip · generation · OCR · degraded input | — | unchanged |
+
+The 14 render failures are 13 HWP 5.x files with an .hwpx extension and one encrypted document. Page-count mismatches include PDFs printed two pages per landscape A4 sheet.
+
 ## 4.24.18: rendering · 2026-10-29
 
 Compared document by document against 4.24.17 with the same corpora and scorers across the full suite (rounds 186–195; 190, 191, 192 and 195 rejected). Render layout is now measured on every paired PDF (1,565 Hancom PDFs that have an .hwpx of the same name); the earlier README figure (4.24.14, 90,840 text runs) covered only some folders, so its rate is not directly comparable. 4.24.17 and 4.24.18 were measured the same way.
