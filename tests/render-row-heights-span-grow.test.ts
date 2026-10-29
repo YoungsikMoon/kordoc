@@ -26,6 +26,13 @@ describe("render: 여러 행 칸이 행들보다 높으면 행이 자란다", ()
     assert.deepEqual(solveRowHeights(cells, 2, 2500), [1000, 1500])
     assert.deepEqual(solveRowHeights(cells, 2, 1800), [1000, 1000])
   })
+  it("이미 표 높이를 넘은 표라도 칸 내용이 넘쳐 키우는 여러 행 칸은 키운다 — 저장 높이로만 키우는 칸은 그대로", () => {
+    const rows = [{ rowAddr: 0, rowSpan: 1, height: 1000 }, { rowAddr: 1, rowSpan: 1, height: 1000 }]
+    // 내용 3000(≥ 칸 높이) — sz 1800 을 넘어도 마지막 행이 2000 으로
+    assert.deepEqual(solveRowHeights([{ rowAddr: 0, rowSpan: 2, height: 3000, contentH: 3000 }, ...rows], 2, 1800), [1000, 2000])
+    // 내용 1500(< 저장 3000) — 종전대로 sz 에 묶여 그대로
+    assert.deepEqual(solveRowHeights([{ rowAddr: 0, rowSpan: 2, height: 3000, contentH: 1500 }, ...rows], 2, 1800), [1000, 1000])
+  })
   it("한 행 칸이 없는 행은 위에서부터 그 행에서 끝나는 칸으로 정한다 — 먼저 나온 큰 병합 칸이 정하지 않는다", () => {
     // 같은 판 서식: 3행 큰 칸 5000 이 문서 순서로 먼저 나와도 둘째 행은 2행 칸 1666 − 1382 = 284, 셋째 행은 3행 칸 3866 에 맞춰 자란다
     const h = solveRowHeights([

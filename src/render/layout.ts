@@ -165,9 +165,13 @@ export function solveRowHeights(
   // 한컴 저장 표 sz: 이런 칸이 있는 표 105개 중 78개가 키운 합과 같고, 키우지 않은 합과 같은 표는 없다
   // (같은 판 PDF: 2행 병합 칸 882 의 두 행이 2 + 782 → 8.75pt)
   let total = h.reduce((s, x) => s + x, 0)
+  const overSz = total > maxTotal
   for (const { c, rows } of [...spans].sort((a, b) => a.rows[a.rows.length - 1] - b.rows[b.rows.length - 1] || b.rows[0] - a.rows[0])) {
     const known = rows.reduce((s, r) => s + h[r], 0)
-    const add = Math.min(c.height - known, maxTotal - total)
+    // 행 합이 이미 표 높이를 넘은(쪽을 넘는) 표라도 칸 내용이 넘쳐 키우는 칸은 키운다 — 내용은 쪽 조각과 무관하다
+    // (한컴 PDF: 84행 3쪽 표의 3행 병합 칸 내용 6942 > 저장 5786, 마지막 행 2254 → 3700. 저장 높이로만 키우는 칸은 종전대로 묶는다 —
+    // 쪽 경계를 걸친 35행 칸 61900 은 한컴도 키우지 않았다)
+    const add = Math.min(c.height - known, overSz && c.contentH != null && c.contentH >= c.height ? Number.POSITIVE_INFINITY : maxTotal - total)
     if (rows.length && add > 0) { h[rows[rows.length - 1]] += add; total += add }
   }
   // 칸 저장 높이로 쌓은 행 합이 표 높이(sz)를 넘으면 마지막 행이 줄어 표 높이에 맞는다 — 마지막 행 칸 내용이 줄인 행에 다 들 때만
