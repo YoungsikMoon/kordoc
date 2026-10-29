@@ -202,8 +202,13 @@ export function planTableRows(tbl: Element, cells: CellModel[], rowH: number[], 
     if (outT + rowY[nRows] + outB <= BODY_H) return rowH.map((h, r) => [{ page: 1, y: contMT + outT + rowY[r], h }])
   }
   const spanStarts = cellSplit ? spanPartRows(cells, rowY, BODY_H) : new Set<number>()
+  // 한컴은 행 사이에서 가른 표의 sz 에 첫 쪽 조각 높이를 적는다 — 그 높이가 첫 쪽 안쪽 행 경계와 맞으면 거기서 가른다
+  // (같은 판 한컴 PDF: sz 1631 = 첫 행 1644 인 14행 서식 표가 둘째 행부터 2쪽 — 둘째 행은 1쪽에 드는데도)
+  const declaredH = num(findChildByLocalName(tbl, "sz"), "height")
+  const cutRow = declaredH > 0 && declaredH < rowY[nRows] - 1000 ? rowY.findIndex((v, k) => k > hdrRows && k < nRows && Math.abs(v - declaredH) <= 20 && ty + v <= pageBottom) : -1
   for (let r = 0; r < nRows; r++) {
     let h = rowH[r]
+    if (r === cutRow && page === 0 && !first) { page++; y = contTop; first = true }
     const pieces: RowPiece[] = []
     // 여러 행 칸을 한컴이 쪽에서 갈라 저장했으면 다음 부분이 시작하는 행부터 다음 쪽(같은 판 PDF: 세 행 칸 "다음 상한까지 …" 의
     // 둘째 부분 50~1000 이 다음 쪽 "범주Ⅲ" 행부터, 앞 쪽은 첫 부분 높이를 채운 행까지)
@@ -280,6 +285,13 @@ export function planTableRows(tbl: Element, cells: CellModel[], rowH: number[], 
             if (b && b.part === k) ext = Math.max(ext, b.top + f.bottom - f.v0 - from + c.marginT + c.marginB)
           }
           if (inK.length && next) toNext = Math.max(toNext, next.top - from + c.marginT + c.marginB)
+        }
+        // 이 행에서 끝나는 여러 행 칸도 갈라 저장했으면 다음 쪽 조각은 그 칸 같은 부분 내용까지 선다(같은 판 한컴 PDF: 두 행 병합 칸 둘째 부분
+        // 21줄이 2쪽 위 270pt 를 차지하고 다음 행은 그 아래 — 한 행 칸 줄만 세면 다음 행이 병합 칸 글 위에 겹쳤다)
+        if (k > 0) for (const c of cells) {
+          if (c.rs < 2 || c.ra + c.rs - 1 !== r) continue
+          const inK = cellLineBoxes(c, BODY_H).filter(b => b.part === k)
+          if (inK.length) ext = Math.max(ext, inK[inK.length - 1].bottom - inK[0].origin + c.marginT + c.marginB)
         }
         const last = k === hParts
         // 한컴은 갈라 저장한 표의 sz 높이에 첫 쪽 높이를 담는다(PDF: 첫 쪽 상자 65300, sz 65362) — 가운데 쪽은 다음 쪽 첫 줄 위까지 + 칸 여백(PDF 68820, 계산 68810)
