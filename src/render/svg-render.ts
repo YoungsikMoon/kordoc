@@ -668,7 +668,9 @@ function renderSectionToPages(
             lastPage = pagesOf[pagesOf.length - 1]
             continue
           }
-          if (span.pages > 0 && (pagesOf[0] ?? cur) + span.pages > pendingEnd) { pendingEnd = (pagesOf[0] ?? cur) + span.pages; pendingEndY = span.endY - MT }
+          // 나누지 않는 표(NONE)는 넘치면 표째 다음 쪽으로 가고 뒤 글은 앵커 쪽에 남는다 — 다음 문단을 표 끝 쪽으로 보내지 않는다
+          // (한컴 PDF: 쪽 바닥 앵커 7행 방화 등급표는 다음 쪽 맨 위, 앵커 뒤 문단 73300 은 앞 쪽 바닥)
+          if (span.pages > 0 && o.el.getAttribute("pageBreak") !== "NONE" && (pagesOf[0] ?? cur) + span.pages > pendingEnd) { pendingEnd = (pagesOf[0] ?? cur) + span.pages; pendingEndY = span.endY - MT }
         }
       }
       nPages = Math.max(nPages, cur + 1, pendingEnd + 1)
