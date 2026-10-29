@@ -25,6 +25,23 @@ describe("캐시 없는 문단 뒤의 낡은 저장 자리", () => {
     assert.notEqual(r.bottom, 1920)
     assert.deepEqual(r.cached, [r.bottom, r.bottom + 1920])
   })
+  it("위로는 크게 어긋나도 옮긴다", () => {
+    const r = positions([9000, 10920])
+    assert.deepEqual(r.cached, [r.bottom, r.bottom + 1920])
+  })
+  it("칸 저장 높이 합보다 크게 남은 표 sz 는 행 합으로 짜고, 뒤 캐시 문단도 그 바닥으로 올린다", () => {
+    const cell = `<hp:tc><hp:subList><hp:p paraPrIDRef="0"><hp:run charPrIDRef="1"><hp:t>*</hp:t></hp:run></hp:p></hp:subList><hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/><hp:cellSz width="16000" height="282"/><hp:cellMargin left="0" right="0" top="141" bottom="141"/></hp:tc>`
+    const tbl = `<hp:tbl rowCnt="1" colCnt="1" pageBreak="CELL"><hp:sz width="16000" height="11565"/><hp:pos treatAsChar="1" vertRelTo="PARA"/><hp:outMargin left="0" right="0" top="0" bottom="0"/><hp:tr>${cell}</hp:tr></hp:tbl>`
+    const doc = createXmlParser().parseFromString(`<hs:sec ${ns}><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0">${tbl}<hp:t/></hp:run></hp:p><hp:p paraPrIDRef="0"><hp:run charPrIDRef="0"><hp:t>뒤 문단</hp:t></hp:run>${seg(13485)}</hp:p></hs:sec>`, "text/xml")
+    const root = doc.documentElement as unknown as Element
+    reflowSection(root, parseRenderStyles(head), { BODY_W: 48190, BODY_H: 70018 })
+    const ps = root.getElementsByTagName("hp:p")
+    const host = ps[0].getElementsByTagName("hp:lineseg")
+    const hostSeg = host[host.length - 1]
+    assert.ok(Number(hostSeg.getAttribute("vertsize")) < 3000, hostSeg.toString())
+    const after = Number(ps[ps.length - 1].getElementsByTagName("hp:lineseg")[0].getAttribute("vertpos"))
+    assert.equal(after, Number(hostSeg.getAttribute("vertpos")) + Number(hostSeg.getAttribute("vertsize")) + Number(hostSeg.getAttribute("spacing")))
+  })
   it("쪽 넘김으로 생긴 차이는 옮기지 않는다", () => {
     const r = positions([1920, 0])
     assert.deepEqual(r.cached, [r.bottom, 0])

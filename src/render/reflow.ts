@@ -73,6 +73,18 @@ function num(el: Element | null, attr: string, fallback = 0): number {
   return el ? toInt32(el.getAttribute(attr) ?? undefined, fallback) : fallback
 }
 
+/** 표 저장 높이(sz)가 칸 저장 높이로 쌓은 행 합보다 크게 남았다(칸 내용을 지운 편집본) */
+function staleTableSz(tbl: Element): boolean {
+  const rows = new Map<number, number>()
+  for (const tr of elements(tbl)) if (ln(tr) === "tr") for (const tc of elements(tr)) if (ln(tc) === "tc") {
+    const ra = num(findChildByLocalName(tc, "cellAddr"), "rowAddr"), rs = num(findChildByLocalName(tc, "cellSpan"), "rowSpan") || 1
+    if (rs === 1) rows.set(ra, Math.max(rows.get(ra) ?? 0, num(findChildByLocalName(tc, "cellSz"), "height")))
+  }
+  let sum = 0
+  for (const v of rows.values()) sum += v
+  return rows.size > 0 && sum + 1000 < num(findChildByLocalName(tbl, "sz"), "height")
+}
+
 /** 문단의 합성 linesegarray 줄들의 vertpos를 delta만큼 이동 (페이지 로컬 리셋용) */
 function shiftParaVert(p: Element, delta: number): void {
   for (const lsa of elements(p)) {
@@ -354,7 +366,8 @@ function reflowPara(
   const lineFloats: Array<{ index: number; h: number }> = []
   let objBottom = startV
   // 글자처럼 취급하는 글상자는 안 글이 sz 보다 길면 그 글 높이만큼 자란다(한컴 저장본: sz 1249 인 조건 상자 줄 높이 = 안 글 바닥 7629 + 안 여백 425×2)
-  const effHOf = (o: ParaObj): number => (o.tag === "tbl" ? Math.max(o.height, measureTableHeight(o.el, geomMemo(styles))) : o.inline ? Math.max(o.height, drawTextHeight(o.el)) : o.height) + captionExtra(o.el)
+  // 표 sz 가 칸 저장 높이로 쌓은 행 합보다 크게 남았으면(칸 내용을 지운 편집본) 한컴은 행 합으로 다시 짠다(같은 판 PDF: 칸 282 세 칸 표의 sz 11565 가 한 줄 높이)
+  const effHOf = (o: ParaObj): number => (o.tag === "tbl" ? (staleTableSz(o.el) ? measureTableHeight(o.el, geomMemo(styles)) : Math.max(o.height, measureTableHeight(o.el, geomMemo(styles)))) : o.inline ? Math.max(o.height, drawTextHeight(o.el)) : o.height) + captionExtra(o.el)
   let cellFloatBottom = 0, cellTextBelow = 0
   // 칸 안 위아래 배치 개체의 호스트가 공백뿐이면 그 줄은 개체 아래로 내려간다(빈 문단은 제자리) — 한컴 저장본: 칸 안 공백 호스트 8개 중 7개가
   // 개체 바닥 아래(18538 + 1920 + 바깥 283×2 + 표 8328 = 29352), 글자 없는 호스트는 130개가 제자리
@@ -743,7 +756,7 @@ function carryZones(zones: WrapZone[], bodyH: number, oneColumn: boolean): void 
 
 /** 자란 표로 볼 높이 차(HWPUNIT) — 다시 짠 칸 줄과 한컴 줄의 글꼴 근사 차이보다 크고 한 줄보다 작게 */
 const STALE_SLACK = 500
-/** 캐시 없는 문단 뒤 캐시 문단을 다시 짠 바닥으로 옮기는 최대 차이 — 쪽 넘김 차이(수만)는 넘는다 */
+/** 캐시 없는 문단 뒤 캐시 문단을 다시 짠 바닥 아래로 옮기는 최대 차이 — 쪽 넘김 차이(수만)는 넘는다. 위로 옮기는 것은 제한하지 않는다 */
 const STALE_CACHE_SHIFT = 2000
 
 /** 문단에 든 글자처럼 취급 표 중 캐시 없는 칸 문단이 있는 표 — 칸 글을 다시 짜므로 저장 높이보다 자랄 수 있다 */
@@ -940,12 +953,13 @@ function reflowBlockFlow(
       const lsa = findChildByLocalName(p, "linesegarray")
       // 캐시 없는 문단 바로 뒤 캐시 문단의 저장 자리는 앞 문단의 옛 높이 기준이다 — 한컴은 열 때 다시 짜서 다시 짠 바닥에 붙인다.
       // 어긋난 만큼 이 문단과 같은 쪽의 뒤 캐시 문단을 함께 옮긴다(한컴 PDF: 줄 정보 없는 9pt 머리 문단 1440 뒤 표 문단의 저장 자리 1920 이 1440 에).
-      // 쪽 넘김으로 생긴 차이(수만)와 쪽에 걸친 문단은 건드리지 않는다
+      // 위로는 얼마든 옮긴다(같은 판 한컴 PDF: 사진을 지운 표의 낡은 sz 11565 아래 저장된 뒤 문단 36800 이 102.8pt 위). 쪽 넘김으로 생긴 차이(수만, 아래로)와
+      // 쪽에 걸친 문단은 건드리지 않는다
       if (lsa && bodyFlow) {
         const segs = elements(lsa).filter(e => ln(e) === "lineseg")
         const vs = segs.map(e => num(e, "vertpos")), v0 = vs[0] ?? 0
         const mono = vs.every((v, i) => i === 0 || v >= vs[i - 1])
-        if (prevReflowed) { const d = startV - v0; cacheShift = mono && v0 > 0 && Math.abs(d) <= STALE_CACHE_SHIFT ? d : 0 }
+        if (prevReflowed) { const d = startV - v0; cacheShift = mono && v0 > 0 && d <= STALE_CACHE_SHIFT ? d : 0 }
         else if (cacheShift && (!mono || v0 < lastStored)) cacheShift = 0
         if (segs.length) lastStored = vs[vs.length - 1] + num(segs[segs.length - 1], "vertsize")
         if (cacheShift) shiftParaVert(p, cacheShift)
