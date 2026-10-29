@@ -503,6 +503,11 @@ export function drawPara(p: Element, ox: number, oy: number, areaW: number, ctx:
         const col = Math.floor((plans[0].seg.horzpos + 1) / (ctx.cols.w + ctx.cols.gap))
         ax = ox + col * (ctx.cols.w + ctx.cols.gap); aw = ctx.cols.w
       }
+      // 문단 기준(horzRelTo PARA) 가로 위치는 문단 왼쪽·오른쪽 여백 안에서 잰다(같은 판 한컴 PDF: 왼쪽 여백 1500 문단의 표가 본문 왼쪽 + 15pt + 바깥 여백)
+      if (findChildByLocalName(o.el, "pos")?.getAttribute("horzRelTo") === "PARA" && m.paraPrId != null) {
+        const g = ctx.styles.paraGeom.get(m.paraPrId)
+        if (g) { ax += g.marginLeft; aw -= g.marginLeft + g.marginRight }
+      }
       // 어울림(SQUARE) 개체 위 = max(문단 위 + vertOffset, 앵커 줄 위) — reflow 의 zoneStart 와 같은 규칙
       let anchorLineV: number | undefined
       let anchorLineH = 0
