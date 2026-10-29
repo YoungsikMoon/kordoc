@@ -306,6 +306,9 @@ export function planTableRows(tbl: Element, cells: CellModel[], rowH: number[], 
     if (splittable && y + h + outB > pageBottom) {
       const from = new Map<Element, number>()
       const lines = new Map(rowCells.map(c => [c.el, cellLines(c)] as const))
+      // 행 첫 줄은 뒤 줄이 있으면 줄 간격까지 이 쪽에 들어야 한다 — 아니면 행째 다음 쪽(같은 판 한컴 PDF: 남은 19pt 에 첫 줄 12pt + 칸 여백은 들지만
+      // 간격 7.2pt 를 더하면 넘치는 과태료 표 행이 다음 쪽 맨 위. 줄 하나뿐인 칸은 간격을 안 본다 — 가운데 정렬 한 줄 칸은 그 쪽에서 갈린다)
+      const sp0 = new Map(rowCells.map(c => { const b = cellLineBoxes(c)[0]; return [c.el, b ? num(b.seg, "spacing") : 0] as const }))
       while (y + h + outB > pageBottom && BODY_H > rowY[hdrRows]) {
         const avail = pageBottom - y - outB
         let rem = 0, placed = false, allFit = true, blocked = false
@@ -315,7 +318,7 @@ export function planTableRows(tbl: Element, cells: CellModel[], rowH: number[], 
           const ls = (lines.get(c.el) ?? []).filter(l => l[0] >= off)
           if (!ls.length) { cuts.push([c.el, off, off]); continue }
           const end = Math.max(...ls.map(l => l[1]))
-          const k = ls.findIndex(l => c.marginT + (l[1] - off) > avail - c.marginB)
+          const k = ls.findIndex((l, i) => c.marginT + (l[1] + (off === 0 && i === 0 && ls.length > 1 ? sp0.get(c.el) ?? 0 : 0) - off) > avail - c.marginB)
           if (k < 0) { cuts.push([c.el, off, end + 1]); continue }
           allFit = false
           if (k > 0) placed = true
