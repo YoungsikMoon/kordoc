@@ -188,7 +188,7 @@ export function extractLines(
       classifyAndAdd(seg, effWidth, horizontals, verticals, fromFill, fromFill ? undefined : { h: shortH, v: shortV })
     })
     // 채움 영역 윤곽은 얇은 채움 괘선(thinFill·짧은 조각 thinShort)을 빼고
-    if (from) outs.forEach((o, k) => { for (let n = from[k]; n < o.length; n++) if (white || (k < 2 && !thinFill.has(o[n]))) nonRules.add(o[n]) })
+    if (from) outs.forEach((o, k) => { for (let n = from[k]; n < o.length; n++) if (white || (k < 2 && !thinFill.has(o[n]))) { nonRules.add(o[n]); if (white) WHITE_EDGES.add(o[n]) } })
     currentPath = []
   }
 
@@ -569,8 +569,17 @@ export function preprocessLines(
   v = dropShadingStacks(v, "v")
 
   // 2. 근접 평행 선 병합 (인쇄 잔상, 이중선)
-  h = mergeParallelLines(h, "h", nonRules)
+  h = mergeParallelLines(h, "h", nonRules, v)
   v = mergeParallelLines(v, "v", nonRules)
+
+  // 보이는 획과 합쳐지지 않은 흰 윤곽이 보이는 세로·가로선을 둘 이상 가로지르면 행 배경 — 괘선이 아님
+  if (nonRules) {
+    const visH = h.filter(l => !nonRules.has(l)), visV = v.filter(l => !nonRules.has(l))
+    const crossH = (w: LineSegment) => visV.filter(c => c.x1 > w.x1 + 1 && c.x1 < w.x2 - 1 && Math.min(c.y1, c.y2) < w.y1 - 2 && Math.max(c.y1, c.y2) > w.y1 + 2).length
+    const crossV = (w: LineSegment) => visH.filter(c => c.y1 > Math.min(w.y1, w.y2) + 1 && c.y1 < Math.max(w.y1, w.y2) - 1 && Math.min(c.x1, c.x2) < w.x1 - 2 && Math.max(c.x1, c.x2) > w.x1 + 2).length
+    h = h.filter(l => !(WHITE_EDGES.has(l) && nonRules.has(l) && crossH(l) >= 2))
+    v = v.filter(l => !(WHITE_EDGES.has(l) && nonRules.has(l) && crossV(l) >= 2))
+  }
 
   return { horizontals: h, verticals: v }
 }
@@ -821,12 +830,14 @@ export function closeOpenTableEdges(
   return synthesized.length ? [...verticals, ...synthesized] : verticals
 }
 
+/** 흰 채움·흰 획 윤곽 — 흰 바탕에 보이지 않는 변(nonRules 가운데 흰 것) */
+const WHITE_EDGES = new WeakSet<LineSegment>()
 
 /**
  * 근접 평행 선 병합 — 같은 방향의 가까운 선을 하나로 합침.
  * 이중선, 인쇄 잔상, PDF 렌더링 미세 차이로 인한 중복 선 제거.
  */
-function mergeParallelLines(lines: LineSegment[], dir: "h" | "v", nonRules?: Set<LineSegment>): LineSegment[] {
+function mergeParallelLines(lines: LineSegment[], dir: "h" | "v", nonRules?: Set<LineSegment>, perp?: LineSegment[]): LineSegment[] {
   if (lines.length <= 1) return lines
 
   // 수평선: y로 정렬, 수직선: x로 정렬
@@ -860,7 +871,26 @@ function mergeParallelLines(lines: LineSegment[], dir: "h" | "v", nonRules?: Set
 
       if (overlap > minLen * 0.3) {
         // A visible stroke sharing a background edge remains visible after merging.
-        if (nonRules?.has(prev) && !nonRules.has(curr)) nonRules.delete(prev)
+        const bgPrev = !!nonRules?.has(prev) && !nonRules.has(curr), bgCurr = !!nonRules?.has(curr) && !nonRules.has(prev)
+        const whPrev = bgPrev && WHITE_EDGES.has(prev), whCurr = bgCurr && WHITE_EDGES.has(curr)
+        if (bgPrev) nonRules!.delete(prev)
+        // 흰 윤곽이 보이는 가로 획보다 길게 뻗어 그 바깥에서 보이는 세로선을 둘 이상 지나면 행 배경이 넓은 것 —
+        // 합쳐도 보이는 획 범위만(들여쓰기 빈 열까지 괘선이 늘어나지 않게)
+        const clip = (w: LineSegment, o: LineSegment) => {
+          if (dir !== "h" || !perp) return false
+          let n = 0
+          for (const c of perp) {
+            if (nonRules!.has(c) || Math.min(c.y1, c.y2) >= w.y1 - 2 || Math.max(c.y1, c.y2) <= w.y1 + 2) continue
+            if ((c.x1 > w.x1 + 1 && c.x1 < o.x1 - 1) || (c.x1 > o.x2 + 1 && c.x1 < w.x2 - 1)) n++
+          }
+          return n >= 2
+        }
+        if (whPrev && clip(prev, curr)) {
+          prev.x1 = curr.x1; prev.x2 = curr.x2; prev.y1 = prev.y2 = curr.y1
+          prev.lineWidth = curr.lineWidth
+          continue
+        }
+        if (whCurr && clip(curr, prev)) continue
         // 병합: 범위 확장, lineWidth는 최대값 유지
         if (dir === "h") {
           prev.x1 = Math.min(prev.x1, curr.x1)
