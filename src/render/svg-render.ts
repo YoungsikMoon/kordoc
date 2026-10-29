@@ -559,7 +559,7 @@ function renderSectionToPages(
     let prevEnd = Number.NEGATIVE_INFINITY
     let cur = 0, col = 0
     /** 쪽을 넘는 표가 끝나는 쪽 — 그 뒤 첫 쪽 리셋은 여기로 */
-    let pendingEnd = 0, pendingEndY = 0
+    let pendingEnd = 0, pendingEndY = 0, pendingTopY = -1
     let lastEnd = 0, lastPage = -1
     /** 앞 문단 아래 간격 — 문단 영역 위는 앞 문단 끝 + 이 간격(한컴 저장본: 아래 간격 600 뒤 문단의 떠 있는 표가 그 자리 + vertOffset) */
     let lastSA = 0
@@ -582,7 +582,9 @@ function renderSectionToPages(
           }
           if (col > 0) s.setAttribute("horzpos", String(h + Math.round(col * (colW + colGap))))
         } else {
-          if (paraFirst && pendingEnd > cur) {
+          // 세로 오프셋으로 앵커 줄 아래 띄운 표 위에 저장된 문단(되돌아가지 않고 표 위보다 위)은 앵커 쪽에 남는다 — 표 끝 쪽으로는 표 아래 문단부터
+          // (한컴 PDF: vertOffset 8648 로 앵커 11200 아래 띄운 세 쪽 표 위 15400·17500 문단이 앵커 쪽, 58858 문단이 표 끝 쪽)
+          if (paraFirst && pendingEnd > cur && !(v > prevV && v < pendingTopY - 100)) {
             // 앞 문단의 표가 쪽을 넘어 pendingEnd 쪽에서 끝났다 — 이 문단은 그 쪽(표 끝 아래), 표 끝보다 위에 저장돼 있으면 다음 쪽
             cur = v < pendingEndY - 100 ? pendingEnd + 1 : pendingEnd
             pendingEnd = 0
@@ -670,7 +672,7 @@ function renderSectionToPages(
           }
           // 나누지 않는 표(NONE)는 넘치면 표째 다음 쪽으로 가고 뒤 글은 앵커 쪽에 남는다 — 다음 문단을 표 끝 쪽으로 보내지 않는다
           // (한컴 PDF: 쪽 바닥 앵커 7행 방화 등급표는 다음 쪽 맨 위, 앵커 뒤 문단 73300 은 앞 쪽 바닥)
-          if (span.pages > 0 && o.el.getAttribute("pageBreak") !== "NONE" && (pagesOf[0] ?? cur) + span.pages > pendingEnd) { pendingEnd = (pagesOf[0] ?? cur) + span.pages; pendingEndY = span.endY - MT }
+          if (span.pages > 0 && o.el.getAttribute("pageBreak") !== "NONE" && (pagesOf[0] ?? cur) + span.pages > pendingEnd) { pendingEnd = (pagesOf[0] ?? cur) + span.pages; pendingEndY = span.endY - MT; pendingTopY = below && voP > 0 && ty - MT < BODY_H ? ty - MT : -1 }
         }
       }
       nPages = Math.max(nPages, cur + 1, pendingEnd + 1)
