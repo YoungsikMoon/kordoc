@@ -97,6 +97,23 @@ export function spanPartRows(cells: CellModel[], rowY: number[]): Set<number> {
   return out
 }
 
+/** 글 없는 문단에서 앞 위아래 배치 개체 뒤에 앵커한 문단 기준 위아래 배치 표인가 */
+function coAnchoredFollower(tbl: Element): boolean {
+  const isTb = (o: Element): boolean => {
+    const pos = findChildByLocalName(o, "pos")
+    return !!pos && pos.getAttribute("treatAsChar") !== "1" && (pos.getAttribute("vertRelTo") ?? "PARA") === "PARA" && (o.getAttribute("textWrap") ?? "TOP_AND_BOTTOM") === "TOP_AND_BOTTOM"
+  }
+  const p = tbl.parentNode?.parentNode as Element | null
+  if (!p || ln(p) !== "p" || !isTb(tbl)) return false
+  let seen = false
+  for (const run of elements(p)) if (ln(run) === "run") for (const o of elements(run)) {
+    if (ln(o) === "t" && (o.textContent ?? "").trim() !== "") return false
+    if (o === tbl) return seen
+    if ((ln(o) === "tbl" || ln(o) === "pic") && isTb(o)) seen = true
+  }
+  return false
+}
+
 export function planTableRows(tbl: Element, cells: CellModel[], rowH: number[], ty: number, MT: number, BODY_H: number, slack = 0, floatSpan?: CellFloatSpan, nested = false, contMT = MT): RowPiece[][] {
   // 갈린 칸 안의 표는 아래 여백으로 넘치지 않는다 — 본문 바닥에서 가른다(한컴 PDF: 칸 안 서식 표가 본문 바닥 아래 34pt 를 다음 쪽 맨 위에)
   if (nested) slack = 0
@@ -143,6 +160,12 @@ export function planTableRows(tbl: Element, cells: CellModel[], rowH: number[], 
   // (같은 판이 저장·인쇄한 한컴 PDF: 쪽 바닥 72749 에 앵커한 위아래 배치 10행 표가 통째 다음 쪽 — 저장본도 표 뒤 문단이 다음 쪽 vertpos 23096 = 표 sz)
   const flows = (findChildByLocalName(tbl, "pos")?.getAttribute("vertRelTo") ?? "PARA") === "PARA"
   let page = 0, y = ty, first = !flows || ty - MT < 2000
+  // 같은 글 없는 문단에 앞 위아래 배치 개체와 함께 앵커해 그 아래 쌓인 표는 한 쪽에 다 들면 가르지 않고 표째 다음 쪽 맨 위로
+  // (한컴 PDF: 쪽 높이 표 아래 쌓인 21행 표가 1쪽에 머리 행만 남기지 않고 2쪽 본문 위 + 바깥 위 여백에서 시작)
+  if (!first && coAnchoredFollower(tbl)) {
+    const outT = num(findChildByLocalName(tbl, "outMargin"), "top")
+    if (outT + rowY[nRows] + outB <= BODY_H) return rowH.map((h, r) => [{ page: 1, y: contMT + outT + rowY[r], h }])
+  }
   const spanStarts = cellSplit ? spanPartRows(cells, rowY) : new Set<number>()
   for (let r = 0; r < nRows; r++) {
     let h = rowH[r]
