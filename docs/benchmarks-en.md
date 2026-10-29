@@ -2,6 +2,18 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.18: rendering · 2026-10-29
+
+Compared document by document against 4.24.17 with the same corpora and scorers across the full suite (rounds 186–195; 190, 191, 192 and 195 rejected). Render layout is now measured on every paired PDF (1,565 Hancom PDFs that have an .hwpx of the same name); the earlier README figure (4.24.14, 90,840 text runs) covered only some folders, so its rate is not directly comparable. 4.24.17 and 4.24.18 were measured the same way.
+
+| Metric | 4.24.17 | 4.24.18 |
+| --- | --- | --- |
+| Rendered text position (±1.5pt) | 96,993 / 101,309 | **97,156 / 101,352** (12 documents up, none down; 43 more pairs where page counts now match) |
+| Rendered image position (±2pt) | 4,148 / 4,240 | **4,149 / 4,240** |
+| PDF text · PDF tables · statute annexes · ODL · HWPX · round trip · generation · OCR · degraded input | — | unchanged |
+
+Reproduce with `python3 bench/layout/pdf-spans.py spans.json <paired PDFs…>` → `node_modules/.bin/tsx bench/layout/textpos.mts spans.json`; images with `pdf-imgs.py` and `imgpos.mts`.
+
 ## 4.24.17: OCR · 2026-10-29
 
 Compared document by document against 4.24.16 with the same corpora and scorers across the full suite (rounds 172–185; 174, 175 and 182 rejected). The only decreases are the character precision of one OCR document (its CER improved) and one page of the blur degraded-input set, both listed under measurement exceptions in the CHANGELOG.
