@@ -1,6 +1,6 @@
 /** Page decorations are separate stories: their line positions never split body pages. */
 import { findChildByLocalName } from "../hwpx/parser-shared.js"
-import { elements, findFirst, isDeletedControl, ln, num } from "./para-model.js"
+import { buildPara, elements, findFirst, isDeletedControl, ln, num } from "./para-model.js"
 
 export interface PageStory { sub: Element; page: number; x: number; y: number; width: number; layer?: -2 | 2 }
 export function pageStories(root: Element, masters: Element[], paraPages: Map<Element, number[]>, pageCount: number, pageBase: number,
@@ -67,11 +67,15 @@ export function footNoteStories(root: Element, paraPages: Map<Element, number[]>
   const above = num(sp, "aboveLine", 850), below = num(sp, "belowLine", 567), between = num(sp, "betweenNotes", 283)
   const byPage = new Map<number, Array<{ sub: Element; h: number }>>()
   for (const p of elements(root)) if (ln(p) === "p") {
-    const page = paraPages.get(p)?.[0] ?? 0
+    const pages = paraPages.get(p) ?? []
+    // 각주는 참조 글자가 든 줄의 쪽 — 쪽에 걸친 문단의 뒤 줄 각주는 다음 쪽(한컴 PDF: 쪽 바닥을 넘어 다음 쪽 첫 줄에 든 참조의 각주가 그 쪽 아래)
+    const m = pages.length > 1 ? buildPara(p) : null
     for (const run of elements(p)) if (ln(run) === "run") for (const ctrl of elements(run)) if (ln(ctrl) === "ctrl") {
       const fn = findChildByLocalName(ctrl, "footNote")
       const sub = fn && !isDeletedControl(fn) ? findChildByLocalName(fn, "subList") : null
       if (!sub) continue
+      let page = pages[0] ?? 0
+      if (m) { const at = m.chars.findIndex(c => c.note === fn); if (at >= 0) { let k = 0; m.segs.forEach((sg, i) => { if (sg.textpos <= at) k = i }); page = pages[k] ?? page } }
       let h = 0
       for (const q of elements(sub)) if (ln(q) === "p") {
         const lsa = findChildByLocalName(q, "linesegarray")
