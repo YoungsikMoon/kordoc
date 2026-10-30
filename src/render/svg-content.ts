@@ -36,6 +36,8 @@ export interface Ctx {
   }
   /** 최상위 문단의 문단 영역 위(앞 문단 끝, 새 쪽이면 0) — 첫 줄이 개체 아래로 밀려 저장된 문단의 개체 기준 */
   paraTops?: Map<Element, number>
+  /** 그리는 최상위 문단의 문단 영역 위(절대)·본문 왼쪽·폭 — 칸 안에서 쪽 영역 안으로 제한을 끈(flowWithText 0) 문단 기준 개체의 기준 */
+  escOrigin?: { x: number; y: number; w: number }
   /** 다단 구역의 단 폭·간격 — 최상위 떠 있는 개체의 단(COLUMN·PARA) 기준을 앵커 줄의 단으로 잡는다 */
   cols?: { w: number; gap: number }
   /** 쪽에서 갈린 본문 표 칸의 문단을 그리는 중 — 그 문단의 떠 있는 표도 쪽에서 가른다 */
@@ -466,6 +468,10 @@ export function drawPara(p: Element, ox: number, oy: number, areaW: number, ctx:
   /** 위아래 배치 개체 쌓기 — 개체마다 문단 영역 위에서 센 위치 */
   let tbStack: Map<Element, number> | undefined
   let tbStackTop: number | undefined
+  if (depth === 0) {
+    const top = ctx.paraTops?.get(p)
+    ctx.escOrigin = top !== undefined ? { x: ox, y: oy + top, w: areaW } : undefined
+  }
   for (const o of m.objs) {
     if (o.inline) {
       let planIdx = 0
@@ -497,6 +503,14 @@ export function drawPara(p: Element, ox: number, oy: number, areaW: number, ctx:
     } else {
       // 앵커 좌표는 첫 seg(baseV) 기준이므로 첫 seg 의 페이지에 귀속
       if (segPages && segPages[0] !== undefined) ctx.page = segPages[0]
+      // 칸 안 개체가 쪽 영역 안으로 제한을 끄면(flowWithText 0) 칸을 벗어나 표를 담은 최상위 문단·본문 기준이다
+      // (한컴 PDF: 칸 문단의 vertOffset 10436 그림이 본문 위 + 104.4pt·본문 왼쪽, 표는 그 그림 아래로 밀린 줄에)
+      const posE = findChildByLocalName(o.el, "pos")
+      if (depth > 0 && ctx.escOrigin && posE?.getAttribute("flowWithText") === "0" && (posE.getAttribute("vertRelTo") ?? "PARA") === "PARA") {
+        const { x, y } = anchorObject(o, ctx.escOrigin.x, ctx.escOrigin.y, 0, ctx.escOrigin.w, ctx, undefined, 0)
+        drawObject(o, x, y, baseV, areaW, ctx, depth)
+        continue
+      }
       // 다단 본문의 단·문단 기준 개체는 앵커 첫 줄이 든 단을 영역으로(한컴 PDF 실측: 오른쪽 단 문단의 CENTER 개체 = 오른쪽 단 + (단 폭 − 폭)/2 + 오프셋)
       let ax = ox, aw = areaW
       if (depth === 0 && ctx.cols && plans[0]) {
@@ -609,11 +623,12 @@ function drawObject(o: ParaObj, x: number, y: number, baseV: number, areaW: numb
   if (!o.inline && depth === 0 && ctx.paintJobs) {
     const wrap = o.el.getAttribute("textWrap")
     const layer = wrap === "BEHIND_TEXT" ? -1 : wrap === "IN_FRONT_OF_TEXT" ? 1 : 0
-    const page = ctx.page, parents = [...ctx.parentStack]
+    const page = ctx.page, parents = [...ctx.parentStack], esc = ctx.escOrigin
     ctx.paintJobs.push({ page, layer, z: num(o.el, "zOrder"), body: !!ctx.bodyDx, draw: () => {
       ctx.page = page
       const saved = ctx.parentStack
       ctx.parentStack = parents
+      ctx.escOrigin = esc
       drawObject(o, x, y, baseV, areaW, ctx, depth)
       ctx.parentStack = saved
     } })

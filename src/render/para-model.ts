@@ -362,7 +362,8 @@ export function cellContentExtent(cell: CellModel, memo?: ExtentMemo): number {
         continue
       }
       const pos = findChildByLocalName(o.el, "pos")
-      if ((pos?.getAttribute("vertRelTo") ?? "PARA") !== "PARA") continue
+      // 쪽 영역 안으로 제한을 끈 개체는 칸을 벗어난다 — 칸을 키우지 않는다(한컴 PDF: 그림 328pt 를 품은 칸의 행이 저장 높이 174.8pt 그대로)
+      if ((pos?.getAttribute("vertRelTo") ?? "PARA") !== "PARA" || pos?.getAttribute("flowWithText") === "0") continue
       const om = findChildByLocalName(o.el, "outMargin")
       // 문단 기준 음수 vertOffset 은 문단 위에서 멈춘다(렌더와 같다) — 한컴 PDF: vertOffset −167 그림을 품은 칸의 행이 그림 높이만큼 자란다
       const vo = num(pos, "vertOffset")
