@@ -1146,7 +1146,7 @@ describe("patchHwp: 균등 띄어쓰기·글자 모양 run (바뀐 자리만 고
 
 describe("patchHwp — 미기입 누름틀 문단 (안내문은 파서처럼 빼고 맞대고, 그 자리에 쓴 값은 누름틀에 채운다)", () => {
   const GUIDE = "이곳을 마우스로 누르고 내용을 입력하세요."
-  function clickHereParagraph(label: string): Buffer {
+  function clickHereParagraph(label: string, level = 0): Buffer {
     const ext = (ch: number): Buffer => { const b = Buffer.alloc(16); b.writeUInt16LE(ch, 0); b.write("klc%", 2, "ascii"); b.writeUInt16LE(ch, 14); return b }
     const textData = Buffer.concat([utf16(label), ext(0x03), utf16(GUIDE), ext(0x04), Buffer.from([0x0d, 0x00])])
     const header = Buffer.alloc(24)
@@ -1164,12 +1164,37 @@ describe("patchHwp — 미기입 누름틀 문단 (안내문은 파서처럼 빼
     head.writeUInt32LE(1, 0) // 속성 bit 15(내용 수정됨) 꺼짐 — 미기입
     head.writeUInt16LE(command.length, 5)
     return Buffer.concat([
-      rec(0x42, 0, header),
-      rec(0x43, 1, textData),
-      rec(0x44, 1, cs),
-      rec(0x45, 1, lineSeg36()),
-      rec(0x47, 1, Buffer.concat([Buffer.from("klc%", "ascii"), head, utf16(command), Buffer.alloc(4)])),
+      rec(0x42, level, header),
+      rec(0x43, level + 1, textData),
+      rec(0x44, level + 1, cs),
+      rec(0x45, level + 1, lineSeg36()),
+      rec(0x47, level + 1, Buffer.concat([Buffer.from("klc%", "ascii"), head, utf16(command), Buffer.alloc(4)])),
     ])
+  }
+
+  /** 2×2 표 — 칸 문단을 레코드째 받는다 (table2x2 와 같은 꼴) */
+  function tableOf(cellParas: Buffer[][]): Buffer {
+    const anchorHeader = Buffer.alloc(24)
+    const ctrlChar = Buffer.alloc(16)
+    ctrlChar.writeUInt16LE(0x0b, 0)
+    ctrlChar.write(" lbt", 2, "ascii")
+    ctrlChar.writeUInt16LE(0x0b, 14)
+    const anchorText = Buffer.concat([ctrlChar, Buffer.from([0x0d, 0x00])])
+    anchorHeader.writeUInt32LE(anchorText.length / 2, 0)
+    anchorHeader.writeUInt32LE(1 << 11, 4)
+    anchorHeader.writeUInt16LE(1, 12)
+    anchorHeader.writeUInt16LE(1, 16)
+    const tableData = Buffer.alloc(8)
+    tableData.writeUInt16LE(2, 4)
+    tableData.writeUInt16LE(2, 6)
+    const parts = [rec(0x42, 0, anchorHeader), rec(0x43, 1, anchorText), rec(0x44, 1, Buffer.alloc(8)), rec(0x45, 1, Buffer.alloc(36)),
+      rec(0x47, 1, Buffer.concat([Buffer.from(" lbt", "ascii"), Buffer.alloc(42)])), rec(0x4d, 2, tableData)]
+    for (let r = 0; r < 2; r++) for (let c = 0; c < 2; c++) {
+      const lh = Buffer.alloc(34)
+      lh.writeUInt16LE(1, 0); lh.writeUInt16LE(c, 8); lh.writeUInt16LE(r, 10); lh.writeUInt16LE(1, 12); lh.writeUInt16LE(1, 14)
+      parts.push(rec(0x48, 2, lh), cellParas[r][c])
+    }
+    return Buffer.concat(parts)
   }
 
   const section = (data: Uint8Array) => {
@@ -1196,6 +1221,20 @@ describe("patchHwp — 미기입 누름틀 문단 (안내문은 파서처럼 빼
     // 값은 안내문의 빨간 기울임(7)이 아니라 앞 라벨 모양(0) — 한글이 직접 채운 누름틀처럼 한 run 으로 합쳐진다
     const csRec = recs[recs.indexOf(recs.find(x => x.tagId === TAG_PARA_TEXT && x.data.toString("utf16le").startsWith("성명"))!) + 1]
     assert.deepEqual([...csRec.data], [0, 0, 0, 0, 0, 0, 0, 0])
+  })
+
+  it("누름틀만 든 표 칸(마크다운에선 빈칸)에 쓴 값도 누름틀에 채운다", async () => {
+    const hwp = buildHwp([tableOf([[paragraph("성명", 2), clickHereParagraph("", 2)], [paragraph("직업", 2), paragraph("회사원", 2)]])])
+    const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+    assert.ok(!md.includes(GUIDE), md)
+    const edited = md.replace(/\| 성명 \|\s*\|/, "| 성명 | 홍길동 |")
+    assert.notEqual(edited, md, md)
+    const r = await patchHwp(hwp, edited)
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.ok(parseHwp5Document(Buffer.from(r.data!), { layoutTables: "keep" }).markdown.includes("| 성명 | 홍길동 |"))
+    const recs = section(r.data!)
+    assert.ok(!recs.some(x => x.tagId === TAG_PARA_TEXT && x.data.toString("utf16le").includes(GUIDE)))
+    assert.ok(recs.find(x => x.tagId === 0x47 && x.data.subarray(0, 4).toString("ascii") === "klc%")!.data.readUInt32LE(4) & (1 << 15))
   })
 
   it("누름틀과 떨어진 자리를 고치면 안내문은 그대로 둔다", async () => {

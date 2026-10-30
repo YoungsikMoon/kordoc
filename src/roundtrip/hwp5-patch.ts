@@ -1247,6 +1247,12 @@ function stageParaPatch(
     return 1
   }
 
+  // 미기입 누름틀 안내문이 든 문단 — 안내문을 뺀 보이는 글로 맞대 바뀐 자리만 고치고, 누름틀 자리에 쓴 값은 누름틀에 채운다
+  if (para.guides.length) {
+    return stageInlineEdit(scan, para, newPlain, origPlain ?? para.rawText.trim(), keepLineseg)
+      ? 1 : skip("미기입 누름틀 문단 — 편집이 누름틀·제어 문자에 걸쳐 미지원")
+  }
+
   const textRec = records[para.textIdx]
 
   // PARA_TEXT를 [선두 control][텍스트 코어][말미 control/문단끝]로 분해
@@ -1323,7 +1329,8 @@ function stageInlineEdit(scan: SectionScan5, para: ScanPara5, newPlain: string, 
     full += st.text.length
   }
   if (text !== para.rawText) return false
-  const edits = alignedTextEdits(text, origPlain, newPlain)
+  // 보이는 글이 비었으면(누름틀만 든 칸 등) 맨 앞에 넣는 편집 — alignedTextEdits 는 빈 글을 맞대지 않는다
+  const edits = !origPlain && !text.trim() ? [{ start: 0, end: 0, text: newPlain }] : alignedTextEdits(text, origPlain, newPlain)
   if (!edits || edits.length !== 1) return false
   const e = edits[0]
   // 값을 미기입 누름틀 자리에 넣었으면(넣은 자리와 누름틀 사이가 공백뿐) 안내문 대신 누름틀 안에 넣고 수정 표시(속성 bit 15)를
