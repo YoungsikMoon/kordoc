@@ -126,15 +126,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.24](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.24)** · 2026-10-30
+Latest release: **[4.24.25](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.25)** · 2026-10-30
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.25 | patch: editing paragraphs with forced line breaks, edits where position mapping fails (layout frames, title boxes, paragraphs with superscripts) located by their text, remaining edits delivered as a rewrite in the original's formatting (`.rewrite.hwpx`) · password-protected HWPX rendering | patch edits applied (corpus experiment) HWPX 487 → **539**/540 · table cells 455 → **465**/467 · HWP 111 → **123**/140 · benchmark metrics unchanged |
 | 4.24.24 | OCR tables: short column dividers inside header bands · Rendering: objects that escape their cell, cached paragraphs after uncached ones inside cells, stacking and page break of non-overlapping square-wrapped tables in one paragraph · COM fallback temp-folder cleanup (#177) | OCR table structure match 33 → **34**/67 · render page-count match 1,507 → **1,508** · text position 106,818 → **106,904** · images 4,169 → **4,213** (0 documents down) · 1 measurement exception (see changelog) · other metrics unchanged |
 | 4.24.23 | PDF tables: band of a row split at a page break merged into that row, a line with a unit note above a table no longer taken as a header row · Rendering: horizontal position of paragraph-relative objects | Statute annex PDF tables 342 → **343**/346 (**99.13%**) · OCR table structure match 31 → **33**/67 · render text position 106,790 → **106,818** · images 4,167 → **4,169** (0 down) · other metrics unchanged |
 | 4.24.22 | OCR and PDF tables: rules stretched across empty indent columns by white row-background outlines · Rendering: paragraphs after overflowing cached lines, cell caches whose text height does not match the font size, row boundary of the first-page part stored in table sz, continuation part of split merged cells, merged-cell heights in multi-page tables | OCR table structure match 26 → **31**/67 · cell F1 0.576 → **0.585** · render text position 106,570 → **106,790** (5 documents up, 0 down) · other metrics unchanged |
 | 4.24.21 | Rendering: footnote page for paragraphs spanning pages, non-splitting tables (page break and following text), paragraphs above tables pushed down by a vertical offset, trailing empty sections with master pages, overflowing multi-row cells in multi-page tables | Render page-count match 1,505 → **1,507** documents · text position 100,019 → **106,570** (4 existing documents up, 0 down, 3 newly measured after page counts matched) · 1 measurement exception (see changelog) · other metrics unchanged |
-| 4.24.20 | Rendering: page of paragraphs after multi-page floating tables inside cells, cell caches whose lines do not advance, caches that never reset per page (text drawn off the page) | Render page-count match 1,504 → **1,505** documents · text position 100,015 → **100,019** · a regulatory impact report 116 → 66 pages (PDF 64) · other metrics unchanged |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 

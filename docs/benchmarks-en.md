@@ -2,6 +2,22 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.25: patch edit coverage · 2026-10-30
+
+Benchmark metrics are the same as 4.24.24 (only the patch and password-render paths changed). How many edits patch applies in place was measured separately on the corpus: per document, a word appended to five text units, or two cells changed per table unit (a word appended to a text cell, an empty cell filled).
+
+| Experiment | 4.24.24 | 4.24.25 |
+| --- | --- | --- |
+| HWPX text edits (117 documents · 540 edits) | 487 | **539** |
+| HWPX table-cell edits (117 documents · 467 edits, 195 empty cells) | 455 | **465** |
+| HWP 5.x text edits (30 documents · 140 edits) | 111 | **123** |
+
+The remaining HWP 5.x misses are paragraphs with control characters (tabs, fields) in the middle of the text and paragraph insertion or deletion (not supported for HWP 5.x). When edits remain unapplied, the MCP tool and CLI also write a rewrite in the original's formatting (`.rewrite.hwpx`).
+
+### Reading the OCR table score
+
+OCR table ground truth is the same PDF's text layer read by the kordoc parser, so it includes cell boundaries and layout frames that are not visible on the page. Of the 33 tables missed as of 4.24.24, about 20 have no visual evidence to match (dense ground-truth grids of statutory forms 14 · table-of-contents and layout frames about 6 · boxes without rules 3 · empty indent columns in budget tables about 2). Actual OCR errors (cell assignment, header rows, merged columns) account for about 8. Scoring stays identical to the public release (HF `Chrisryugj/kordoc-ocr-bench`) and is not changed.
+
 ## 4.24.24: OCR tables and rendering · 2026-10-30
 
 Every benchmark was compared document by document against 4.24.23 with the same corpora and scorers (rounds 255–260; suite x258 had no per-document decrease in any stage, and after the OCR ruling fix x259 had one degraded-input decrease — see the changelog notes). Rendering text runs and images were compared document by document on the Hancom PDF pairs, including documents with fewer than 20 runs.
