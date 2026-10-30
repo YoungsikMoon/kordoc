@@ -38,7 +38,7 @@ import { endNoteLayout, footNoteStories, pageStories } from "./page-stories.js"
 import { cellLineBoxes, planTableRows, type CellFloatSpan, type RowPiece } from "./table-pages.js"
 import { subFloatBottoms } from "./reflow-tables.js"
 import { mulAffine, objectGeometry, renderingMatrix, shapeGeometry, rotatedBounds, SHAPE_TAGS, type Affine, type RegionRotation } from "./shape-geometry.js"
-import { anchorObject, linePushedBy } from "./object-anchor.js"
+import { anchorObject, linePushedBy, squareStackTops } from "./object-anchor.js"
 import { readZipEntry } from "../hwpx/parser-shared.js"
 import { escapeXml, pt, ptNum, pageNo, bboxOf, regionOpenTag, parentId, emit, warnOnce, drawPara, cellParaTop, type PageGeom, type Ctx, type PaintJob } from "./svg-content.js"
 export { escapeXml } from "./svg-content.js"
@@ -636,6 +636,7 @@ function renderSectionToPages(
       // 이 문단의 본문 표가 쪽을 넘어 이어지면, 다음 쪽 리셋은 표가 끝나는 쪽으로
       if (!localCols && segEls.length) {
         const m0 = buildPara(p)
+        let sqStack: Map<Element, number> | undefined
         for (const o of m0.objs) {
           if (o.tag !== "tbl") continue
           const pos = findChildByLocalName(o.el, "pos"), om = findChildByLocalName(o.el, "outMargin")
@@ -651,6 +652,19 @@ function renderSectionToPages(
           if (!o.inline && segK === 0 && pushed < -100 && prevPage0 >= 0 && pagesOf[0] === prevPage0 + 1 && (o.el.getAttribute("textWrap") ?? "TOP_AND_BOTTOM") === "TOP_AND_BOTTOM") {
             const back = tableContPages(o.el, MT + prevEnd0 + omT, MT, BODY_H, ctxBase.extentMemo, PH - MT - BODY_H, cellFloatSpan(MT, BODY_H, ctxBase.extentMemo, PH - MT - BODY_H))
             if (back.pages === 1 && Math.abs(back.endY - MT + omB - segV) <= 300) { backPlace.set(o.el, { page: prevPage0, y: MT + prevEnd0 + omT }); continue }
+          }
+          // 한 문단의 겹침 금지 어울림 표 둘 이상은 가로로 겹치면 앞 표 아래로 쌓인다 — 남은 자리에 표째 안 들면 다음 쪽 맨 위
+          // (한컴 PDF: 같은 문단에 앵커한 14행 표(쪽 높이) 아래 6행 표가 첫 행이 앞 쪽 남은 자리에 드는데도 다음 쪽 맨 위, 같은 자리에 겹쳐 그리던 것)
+          const sqTop = !o.inline ? (sqStack ??= squareStackTops(m0, ctxBase.extentMemo)).get(o.el) : undefined
+          if (sqTop !== undefined) {
+            const anchorPage = pagesOf[segK]
+            const y0 = (paraTops.get(p) ?? 0) + sqTop + num(om, "top")
+            const next = y0 + Math.max(o.height, measureTableHeight(o.el, ctxBase.extentMemo)) > BODY_H
+            const place = next ? { page: anchorPage + 1, y: MT + num(om, "top") } : { page: anchorPage, y: MT + y0 }
+            backPlace.set(o.el, place)
+            const spanS = tableContPages(o.el, place.y, MT, BODY_H, ctxBase.extentMemo, PH - MT - BODY_H, cellFloatSpan(MT, BODY_H, ctxBase.extentMemo, PH - MT - BODY_H))
+            if (place.page + spanS.pages > pendingEnd) { pendingEnd = place.page + spanS.pages; pendingEndY = spanS.endY - MT; pendingTopY = -1 }
+            continue
           }
           const nTb = m0.objs.filter(q => !q.inline && (q.el.getAttribute("textWrap") ?? "TOP_AND_BOTTOM") === "TOP_AND_BOTTOM").length
           // 글을 밀지 않는 개체(어울림·글 앞뒤)는 그리기와 같이 문단 시작 기준(첫 줄이 개체 아래로 밀려 저장됐으면 문단 영역 위 + 위 간격)

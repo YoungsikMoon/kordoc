@@ -1,6 +1,6 @@
 /** 떠 있는 개체의 기준계와 문단 원점 해석. 그리기 문맥에서 필요한 기하만 받는다. */
 import { findChildByLocalName } from "../hwpx/parser-shared.js"
-import { num, measureTableHeight, type ParaObj, type ExtentMemo } from "./para-model.js"
+import { num, measureTableHeight, type ParaObj, type ParaModel, type ExtentMemo } from "./para-model.js"
 
 interface AnchorContext {
   geom: { PW: number; PH: number; ML: number; MT: number; BODY_W: number; BODY_H: number }
@@ -95,3 +95,26 @@ export function anchorObject(o: ParaObj, ox: number, oy: number, baseV: number, 
   return { x, y }
 }
 
+/**
+ * 한 문단의 겹침 금지(allowOverlap 0) 문단 기준 어울림 개체 둘 이상 — 앵커 글자 순으로, 가로로 겹치는 앞 개체 아래로 쌓은 위(문단 영역 위 기준, 바깥 위 여백 앞).
+ * 앞 개체에 밀려 내려간 개체만 담는다(제 오프셋 자리에 드는 개체는 종전 배치)
+ */
+export function squareStackTops(m: ParaModel, memo: ExtentMemo): Map<Element, number> {
+  const out = new Map<Element, number>()
+  const sq = m.objs.filter(q => {
+    const pos = findChildByLocalName(q.el, "pos")
+    return !q.inline && q.el.getAttribute("textWrap") === "SQUARE" && pos?.getAttribute("allowOverlap") === "0" && (pos.getAttribute("vertRelTo") ?? "PARA") === "PARA"
+  }).sort((a, b) => a.index - b.index)
+  if (sq.length < 2) return out
+  const placed: { x0: number; x1: number; bottom: number }[] = []
+  for (const q of sq) {
+    const pos = findChildByLocalName(q.el, "pos"), om = findChildByLocalName(q.el, "outMargin"), raw = num(pos, "vertOffset")
+    const x0 = num(pos, "horzOffset"), x1 = x0 + num(om, "left") + q.width + num(om, "right")
+    const own = Math.max(0, raw >= 2 ** 31 ? raw - 2 ** 32 : raw)
+    const below = Math.max(0, ...placed.filter(r => r.x0 < x1 && x0 < r.x1).map(r => r.bottom))
+    const top = Math.max(below, own)
+    if (below > own) out.set(q.el, top)
+    placed.push({ x0, x1, bottom: top + num(om, "top") + (q.tag === "tbl" ? Math.max(q.height, measureTableHeight(q.el, memo)) : q.height) + num(om, "bottom") })
+  }
+  return out
+}
