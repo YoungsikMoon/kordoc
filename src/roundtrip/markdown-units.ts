@@ -241,7 +241,7 @@ export function replicateGfmTable(table: IRTable): MappedCell[][] | null {
       const cell = cells[r]?.[c]
       if (!cell) continue
       display[r][c] = {
-        text: escapeGfm(sanitizeText(cell.text)).replace(/(?<!\\)\|/g, "\\|").replace(/\r\n|\r|\n/g, "<br>"),
+        text: escapeGfm(sanitizeText(gfmCellPlain(cell))).replace(/(?<!\\)\|/g, "\\|").replace(/\r\n|\r|\n/g, "<br>"),
         gridR: r,
         gridC: c,
       }
@@ -265,6 +265,13 @@ export function replicateGfmTable(table: IRTable): MappedCell[][] | null {
     uniqueRows.push(row)
   }
   return uniqueRows.length > 0 ? uniqueRows : null
+}
+
+/** GFM 칸 글 — builder 처럼 미기입 누름틀 안내문(placeholder span)은 뺀다. IR cell.text 에는 남아 있어 그대로 쓰면 안내문이 든
+ *  칸이 늘 어긋나 표 전체를 건너뛰었다 */
+function gfmCellPlain(cell: IRTable["cells"][number][number]): string {
+  if (!cell.blocks?.some(b => b.spans?.some(s => s.placeholder))) return cell.text
+  return cell.blocks.map(visibleText).filter(t => t.trim()).join("\n")
 }
 
 /** GFM 표 유닛 파싱 — 구분 행 제거, 이스케이프된 파이프 보존 분할 */

@@ -120,7 +120,7 @@ export function alignToRaw(raw: string, norm: string): number[] | null {
 }
 
 /** 두 글의 공통 앞·뒤 길이 */
-function commonEnds(a: string, b: string): { p: number; s: number } {
+export function commonEnds(a: string, b: string): { p: number; s: number } {
   let p = 0
   while (p < a.length && p < b.length && a[p] === b[p]) p++
   let s = 0

@@ -38,6 +38,7 @@ import { resolveSectionEntryNames } from "./hwpx-entries.js"
 import { detectFormat } from "../detect.js"
 import { patchHwp } from "./hwp5-patch.js"
 import { parseEmphasis, minimalTextSplices } from "./inline-edit.js"
+import { clickHereEditSplices } from "../form/click-here.js"
 import { lineBreakTextSplices } from "./line-break-edit.js"
 import { fallbackTextEdit, fallbackTableEdits } from "./text-fallback.js"
 import { readZipEntry } from "../hwpx/parser-shared.js"
@@ -720,7 +721,9 @@ function patchParagraphUnit(
   }
 
   const xml = ctx.scans[mapping.para.sectionIndex]?.xml
-  const splices = (xml ? minimalTextSplices(mapping.para, xml, origPlain, newPlain, segsUsable ? origInline.segs : undefined, segsUsable ? newInline.segs : undefined) : null)
+  // 미기입 누름틀 자리에 쓴 값은 누름틀에 채운다 — 아니면 바뀐 자리만, 그것도 안 되면 문단 통째
+  const splices = (xml ? clickHereEditSplices(mapping.para, xml, origPlain, newPlain) : null)
+    ?? (xml ? minimalTextSplices(mapping.para, xml, origPlain, newPlain, segsUsable ? origInline.segs : undefined, segsUsable ? newInline.segs : undefined) : null)
     ?? (xml ? markerRunSplices(mapping.para, xml, newPlain) : null) ?? buildParagraphSplices(mapping.para, newPlain, xml)
   if (splices === null) return skip("문단에 텍스트 노드를 만들 수 없음")
   ctx.sectionSplices[mapping.para.sectionIndex].push(...splices)

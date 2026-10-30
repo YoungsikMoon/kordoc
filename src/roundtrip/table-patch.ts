@@ -24,6 +24,7 @@ import { patchTableRows, type InsertCell } from "./table-rows.js"
 import { buildEmbeddedLineSplices } from "./embedded-line-patch.js"
 import { minimalTextSplices } from "./inline-edit.js"
 import { isDatePlaceholder } from "../form/recognize.js"
+import { clickHereEditSplices } from "../form/click-here.js"
 import { restructureCellLines } from "./structure-edit.js"
 
 /** 표 패치에 필요한 컨텍스트 (patcher.ts PatchCtx의 부분집합) */
@@ -382,6 +383,20 @@ export function applyCellEdit(
       const flatJoined = flatBlocks.map(b => b.text ?? "").join("\n")
       if (normForMatch(scanJoined) !== normForMatch(flatJoined)) {
         return skip("셀 콘텐츠 구조 복잡 (중첩표/글상자) — 매핑 신뢰 불가")
+      }
+    }
+  }
+
+  // 미기입 누름틀이 든 칸 — 마크다운에는 안내문이 빠져 있다(스캔 문단 글에는 있다). 그 자리에 쓴 값은 누름틀에 채운다(본문 문단과
+  // 같은 규칙). 누름틀만 든 칸은 마크다운에서 빈칸이라 아래 줄 수 맞대기가 어긋난다
+  if (newLines.length === 1) {
+    const origPlain = unescapeGfmCell(stripCellTokens(before)).replace(/\s+/g, " ").trim()
+    for (const p of cell.paragraphs) {
+      const xml = ctx.scans[p.sectionIndex]?.xml
+      const sp = xml === undefined ? null : clickHereEditSplices(p, xml, origPlain, newLines[0])
+      if (sp?.length) {
+        ctx.sectionSplices[p.sectionIndex].push(...sp)
+        return 1
       }
     }
   }
