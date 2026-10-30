@@ -1143,3 +1143,68 @@ describe("patchHwp: 균등 띄어쓰기·글자 모양 run (바뀐 자리만 고
     assert.deepEqual(cs, [[0, 1], [8, 2], [12, 1]], "굵은 값 run 유지, 뒤 run 은 길이 차만큼")
   })
 })
+
+describe("patchHwp — 미기입 누름틀 문단 (안내문은 파서처럼 빼고 맞대고, 그 자리에 쓴 값은 누름틀에 채운다)", () => {
+  const GUIDE = "이곳을 마우스로 누르고 내용을 입력하세요."
+  function clickHereParagraph(label: string): Buffer {
+    const ext = (ch: number): Buffer => { const b = Buffer.alloc(16); b.writeUInt16LE(ch, 0); b.write("klc%", 2, "ascii"); b.writeUInt16LE(ch, 14); return b }
+    const textData = Buffer.concat([utf16(label), ext(0x03), utf16(GUIDE), ext(0x04), Buffer.from([0x0d, 0x00])])
+    const header = Buffer.alloc(24)
+    header.writeUInt32LE(textData.length / 2, 0)
+    header.writeUInt32LE((1 << 3) | (1 << 4), 4) // ctrlMask: 필드 시작·끝
+    header.writeUInt16LE(3, 12)
+    header.writeUInt16LE(1, 16)
+    // 글자 모양: 라벨 0 · 안내문 7(한글이 빨간 기울임을 따로 건다) · 누름틀 끝부터 0
+    const cs = Buffer.alloc(24)
+    cs.writeUInt32LE(0, 0); cs.writeUInt32LE(0, 4)
+    cs.writeUInt32LE(label.length + 8, 8); cs.writeUInt32LE(7, 12)
+    cs.writeUInt32LE(label.length + 8 + GUIDE.length, 16); cs.writeUInt32LE(0, 20)
+    const command = `Clickhere:set:${GUIDE.length + 38}:Direction:wstring:${GUIDE.length}:${GUIDE} HelpState:wstring:0:  `
+    const head = Buffer.alloc(7)
+    head.writeUInt32LE(1, 0) // 속성 bit 15(내용 수정됨) 꺼짐 — 미기입
+    head.writeUInt16LE(command.length, 5)
+    return Buffer.concat([
+      rec(0x42, 0, header),
+      rec(0x43, 1, textData),
+      rec(0x44, 1, cs),
+      rec(0x45, 1, lineSeg36()),
+      rec(0x47, 1, Buffer.concat([Buffer.from("klc%", "ascii"), head, utf16(command), Buffer.alloc(4)])),
+    ])
+  }
+
+  const section = (data: Uint8Array) => {
+    const cfb = CFB.read(Buffer.from(data), { type: "buffer" })
+    const si = cfb.FullPaths.findIndex((x: string) => /BodyText\/Section0$/i.test(x))
+    return readRecords(Buffer.from(cfb.FileIndex[si].content as Uint8Array))
+  }
+
+  it("라벨 옆에 쓴 값은 안내문 대신 누름틀 안에 넣고 수정 표시를 켠다 — 한글에서 눌러 입력한 것과 같다", async () => {
+    const hwp = buildHwp([paragraph("머리 문단"), clickHereParagraph("성명 : "), paragraph("끝 문단")])
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    assert.ok(md.includes("성명 :") && !md.includes(GUIDE), md)
+    const r = await patchHwp(hwp, md.replace("성명 :", "성명 : 홍길동"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.ok(parseHwp5Document(Buffer.from(r.data!)).markdown.includes("성명 : 홍길동"))
+    const recs = section(r.data!)
+    const text = recs.find(x => x.tagId === TAG_PARA_TEXT && x.data.toString("utf16le").startsWith("성명"))!.data
+    // "성명 : " + 누름틀 시작(8) + 값 + 누름틀 끝(8) + 문단 끝 — 안내문은 값으로 바뀐다
+    assert.equal(text.subarray(10 + 16, 10 + 16 + 6).toString("utf16le"), "홍길동")
+    assert.equal(text.readUInt16LE(10 + 16 + 6), 0x04)
+    assert.ok(!text.toString("utf16le").includes(GUIDE))
+    const ctrl = recs.find(x => x.tagId === 0x47 && x.data.subarray(0, 4).toString("ascii") === "klc%")!
+    assert.ok(ctrl.data.readUInt32LE(4) & (1 << 15), "수정됨 비트")
+    // 값은 안내문의 빨간 기울임(7)이 아니라 앞 라벨 모양(0) — 한글이 직접 채운 누름틀처럼 한 run 으로 합쳐진다
+    const csRec = recs[recs.indexOf(recs.find(x => x.tagId === TAG_PARA_TEXT && x.data.toString("utf16le").startsWith("성명"))!) + 1]
+    assert.deepEqual([...csRec.data], [0, 0, 0, 0, 0, 0, 0, 0])
+  })
+
+  it("누름틀과 떨어진 자리를 고치면 안내문은 그대로 둔다", async () => {
+    const hwp = buildHwp([clickHereParagraph("신청인 성명 : ")])
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    const r = await patchHwp(hwp, md.replace("신청인 성명 :", "대표자 성명 :"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    const recs = section(r.data!)
+    assert.ok(recs.find(x => x.tagId === TAG_PARA_TEXT)!.data.toString("utf16le").includes(GUIDE))
+    assert.equal(recs.find(x => x.tagId === 0x47)!.data.readUInt32LE(4) & (1 << 15), 0)
+  })
+})

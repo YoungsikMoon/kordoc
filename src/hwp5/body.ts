@@ -299,7 +299,7 @@ function parseParagraph(records: HwpRecord[], start: number, end: number, ctx: H
       if (ctrl.guide !== undefined) {
         if (ctx.doc.includeFieldPlaceholders) continue
         const plain = anchor.replaceAll(LITERAL_DOLLAR_MARK, "$").replaceAll(LITERAL_LT_MARK, "<") // 안내문 원문과 맞댄다
-        if (plain === ctrl.guide || plain.trimEnd() === ctrl.guide) {
+        if (isClickHereGuideText(plain, ctrl.guide)) {
           text = text.slice(0, r.start) + text.slice(r.end)
           applied.push([r.start, r.end])
         }
@@ -534,15 +534,26 @@ function applyFieldEffect(ctrl: ParsedCtrl): void {
       const url = hyperlinkUrlFromCommand(command)
       if (url) ctrl.href = url
     }
-  } else if (ctrl.id === FIELD_CLK && ctrl.data.length >= 8 && !(ctrl.data.readUInt32LE(4) & (1 << 15))) {
+  } else if (ctrl.id === FIELD_CLK) {
     // 누름틀 — 속성 bit 15(내용 수정됨)가 꺼진 미기입 필드는 한컴이 안내문(command Direction)을 본문 run 으로
     // 저장해 두고 화면에만 흐리게 그린다(인쇄·PDF 에 없음). 같은 글이면 값이 아니므로 parseParagraph 가 지운다
     // (rhwp clear_initial_field_texts 와 같은 이중 조건 — 수정됨 비트 + 안내문 일치)
-    const command = parseFieldCommand(ctrl.data)
-    const guide = command ? clickHereGuide(command) : undefined
+    const guide = unfilledClickHereGuide(ctrl.data)
     if (guide) ctrl.guide = guide
   }
   // 그 밖의 필드: anchor 텍스트는 PARA_TEXT에 있으므로 그대로 보존됨
+}
+
+/** 미기입 누름틀(%clk, 속성 bit 15 = 0)이면 그 안내문, 아니면 undefined — patch 소스맵도 이 규칙으로 안내문을 뺀다 */
+export function unfilledClickHereGuide(ctrlData: Buffer): string | undefined {
+  if (ctrlData.length < 8 || normalizeCtrlId(ctrlData.readUInt32LE(0)) !== FIELD_CLK || ctrlData.readUInt32LE(4) & (1 << 15)) return undefined
+  const command = parseFieldCommand(ctrlData)
+  return command ? clickHereGuide(command) : undefined
+}
+
+/** 누름틀 값 자리 글이 안내문 그대로인가 (끝 공백 차이는 같다고 본다) */
+export function isClickHereGuideText(text: string, guide: string): boolean {
+  return text === guide || text.trimEnd() === guide
 }
 
 /** 누름틀 command 의 안내문 — `Direction:wstring:<N>:` 뒤 N자 (UTF-16) */

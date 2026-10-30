@@ -8,17 +8,19 @@
  *
  * 안전 게이트 (하나라도 깨지면 해당 수정은 graceful skip — 파일 무결성 우선):
  *  - 섹션 레코드 재직렬화가 원본과 바이트 동일해야 패치 허용
- *  - ctrlMask=0(순수 텍스트) + PARA_TEXT 1개 + 레코드 텍스트 재구성 일치 문단만 수정
+ *  - PARA_TEXT 1개 + 레코드 텍스트 재구성 일치 문단만 수정 — 글 가운데 탭·필드가 있으면 바뀐 글자만 고치고 제어 문자는 바이트째 둔다
  *  - 배포용/암호화/DRM 문서는 전체 거부
  *
- * 지원: 본문 문단/헤딩 텍스트 수정, GFM 표 셀 텍스트 수정 (좌표 기반).
+ * 지원: 본문 문단/헤딩 텍스트 수정, GFM 표 셀 텍스트 수정 (좌표 기반). 미기입 누름틀의 안내문은 파서처럼 글에서 빼고 맞대며,
+ * 그 자리에 쓴 값은 누름틀에 채운다(수정 표시 bit 15).
  * 미지원(graceful skip): 블록 추가/삭제, 표 구조 변경, HTML 표 셀, 캡션·각주·
- * 머리말/꼬리말, 컨트롤(탭/개체/필드) 포함 문단. skipped[]에 사유 보고.
+ * 머리말/꼬리말, 편집이 제어 문자에 걸치는 문단. skipped[]에 사유 보고.
  */
 
 import { deflateRawSync } from "zlib"
 import { createRequire } from "module"
 import { parseHwp5Document } from "../hwp5/parser.js"
+import { unfilledClickHereGuide, isClickHereGuideText } from "../hwp5/body.js"
 import {
   decompressStream, parseFileHeader, createParaTextState, appendParaText, isExtendedOnlyCtrlChar,
   TAG_PARA_HEADER, TAG_PARA_TEXT, TAG_CHAR_SHAPE, TAG_CTRL_HEADER, TAG_LIST_HEADER, TAG_TABLE,
@@ -125,8 +127,10 @@ interface ScanPara5 {
   rangeTagCount: number
   ctrlMask: number
   nCharsRaw: number
-  /** extractText 결과 (트림 전 원문) */
+  /** extractText 결과 (트림 전 원문) — 미기입 누름틀 안내문은 파서처럼 뺀다 */
   rawText: string
+  /** 미기입 누름틀 안내문 구간 (뺄 전 글 위치, 오름차순)과 그 누름틀 CTRL_HEADER 레코드 — rawText 에 없다 */
+  guides: Array<{ start: number; end: number; ctrl: number }>
 }
 
 interface ScanCell5 { paras: ScanPara5[] }
@@ -180,6 +184,7 @@ function scanSection(stream: Buffer, sectionIndex: number, compressed: boolean):
     let charShapeIdx = -1
     let lineSegIdx = -1
     const state = createParaTextState()
+    const ctrlRecs: number[] = []
     for (let j = i + 1; j < records.length && records[j].level > rec.level; j++) {
       if (records[j].level !== rec.level + 1) continue
       const t = records[j].tagId
@@ -188,7 +193,19 @@ function scanSection(stream: Buffer, sectionIndex: number, compressed: boolean):
         appendParaText(state, records[j].data)
       } else if (t === TAG_CHAR_SHAPE && charShapeIdx === -1) charShapeIdx = j
       else if (t === TAG_PARA_LINE_SEG && lineSegIdx === -1) lineSegIdx = j
+      else if (t === TAG_CTRL_HEADER) ctrlRecs.push(j)
     }
+    // 미기입 누름틀 안내문은 파서가 글에서 뺀다(인쇄되지 않는 글) — 소스맵 글도 빼야 IR 문단과 맞는다
+    const guides: ScanPara5["guides"] = []
+    for (const r of [...state.fieldRanges].sort((a, b) => a.start - b.start)) {
+      const ctrl = ctrlRecs[r.ctrlIdx] ?? -1
+      const guide = ctrl >= 0 ? unfilledClickHereGuide(records[ctrl].data) : undefined
+      if (guide === undefined || !isClickHereGuideText(state.text.slice(r.start, r.end), guide)) continue
+      if (guides.length && r.start < guides[guides.length - 1].end) continue
+      guides.push({ start: r.start, end: r.end, ctrl })
+    }
+    let rawText = state.text
+    for (const g of [...guides].reverse()) rawText = rawText.slice(0, g.start) + rawText.slice(g.end)
 
     // 분류: 컨트롤 무관(또는 글상자 내부) → body, 그 외 → other.
     // 표 셀 문단은 아래 표 수집 패스에서 "cell"로 재분류된다 (셀 문단은
@@ -207,7 +224,8 @@ function scanSection(stream: Buffer, sectionIndex: number, compressed: boolean):
       rangeTagCount: rec.data.readUInt16LE(14),
       ctrlMask: rec.data.readUInt32LE(4),
       nCharsRaw: rec.data.readUInt32LE(0),
-      rawText: state.text,
+      rawText,
+      guides,
     }
     paras.push(para)
     parasByHeader.set(i, para)
@@ -1072,6 +1090,20 @@ function rebuildCharShape(csData: Buffer, coreStartUnit: number): { buf: Buffer;
   return { buf, count: kept.length }
 }
 
+/** CHAR_SHAPE 에서 [at, end) 글을 바로 앞 글자 모양으로 — end 뒤 글 모양은 그대로, 같은 모양이 잇단 run 은 합친다 */
+function restyleSpan(csData: Buffer, at: number, end: number): { buf: Buffer; count: number } {
+  const pairs: Array<[number, number]> = []
+  for (let o = 0; o + 8 <= csData.length; o += 8) pairs.push([csData.readUInt32LE(o), csData.readUInt32LE(o + 4)])
+  const idAt = (p: number): number => pairs.reduce((id, [q, v]) => (q <= p ? v : id), pairs[0][1])
+  const out = pairs.filter(([p]) => p < at || p > end)
+  out.push([at, idAt(at - 1)], [end, idAt(end)])
+  out.sort((a, b) => a[0] - b[0])
+  const kept = out.filter((r, k) => k === 0 || r[1] !== out[k - 1][1])
+  const buf = Buffer.alloc(kept.length * 8)
+  kept.forEach(([p, id], k) => { buf.writeUInt32LE(p >>> 0, k * 8); buf.writeUInt32LE(id >>> 0, k * 8 + 4) })
+  return { buf, count: kept.length }
+}
+
 /**
  * CHAR_SHAPE 부분 수정: [start, end) 를 길이 newLen 글로 바꿀 때 run 경계를 옮긴다. start 이전 run 은 그대로(바뀐 글은
  * start 자리 run 의 모양을 받는다), 범위 안에서 시작한 마지막 run 은 바뀐 글 바로 뒤로, end 뒤 run 은 길이 차만큼 민다.
@@ -1269,19 +1301,44 @@ function stageInlineEdit(scan: SectionScan5, para: ScanPara5, newPlain: string, 
   const data = scan.records[para.textIdx].data
   const toks = tokenizeParaText(data)
   if (!toks) return false
-  // 낱자마다 글 기여(탭 "\t"·NBSP·고정폭 빈칸, 그 밖 제어 문자는 없음)를 추출 규칙 그대로 얻는다
-  const spans: Array<{ from: number; to: number; tok: ParaTok }> = []
-  let text = ""
+  // 낱자마다 글 기여(탭 "\t"·NBSP·고정폭 빈칸, 그 밖 제어 문자는 없음)를 추출 규칙 그대로 얻는다. 미기입 누름틀 안내문 낱자는
+  // rawText 에서 빠졌으니 글 기여 없이 숨긴다(편집이 건드리면 안 된다)
+  const spans: Array<{ from: number; to: number; tok: ParaTok; hidden: boolean }> = []
+  /** 누름틀 안내문마다 보이는 글 위치와 바이트 범위 */
+  const guideAt = new Map<number, { vis: number; byteStart: number; byteEnd: number }>()
+  let text = "", full = 0
   for (const tok of toks) {
     const st = createParaTextState()
     appendParaText(st, data.subarray(tok.start, tok.end))
-    spans.push({ from: text.length, to: text.length + st.text.length, tok })
-    text += st.text
+    const g = st.text.length > 0 ? para.guides.findIndex(x => full >= x.start && full + st.text.length <= x.end) : -1
+    const hidden = g >= 0
+    if (hidden) {
+      const at = guideAt.get(g)
+      if (at) at.byteEnd = tok.end
+      else guideAt.set(g, { vis: text.length, byteStart: tok.start, byteEnd: tok.end })
+    }
+    const part = hidden ? "" : st.text
+    spans.push({ from: text.length, to: text.length + part.length, tok, hidden })
+    text += part
+    full += st.text.length
   }
   if (text !== para.rawText) return false
   const edits = alignedTextEdits(text, origPlain, newPlain)
   if (!edits || edits.length !== 1) return false
   const e = edits[0]
+  // 값을 미기입 누름틀 자리에 넣었으면(넣은 자리와 누름틀 사이가 공백뿐) 안내문 대신 누름틀 안에 넣고 수정 표시(속성 bit 15)를
+  // 켠다 — 한글에서 누름틀을 눌러 입력한 것과 같다(HWPX 누름틀 채우기의 dirty="1" 과 같은 규칙). 앞에 공백이 있으면 값의
+  // 앞 공백은 뗀다
+  const fillGuide = e.start === e.end && e.text.trim()
+    ? [...guideAt].find(([, at]) => !text.slice(Math.min(e.start, at.vis), Math.max(e.start, at.vis)).trim()) : undefined
+  if (fillGuide) {
+    const [g, at] = fillGuide
+    const value = /\s$/.test(text.slice(0, at.vis)) ? e.text.trimStart() : e.text
+    const ctrl = Buffer.from(scan.records[para.guides[g].ctrl].data)
+    ctrl.writeUInt32LE((ctrl.readUInt32LE(4) | (1 << 15)) >>> 0, 4)
+    scan.repl.set(para.guides[g].ctrl, ctrl)
+    return stageTextBytes(scan, para, at.byteStart, at.byteEnd, value, text.slice(0, at.vis) + value + text.slice(at.vis), keepLineseg, true)
+  }
   let byteStart: number, byteEnd: number
   if (e.start === e.end) {
     const at = spans.find(x => x.from === e.start && x.to > x.from) ?? spans.find(x => x.to === e.start && x.to > x.from)
@@ -1292,19 +1349,33 @@ function stageInlineEdit(scan: SectionScan5, para: ScanPara5, newPlain: string, 
     if (!hit.length || hit.some(x => !x.tok.plain || x.from < e.start || x.to > e.end)) return false
     byteStart = hit[0].tok.start
     byteEnd = hit[hit.length - 1].tok.end
-    // 덮은 낱자 사이에 끼인 제어 문자(글 기여 0)가 있으면 지우지 않는다
+    // 덮은 낱자 사이에 끼인 제어 문자·누름틀 안내문(글 기여 0)이 있으면 지우지 않는다
     if (toks.some(t => t.start >= byteStart && t.end <= byteEnd && !t.plain)) return false
+    if (spans.some(x => x.hidden && x.tok.start >= byteStart && x.tok.end <= byteEnd)) return false
   }
-  const rep = Buffer.from(e.text, "utf16le")
+  return stageTextBytes(scan, para, byteStart, byteEnd, e.text, text.slice(0, e.start) + e.text + text.slice(e.end), keepLineseg)
+}
+
+/**
+ * PARA_TEXT 의 [byteStart, byteEnd) 를 새 글로 바꾸고 nChars·CHAR_SHAPE 위치·LINE_SEG 를 맞춘다. restyle 이면 새 글은 바로 앞 글자
+ * 모양을 받는다 — 누름틀 안내문에는 한글이 빨간 기울임 모양을 따로 걸어 두는데, 한글이 직접 채운 누름틀의 값은 앞 글 모양이다
+ */
+function stageTextBytes(
+  scan: SectionScan5, para: ScanPara5, byteStart: number, byteEnd: number, newText: string, newVisible: string, keepLineseg: boolean,
+  restyle = false,
+): boolean {
+  const data = scan.records[para.textIdx].data
+  const rep = Buffer.from(newText, "utf16le")
   const records = scan.records
   const newHeader = Buffer.from(records[para.headerIdx].data)
   const nChars = (data.length - (byteEnd - byteStart) + rep.length) / 2
   newHeader.writeUInt32LE(((para.nCharsRaw & 0x80000000) | nChars) >>> 0, 0)
-  const cs = shiftCharShape(records[para.charShapeIdx].data, byteStart / 2, byteEnd / 2, rep.length / 2)
+  let cs = shiftCharShape(records[para.charShapeIdx].data, byteStart / 2, byteEnd / 2, rep.length / 2)
+  if (restyle) cs = restyleSpan(cs.buf, byteStart / 2, (byteStart + rep.length) / 2)
   scan.repl.set(para.textIdx, Buffer.concat([data.subarray(0, byteStart), rep, data.subarray(byteEnd)]))
   scan.repl.set(para.charShapeIdx, cs.buf)
   newHeader.writeUInt16LE(cs.count, 12)
-  stageLineSegs(scan, para, newHeader, text.slice(0, e.start) + e.text + text.slice(e.end), 0, nChars, keepLineseg)
+  stageLineSegs(scan, para, newHeader, newVisible, 0, nChars, keepLineseg)
   scan.repl.set(para.headerIdx, newHeader)
   return true
 }
