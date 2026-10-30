@@ -6,10 +6,14 @@
 import { describe, it } from "node:test"
 import assert from "node:assert/strict"
 import { createRequire } from "module"
-import { existsSync, readFileSync, readdirSync } from "node:fs"
+import { spawnSync } from "node:child_process"
+import { existsSync, readFileSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import JSZip from "jszip"
-import { hwpToHwpx, parse } from "../src/index.js"
+import { hwpToHwpx, convertToHwpx, parse } from "../src/index.js"
+import { registerConvertTools } from "../src/mcp/tools-convert.js"
 
 const require = createRequire(import.meta.url)
 const CFB = require("cfb")
@@ -120,6 +124,48 @@ describe("hwpToHwpx — 합성 문서", () => {
     }
     assert.equal(await zip.file("mimetype")!.async("string"), "application/hwp+zip")
     assert.equal(await zip.file("Preview/PrvText.txt")!.async("string"), "미리보기")
+  })
+})
+
+describe("convertToHwpx·CLI·MCP — 저장 경로", () => {
+  const dir = mkdtempSync(join(tmpdir(), "kordoc-to-hwpx-"))
+  const src = join(dir, "보고.hwp")
+  writeFileSync(src, buildHwp(paragraph("본문")))
+  const cli = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
+  const run = (args: string[]) => spawnSync(process.execPath, ["--import", "tsx", cli, ...args], { encoding: "utf8", timeout: 60000 })
+  let callback: any
+  registerConvertTools({ tool(name: string, ...args: any[]) { if (name === "convert_to_hwpx") callback = args.at(-1) } } as any)
+
+  it("HWP 5.x 는 서식 그대로, HWPX 는 그대로 돌려준다", async () => {
+    const r = await convertToHwpx(buildHwp(paragraph("본문")))
+    assert.equal(r.mode, "preserve")
+    assert.deepEqual(await convertToHwpx(r.data).then(x => x.data), r.data)
+    await assert.rejects(convertToHwpx(new TextEncoder().encode("%PDF-1.7 아님")), /HWP 문서가 아닙니다/)
+  })
+
+  it("CLI: -o·--password 가 루트 명령에 잡혀도 하위 명령이 쓴다, 기본 경로에 파일이 있으면 덮어쓰지 않는다", () => {
+    const out = join(dir, "따로", "결과.hwpx")
+    const a = run(["to-hwpx", src, "-o", out])
+    assert.equal(a.status, 0, a.stderr)
+    assert.ok(existsSync(out))
+    assert.ok(!existsSync(join(dir, "보고.hwpx")), "-o 를 무시하고 입력 옆에 쓰면 안 된다")
+    writeFileSync(join(dir, "보고.hwpx"), "한글 저장본")
+    const b = run(["to-hwpx", src])
+    assert.equal(b.status, 2)
+    assert.match(b.stderr, /이미 있습니다/)
+    assert.equal(readFileSync(join(dir, "보고.hwpx"), "utf8"), "한글 저장본")
+  })
+
+  it("MCP convert_to_hwpx: 같은 규칙으로 저장하고 결과를 알린다", async () => {
+    const res = await callback({ file_path: src })
+    assert.ok(res.isError, "기본 경로(보고.hwpx)가 이미 있으면 실패")
+    assert.match(res.content[0].text, /이미 있습니다/)
+    const out = join(dir, "mcp.hwpx")
+    const ok = await callback({ file_path: src, output_path: out })
+    assert.ok(!ok.isError, ok.content[0].text)
+    assert.match(ok.content[0].text, /서식 그대로/)
+    assert.ok((await parse(new Uint8Array(readFileSync(out)).buffer)).markdown.includes("본문"))
+    rmSync(dir, { recursive: true, force: true })
   })
 })
 

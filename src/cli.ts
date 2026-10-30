@@ -5,6 +5,7 @@ import { VERSION, sanitizeError, routeConsoleToStderr } from "./utils.js"
 import { convertFiles } from "./cli/convert.js"
 import { assertDistinctStems, convertParallel, registerBatchWorker } from "./cli/batch.js"
 import { registerDocCommands } from "./cli/commands-docs.js"
+import { registerConvertCommands } from "./cli/commands-convert.js"
 import { registerGenerateCommands } from "./cli/commands-generate.js"
 import { registerPackCommands } from "./cli/commands-pack.js"
 import { registerRenderCommands } from "./cli/commands-render.js"
@@ -90,6 +91,7 @@ program
   })
 
 registerDocCommands(program)
+registerConvertCommands(program)
 registerGenerateCommands(program)
 registerPackCommands(program)
 registerRenderCommands(program)

@@ -79,6 +79,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/hwp5/aes.ts` | AES-128 ECB 순수 JS 구현 (배포용 복호화용) |
 | `src/hwp5/crypto.ts` | HWP 배포용 문서 복호화 (MSVC LCG + AES) |
 | `src/hwp5/cfb-lenient.ts` | 손상된 CFB 파일 복구 파서 (rhwp 포팅) |
+| `src/hwp5/to-hwpx/` | HWP 5.x → HWPX 서식 그대로 변환 `hwpToHwpx`(CLI `to-hwpx`, MCP `convert_to_hwpx`) — DocInfo → header.xml(글꼴·글자/문단 모양·번호·스타일·테두리), 섹션 레코드 → sectionN.xml(문단·run·줄 캐시·표·개체·필드·각주), BinData·차트·스크립트. 정답은 한글이 같은 문서를 .hwp·.hwpx 로 함께 저장한 짝(`bench/hwp2hwpx.mjs`, 다른 도구 변환본 제외) |
 | `src/hwp3/parser.ts` | HWP 3.x(1996~2002, 단일 binary stream) 파싱 — header + raw deflate + paragraph_list, 표·문단 IR 은 `hwp5/ir-assemble.ts` 공용 조립 |
 | `src/hwp3/table.ts` | HWP3 표 격자 복원: 셀 정보 기하(x·y·w·h)로 행·열 경계와 병합 (한컴 HWP3→HWP5/HWPX 변환본 표 120개 재현 규칙) |
 | `src/hwp3/drawing.ts` | 그리기 개체 트리 워커 — ch=11 확장 블록(pic_type 3)의 도형 트리를 훑어 글상자 문단 리스트 회수 (#73). 확장 블록 슬라이스 안에서만 동작해 실패해도 본문 스트림 동기가 안 깨진다 |
@@ -171,7 +172,7 @@ Buffer → detectFormat() [매직바이트] → 포맷별 파서 → IRBlock[] �
 | `src/page-markdown.ts` | 페이지별 마크다운 사영 (#68) — `IRBlock.pageNumber` 로 갈라 페이지마다 `blocksToMarkdown()`. `parse()` 가 `ParseSuccess.pages` 로 붙인다 |
 | `src/watch.ts` | 디렉토리 감시 모드 + Webhook 알림 |
 | `src/cli.ts` | Commander 기반 CLI 진입점(루트 파싱 명령). 하위 명령은 `src/cli/commands-{docs,generate,render,system,worker}.ts` (등록 순서 = 도움말 순서) |
-| `src/mcp.ts` | MCP 서버 진입점 (Claude/Cursor 연동, 20개 도구). 도구는 `src/mcp/tools-{parse,form,render,generate,lint}.ts`, 경로 검증·파일 읽기는 `src/mcp/shared.ts` (테스트용 헬퍼 재수출) |
+| `src/mcp.ts` | MCP 서버 진입점 (Claude/Cursor 연동, 21개 도구). 도구는 `src/mcp/tools-{parse,form,render,generate,lint,convert}.ts`, 경로 검증·파일 읽기는 `src/mcp/shared.ts` (테스트용 헬퍼 재수출) |
 | `src/print/renderer.ts` | 인쇄용 Chromium 공용 기동 `launchLockedPage`: JavaScript 끔·data:/about: 외 요청 차단·기동 한도 90초. 렌더 PDF도 공유 |
 | `src/render/rasterize.ts` | SVG → PNG 래스터 (sharp optional, render_document MCP용) + `rasterizePageSvg` 페이지 단위 png/jpeg(실배율 보고) |
 | `src/redact.ts` | PII 탐지·마스킹 엔진: 정규화·겹침 처리·마크다운 표 머리글 문맥(선형 시간). 룰 정의는 `redact-rules.ts`(번호형)·`redact-name-address.ts`(인명·주소) |

@@ -350,6 +350,7 @@ npx kordoc fill --template gian -j values.json -o draft.hwpx        # built-in d
 npx kordoc generate report.md -o report.hwpx --preset 보고서         # Markdown → official HWPX
 npx kordoc patch original.hwpx edited.md -o patched.hwpx            # format-preserving patch (.hwp auto)
 npx kordoc patch original.hwpx edited.md --json --silent            # applied count, skipped edits, verification residual as JSON
+npx kordoc to-hwpx document.hwp                                     # HWP → HWPX (5.x keeps formatting; -o needed when a same-name .hwpx exists)
 npx kordoc compare old.hwp new.hwpx                                 # document diff (exit 1 when they differ, --json)
 npx kordoc seal form.hwpx --image stamp.png --anchor "(인)" -o sealed.hwpx
 npx kordoc validate output.hwpx                                     # HWPX structure validation (ZIP, required parts, XML)
@@ -446,7 +447,7 @@ codex mcp add kordoc -- npx -y kordoc mcp          # Codex
 
 On Windows, if Claude Desktop can't find `.cmd`, use `"command": "cmd", "args": ["/c", "npx", "-y", "kordoc", "mcp"]`.
 
-**20 tools**
+**21 tools**
 
 | Tool | Description |
 |------|-------------|
@@ -460,6 +461,7 @@ On Windows, if Claude Desktop can't find `.cmd`, use `"command": "cmd", "args": 
 | `parse_form` | form fields as JSON |
 | `fill_form` | fill a form (HWPX format-preserving, format/uniqueness guards, built-in `template`, values from a JSON `fields_file` — values stay out of the conversation and the reply shows only their lengths) |
 | `patch_document` | apply edited Markdown back into the original HWPX/HWP, format preserved |
+| `convert_to_hwpx` | HWP → HWPX — HWP 5.x keeps its formatting (fonts, paragraph shapes, tables, pictures, shapes, equations, headers, footnotes, charts), HWP 3.x carries text and tables only. Needs `output_path` when a same-name .hwpx already exists |
 | `extract_profile` | table format profile JSON from a reference HWPX — reuse via `generate_document`'s `profile_path` |
 | `generate_document` | Markdown (tables/equations/charts) → HWPX, official-document presets (table total row goes right under the header by default — `total_row`), department template `template_path`, agency pack `pack_path` |
 | `build_agency_pack` | a few agency documents (HWPX) → agency pack (.kpack): picks a representative template, strips original text, writes a writing guide ([agency packs](agency-pack-en.md)) |

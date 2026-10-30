@@ -39,7 +39,7 @@ Run the CLI without installing it globally: `npx kordoc`. PDF/OCR dependencies a
 npx -y kordoc setup
 ```
 
-Registers MCP with installed clients such as Claude Desktop, Claude Code, Cursor and Codex. Restart the client to use **20 tools** for parsing, comparison, generation, review, rendering and more. kordoc is also listed on the official MCP Registry as [`io.github.chrisryugj/kordoc`](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.chrisryugj/kordoc).
+Registers MCP with installed clients such as Claude Desktop, Claude Code, Cursor and Codex. Restart the client to use **21 tools** for parsing, comparison, generation, review, rendering and more. kordoc is also listed on the official MCP Registry as [`io.github.chrisryugj/kordoc`](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.chrisryugj/kordoc).
 
 One-click install for VS Code and Cursor:
 
@@ -64,6 +64,7 @@ npx kordoc *.pdf --jobs 4 -d ./output
 npx kordoc document.pdf --format json --pages 1-3
 npx kordoc scan.pdf --ocr -o scan.md
 npx kordoc generate report.md --preset report -o report.hwpx
+npx kordoc to-hwpx document.hwp -o document.hwpx
 npx kordoc fill --template gian -j values.json -o draft.hwpx
 npx kordoc lint report.hwpx --gate --preset report
 ```
@@ -97,6 +98,7 @@ await writeFile("report.hwpx", Buffer.from(hwpx))
 | Read | Markdown, IR, page text, RAG chunks and local OCR |
 | Compare and edit | Block/cell diffs, format-preserving HWPX/HWP patches, new content in a sample's format |
 | Create | Markdown → HWPX, government-document presets and department templates (`--template`), tables, equations and charts |
+| Convert | HWP → HWPX — HWP 5.x keeps its formatting (fonts, paragraph shapes, tables, pictures, shapes, equations, headers, footnotes, charts) |
 | Agency packs | Build a house-style pack (`.kpack`) from a few of your own agency documents and write new documents in that style — [agency packs](docs/agency-pack-en.md) |
 | Fill forms | Fields, click-here controls, two draft templates and seal placement |
 | Review | Notation and public-language rules, structure and AI-writing gate, budget calculation checks, block-level lint for open documents (`lint-blocks`) |

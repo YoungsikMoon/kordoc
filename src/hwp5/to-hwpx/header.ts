@@ -314,8 +314,8 @@ export function docProps(recs: Rec[]): DocProps {
   return { secCnt, begin, caret: [c.u32(), c.u32(), c.u32()] }
 }
 
-/** DocInfo 레코드 → header.xml */
-export function headerXml(recs: Rec[], linkInfo: { path: string; pageInherit: number; footnoteInherit: number }, ref: BinRef): string {
+/** DocInfo 레코드 → header.xml. secCnt 는 실제로 쓰는 구역 수(다르면 한글이 열기를 거부한다) */
+export function headerXml(recs: Rec[], linkInfo: { path: string; pageInherit: number; footnoteInherit: number }, ref: BinRef, secCnt: number): string {
   const props = docProps(recs)
   const idm = new Cur(recs.find(r => r.tagId === TAG.ID_MAPPINGS)?.data ?? Buffer.alloc(0))
   const counts: number[] = []
@@ -343,7 +343,7 @@ export function headerXml(recs: Rec[], linkInfo: { path: string; pageInherit: nu
 
   const compat = new Cur(recs.find(r => r.tagId === TAG.COMPATIBLE_DOCUMENT)?.data ?? Buffer.alloc(0)).u32()
   const track = new Cur(recs.find(r => r.tagId === TAG.TRACKCHANGE)?.data ?? Buffer.alloc(0)).u32()
-  return XML_DECL + `<hh:head ${NS} version="1.5" secCnt="${props.secCnt}">`
+  return XML_DECL + `<hh:head ${NS} version="1.5" secCnt="${secCnt}">`
     + el("hh:beginNum", [["page", bPage], ["footnote", bFoot], ["endnote", bEnd], ["pic", bPic], ["tbl", bTbl], ["equation", bEq]])
     + `<hh:refList>${refList}</hh:refList>`
     + el("hh:compatibleDocument", [["targetProgram", pick(TARGET_PROGRAMS, compat)]], "<hh:layoutCompatibility/>")

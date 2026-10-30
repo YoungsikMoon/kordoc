@@ -3,7 +3,8 @@
  *
  * 문서 모델이 같은 두 직렬화(이진 레코드 ↔ OWPML XML)라 값을 1:1 로 옮긴다: DocInfo → header.xml, BodyText 섹션 → sectionN.xml,
  * BinData 스토리지 → BinData/imageN.확장자, 요약 정보·미리보기 글 → content.hpf·Preview. 한글이 같은 문서를 .hwpx 로 저장한 짝을
- * 정답으로 속성 단위 일치를 잰다(bench/hwp2hwpx.mjs). 암호 문서는 password, 배포용 문서는 열람용 본문을 복호해 옮긴다.
+ * 정답으로 속성 단위 일치를 잰다(bench/hwp2hwpx.mjs). 암호 문서는 password 로 연다. 배포용 문서(작성자가 복사·편집을 막은 문서)는
+ * 변환하지 않는다.
  */
 
 import JSZip from "jszip"
@@ -14,7 +15,7 @@ import { recordTree, Cur, el, esc, type Rec } from "./util.js"
 import { headerXml, docProps, XML_DECL, NS } from "./header.js"
 import { sectionXml } from "./section.js"
 import type { ConvertContext } from "./controls.js"
-import { VERSION } from "../../utils.js"
+import { VERSION, KordocError } from "../../utils.js"
 
 export interface HwpToHwpxOptions {
   /** 암호 문서의 열기 암호 */
@@ -75,6 +76,8 @@ const V13_DEFAULT_SCRIPT = "function OnDocument_New()\r\n{\r\n\t//todo : \r\n}\r
 export async function hwpToHwpx(input: Uint8Array | ArrayBuffer, options?: HwpToHwpxOptions): Promise<Uint8Array> {
   const buffer = Buffer.from(input instanceof ArrayBuffer ? new Uint8Array(input) : input)
   const c = openHwp5Container(buffer, options)
+  // 배포용 문서는 작성자가 복사·편집을 막은 문서다 — 편집 가능한 HWPX 로 풀어 주지 않는다
+  if (c.distribution) throw new KordocError("배포용(읽기 전용) HWP 문서는 HWPX 로 변환하지 않습니다 — 작성자가 복사·편집을 막은 문서입니다")
   const docInfo = (readHwp5DocInfoRecords(c) ?? []) as Rec[]
   const sections = readHwp5SectionRecords(c, readHwp5SectionStreams(c), c.warnings)
   const bins = readHwp5BinData(c)
@@ -120,7 +123,7 @@ export async function hwpToHwpx(input: Uint8Array | ArrayBuffer, options?: HwpTo
   zip.file("version.xml", XML_DECL + el("hv:HCFVersion", [["xmlns:hv", "http://www.hancom.co.kr/hwpml/2011/version"], ["tagetApplication", "WORDPROCESSOR"],
     ["major", 5], ["minor", 1], ["micro", 1], ["buildNumber", 0], ["os", 1], ["xmlVersion", "1.5"], ["application", "kordoc"], ["appVersion", VERSION]]),
   { compression: "STORE" })
-  zip.file("Contents/header.xml", headerXml(docInfo, link, ctx.binRef))
+  zip.file("Contents/header.xml", headerXml(docInfo, link, ctx.binRef, sections.length))
 
   const sectionNames: string[] = []
   const sectionItems: string[] = []
@@ -188,4 +191,34 @@ export async function hwpToHwpx(input: Uint8Array | ArrayBuffer, options?: HwpTo
     + "</opf:spine></opf:package>")
 
   return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" })
+}
+
+export interface ConvertToHwpxResult {
+  data: Uint8Array
+  /** preserve: 서식 그대로(HWP 5.x), content: 글·표만 옮겨 kordoc 기본 서식으로(HWP 3.x 등) */
+  mode: "preserve" | "content"
+  warnings: string[]
+}
+
+/**
+ * 한글 문서 → HWPX. HWP 5.x 는 서식 그대로(hwpToHwpx), 서식 보존 변환이 없는 형식(HWP 3.x·HWPML)은 글·표를 옮겨 kordoc 기본
+ * 서식으로 쓰고 그 사실을 경고로 남긴다. HWPX 는 그대로 돌려준다
+ */
+export async function convertToHwpx(input: Uint8Array | ArrayBuffer, options?: HwpToHwpxOptions): Promise<ConvertToHwpxResult> {
+  const bytes = input instanceof ArrayBuffer ? new Uint8Array(input) : input
+  const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+  const { detectFormat } = await import("../../detect.js")
+  const format = detectFormat(ab)
+  if (format === "hwp") return { data: await hwpToHwpx(bytes, options), mode: "preserve", warnings: [] }
+  if (format === "hwpx") return { data: bytes, mode: "preserve", warnings: ["이미 HWPX 문서입니다 — 그대로 둡니다"] }
+  if (format !== "hwp3" && format !== "hwpml") throw new KordocError(`HWP 문서가 아닙니다 (${format})`)
+  const { parse } = await import("../../index.js")
+  const { markdownToHwpx } = await import("../../hwpx/generator.js")
+  const parsed = await parse(ab, { password: options?.password })
+  if (!parsed.success) throw new KordocError(parsed.error ?? "문서를 읽지 못했습니다")
+  return {
+    data: new Uint8Array(await markdownToHwpx(parsed.markdown)),
+    mode: "content",
+    warnings: [`${format === "hwp3" ? "HWP 3.x" : "HWPML"} 문서는 서식 그대로 옮기는 변환을 지원하지 않아 글·표만 kordoc 기본 서식으로 옮겼습니다`],
+  }
 }

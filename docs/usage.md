@@ -353,6 +353,7 @@ npx kordoc fill --template gian -j 값.json -o 기안문.hwpx           # 내장
 npx kordoc generate 보고서.md -o 보고서.hwpx --preset 보고서        # Markdown → 공문서 HWPX
 npx kordoc patch 원본.hwpx 편집.md -o 반영.hwpx                    # 서식 보존 패치 (.hwp 도 자동)
 npx kordoc patch 원본.hwpx 편집.md --json --silent                  # 적용 수·건너뛴 편집·검증 잔차 JSON
+npx kordoc to-hwpx 문서.hwp                                         # HWP → HWPX (5.x 는 서식 그대로, 같은 이름 .hwpx 가 있으면 -o 필요)
 npx kordoc compare 구버전.hwp 신버전.hwpx                           # 문서 비교 (차이 있으면 exit 1, --json)
 npx kordoc seal 신청서.hwpx --image 도장.png --anchor "(인)" -o 날인.hwpx
 npx kordoc validate 산출물.hwpx                                    # HWPX 구조 검증 (ZIP·필수 파트·XML)
@@ -453,7 +454,7 @@ codex mcp add kordoc -- npx -y kordoc mcp          # Codex
 
 Windows 에서 Claude Desktop 이 `.cmd` 를 못 찾으면 `"command": "cmd", "args": ["/c", "npx", "-y", "kordoc", "mcp"]`.
 
-**20개 도구**
+**21개 도구**
 
 | 도구 | 설명 |
 |------|------|
@@ -467,6 +468,7 @@ Windows 에서 Claude Desktop 이 `.cmd` 를 못 찾으면 `"command": "cmd", "a
 | `parse_form` | 양식 필드를 JSON 으로 |
 | `fill_form` | 양식에 값 채우기 (HWPX 서식 보존, 서식·유일성 가드, 내장 `template`, 값 JSON 파일 `fields_file` — 값이 대화에 안 남고 응답은 글자 수만) |
 | `patch_document` | 편집한 Markdown 을 원본 HWPX/HWP 에 서식 보존 반영 |
+| `convert_to_hwpx` | HWP → HWPX 변환 — HWP 5.x 는 서식 그대로(글꼴·문단 모양·표·그림·도형·수식·머리말·각주·차트), HWP 3.x 는 글·표만. 같은 이름 .hwpx 가 이미 있으면 `output_path` 필요 |
 | `extract_profile` | 참조 HWPX 의 표 서식 프로필 JSON — `generate_document` 의 `profile_path` 로 재현 |
 | `generate_document` | Markdown(표·수식·차트) → HWPX, 공문서 프리셋 (표 합계 행은 기본 머리행 바로 아래 — `total_row`), 부서 견본 `template_path`·기관팩 `pack_path` |
 | `build_agency_pack` | 기관 문서(HWPX) 몇 건 → 기관팩(.kpack) — 대표 견본 고르기·원문 비우기·작성 요령 ([기관팩](agency-pack.md)) |
