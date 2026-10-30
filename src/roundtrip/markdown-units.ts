@@ -132,7 +132,11 @@ export function alignUnits(a: string[], b: string[]): AlignedPair[] {
   while (i > 0 && j > 0) {
     if (a[i - 1] === b[j - 1] && dp[i][j] === dp[i - 1][j - 1] + 1) {
       matches.push([i - 1, j - 1]); i--; j--
-    } else if (dp[i - 1][j] >= dp[i][j - 1]) i--
+    } else if (dp[i - 1][j] > dp[i][j - 1]) i--
+    else if (dp[i - 1][j] < dp[i][j - 1]) j--
+    // 비기면 a 를 먼저 당기되, 두 목록의 어긋남(i−j)이 끝의 어긋남(m−n)보다 작아졌으면 b 를 당겨 되돌린다 — 늘 a 를 먼저
+    // 당기면 같은 글 단위가 떨어져 여럿일 때 b 의 단위가 앞쪽 같은 글과 짝지어져 멀쩡한 고침이 추가·삭제로 보였다
+    else if (i - j >= m - n) i--
     else j--
   }
   matches.reverse()

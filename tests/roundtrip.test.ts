@@ -10,7 +10,7 @@ import JSZip from "jszip"
 import { markdownToHwpx, parseHwpx, patchHwpx } from "../src/index.js"
 import { scanSectionXml, buildParagraphSplices, applySplices, escapeXmlText, decodeXmlEntities } from "../src/roundtrip/source-map.js"
 import { patchZipEntries, readZipEntries } from "../src/roundtrip/zip-patch.js"
-import { splitMarkdownUnits, parseGfmTable, parseHtmlTable, extractTopLevelTables } from "../src/roundtrip/markdown-units.js"
+import { splitMarkdownUnits, parseGfmTable, parseHtmlTable, extractTopLevelTables, alignUnits } from "../src/roundtrip/markdown-units.js"
 
 // ─── 헬퍼 ────────────────────────────────────────────
 
@@ -116,6 +116,12 @@ describe("patchHwpx: 문단 텍스트 수정", () => {
     assert.equal(r2.markdown, edited)
     // 첫 번째 등장은 그대로, 두 번째가 바뀌었는지 순서로 확인
     assert.ok(r2.markdown.indexOf(target) < r2.markdown.indexOf("두 번째만 수정된"))
+  })
+
+  it("같은 글 단위가 여럿이면 제자리끼리 짝짓는다 — 떨어져 있든 붙어 있든 고침이 추가·삭제로 보이지 않게", () => {
+    // 떨어진 같은 글: 편집본 2번을 원본 0번(앞쪽 같은 글)과 짝지으면 0·1 은 추가, 원본 1·2 는 삭제로 보였다
+    assert.deepEqual(alignUnits(["가", "나", "가", "다"], ["가 고침", "나 고침", "가", "다 고침"]), [[0, 0], [1, 1], [2, 2], [3, 3]])
+    assert.deepEqual(alignUnits(["머리", "같음", "같음", "끝"], ["머리", "같음", "고침", "끝"]), [[0, 0], [1, 1], [2, 2], [3, 3]])
   })
 })
 
