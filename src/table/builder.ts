@@ -204,6 +204,14 @@ export function convertTableToText(rows: CellContext[][]): string {
 const WORD_CHAR = /[\p{L}\p{N}]/u
 
 /**
+ * 목록 항목 글 첫머리의 블록 표지 — 항목 표지 뒤에 다시 목록 표지("1. "·"- "·"+ ")나 인용(">")이 오면 마크다운이 항목 안에
+ * 중첩 목록·인용을 연다("- 1. 번호로 시작" 이 번호 목록 안 항목). 글자 그대로 읽히게 그 표지만 이스케이프한다. "# " 는 escapeGfm 몫
+ */
+function escapeItemHead(text: string): string {
+  return text.replace(/^([-+*])(?=\s|$)/, "\\$1").replace(/^(\d{1,9})([.)])(?=\s|$)/, "$1\\$2").replace(/^>/, "\\>")
+}
+
+/**
  * 마크다운 GFM 특수문자 이스케이프 — remark-gfm 오해석 방지. 라운드트립(markdown-units)이 표 재현
  * 드리프트 검사에 같은 함수를 쓰는 SSOT — 규칙을 바꾸면 그쪽 역변환(unescapeGfm·unescapeGfmCell)도
  * 같이 바꾼다.
@@ -285,7 +293,8 @@ function sanitizePua(text: string): string {
 
 /** HWP PUA 특수문자 및 도형 대체텍스트 제거 — 모든 포맷 공통 (roundtrip 재현도 이 함수를 쓴다) */
 export function sanitizeText(text: string): string {
-  let result = sanitizePua(text)
+  // NUL 은 글이 아니다 — 일부 PDF 글꼴이 글리프를 U+0000 에 매겨 마크다운·JSON 소비자가 끊기고 escapeGfm 의 NUL 필러와 겹친다
+  let result = sanitizePua(text.replace(/\u0000/g, ""))
     // HWP 도형/개체 자동생성 대체텍스트 제거
     .replace(HWP_SHAPE_ALT_TEXT_RE, "")
     .replace(/  +/g, " ")
@@ -571,11 +580,12 @@ export function blocksToMarkdown(blocks: IRBlock[], options?: MarkdownOptions): 
       const prefix = alreadyNumbered || alreadyBulleted ? "" : block.listType === "ordered" ? "1. " : "- "
       // 각주는 문단과 같은 " (주: …)" — 목록 경로가 footnoteText 를 버려 각주 글이 사라졌다
       const noteTable = noteTableMarkdown(block, gfm)
-      lines.push(`${prefix}${escapeGfm(listText + (block.footnoteText && !noteTable ? ` (주: ${block.footnoteText})` : ""))}${noteTable}`)
+      const own = prefix ? "" : /^(?:\d+\.|-)\s+/.exec(listText)?.[0] ?? ""
+      lines.push(`${prefix}${own}${escapeItemHead(escapeGfm(listText.slice(own.length) + (block.footnoteText && !noteTable ? ` (주: ${block.footnoteText})` : "")))}${noteTable}`)
       if (block.children) {
         for (const child of block.children) {
           const childPrefix = child.listType === "ordered" ? "1." : "-"
-          lines.push(`  ${childPrefix} ${escapeGfm(child.text || "")}`)
+          lines.push(`  ${childPrefix} ${escapeItemHead(escapeGfm(child.text || ""))}`)
         }
       }
       continue
