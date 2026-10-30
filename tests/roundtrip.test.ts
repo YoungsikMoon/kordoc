@@ -159,8 +159,32 @@ describe("patchHwpx: 표 셀 수정", () => {
     assert.equal((await reparse(res.data!)).markdown, edited)
   })
 
+  it("여러 줄 칸의 균등배분 꼴 줄(ㅇ 발 표)도 칸 전체 정리 기준으로 고친다 — 줄 하나만 보면 \"ㅇ발표\"로 붙는다", async () => {
+    const original = new Uint8Array(await markdownToHwpx("| 구분 | 내용 |\n| --- | --- |\n| 세션 | ◼ 세션 1 : 실용·혁신의 협력 방안 모색<br>ㅇ 발 표 |"))
+    const markdown = (await parseHwpx(toAB(original), { layoutTables: "keep" })).markdown
+    assert.ok(markdown.includes("◼ 세션 1 : 실용·혁신의 협력 방안 모색<br>ㅇ 발 표"), JSON.stringify(markdown))
+    const edited = markdown.replace("<br>ㅇ 발 표", "<br>ㅇ 발 표 수정")
+    const res = await patchHwpx(original, edited)
+    assert.equal(res.applied, 1, JSON.stringify(res.skipped))
+    assert.deepEqual(res.skipped, [])
+    assert.equal((await reparse(res.data!)).markdown, edited)
+  })
+
   const REAL = join(dirname(fileURLToPath(import.meta.url)), "..", "bench", "corpus", "korea-kr")
   const realDoc = existsSync(REAL) ? readdirSync(REAL).find(f => f.startsWith("156765958_") && f.includes("기본계획 시안") && f.endsWith(".hwpx")) : undefined
+  const realDoc2 = existsSync(REAL) ? readdirSync(REAL).find(f => f.startsWith("156766011_") && f.endsWith(".hwpx")) : undefined
+  it("균등배분 꼴 줄이 든 여러 줄 칸 GFM 표(실문서) — 칸 끝 고침을 표 좌표로 반영한다", { skip: !realDoc2 }, async () => {
+    const original = new Uint8Array(readFileSync(join(REAL, realDoc2!)))
+    const markdown = (await parseHwpx(toAB(original), { layoutTables: "keep" })).markdown
+    const unit = splitMarkdownUnits(markdown).find(u => u.kind === "gfm-table" && u.raw.includes("세션 1"))!
+    const lines = unit.raw.split("\n")
+    let k = 0
+    for (let li = 2; li < lines.length && k < 2; li++) lines[li] = lines[li].replace(/\| ([^|]*?[가-힣][^|]*?) \|/, (_m, t) => (k++, `| ${t} 수정 |`))
+    const res = await patchHwpx(original, markdown.replace(unit.raw, lines.join("\n")))
+    assert.equal(res.applied, 2, JSON.stringify(res.skipped))
+    assert.deepEqual(res.skipped.filter(s => !s.partial), [])
+  })
+
   it("굵은 칸·두 줄 칸 GFM 표(실문서) — 칸 끝 고침을 표 좌표로 반영한다", { skip: !realDoc }, async () => {
     const original = new Uint8Array(readFileSync(join(REAL, realDoc!)))
     const markdown = (await parseHwpx(toAB(original), { layoutTables: "keep" })).markdown

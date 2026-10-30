@@ -830,7 +830,7 @@ function tableToHtml(table: IRTable): string {
 }
 
 /** 셀 문단·이미지의 공통 직렬화 — 1칸·1열로 접혀도 GFM과 같은 내용을 남긴다. */
-function hasInlineCellBlocks(cell: IRCell): boolean {
+export function hasInlineCellBlocks(cell: IRCell): boolean {
   return !!cell.blocks?.some(b => b.spans?.length || b.footnoteText || (b.type === "image" && b.text))
 }
 

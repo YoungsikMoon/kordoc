@@ -24,6 +24,7 @@ import { patchTableRows, type InsertCell } from "./table-rows.js"
 import { buildEmbeddedLineSplices } from "./embedded-line-patch.js"
 import { minimalTextSplices, parseEmphasis } from "./inline-edit.js"
 import { isDatePlaceholder } from "../form/recognize.js"
+import { hasInlineCellBlocks } from "../table/builder.js"
 import { clickHereEditSplices } from "../form/click-here.js"
 import { restructureCellLines } from "./structure-edit.js"
 
@@ -439,8 +440,11 @@ export function applyCellEdit(
   let sectionIndex = -1
 
   // 기록될 텍스트가 재파싱 sanitize에서 변형되면(이중 공백 등) 무손실이 깨짐
-  const unstable = newLines.find(l => sanitizeText(l) !== l)
-  if (unstable !== undefined) return skip("공백 정규화 불안정 텍스트 — 패치 시 원문 보존 불가로 미지원")
+  // 재파싱과 같은 단위로 본다: 인라인 블록 칸은 문단마다, 그 밖은 칸 글 전체 — 균등배분 합치기는 30자 이하 글에만 걸려 줄 하나("ㅇ 발 표")와
+  // 칸 전체가 다르게 정리된다. 줄마다 보면 손대지 않은 줄 때문에 칸 편집을 통째 거부했다
+  const whole = newLines.join("\n")
+  const unstable = irCell && !hasInlineCellBlocks(irCell) ? sanitizeText(whole) !== whole : newLines.some(l => sanitizeText(l) !== l)
+  if (unstable) return skip("공백 정규화 불안정 텍스트 — 패치 시 원문 보존 불가로 미지원")
 
   if (ctx.structure && newLines.length > Math.max(nonEmpty.length, 1) || ctx.structure && nonEmpty.length > 1 && newLines.length < nonEmpty.length) {
     const done = restructureCellLines(cell.paragraphs, newLines, ctx.scans, ctx.sectionSplices, normForMatch)
