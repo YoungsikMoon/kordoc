@@ -74,6 +74,11 @@ export function registerFormTools(server: McpServer): void {
     }
   )
 
+  /** 매칭 실패가 있으면 다음 행동 안내 — "매칭 실패"만 받은 에이전트가 칸을 비우거나 체크리스트로 미루지 않게 */
+  const unmatchedHint = (unmatched: string[]): string => unmatched.length === 0 ? ""
+    : "\n매칭 실패 항목은 비워 두지 말고 채우세요: parse_form 으로 서식의 칸 이름을 확인해 그 이름 그대로 다시 fill_form 하거나, "
+      + "parse_document(keep_layout_tables: true) 마크다운의 해당 칸에 값을 써서 patch_document 로 넣으세요."
+
   // ─── 도구: fill_form ───────────────────────────────
 
   server.tool(
@@ -161,7 +166,7 @@ export function registerFormTools(server: McpServer): void {
             hwpxResult.rejected.length > 0 ? `모호 라벨 거부(2곳+ 매칭): ${hwpxResult.rejected.join(", ")}` : null,
             hwpxResult.unmatched.length > 0 ? `매칭 실패: ${hwpxResult.unmatched.join(", ")}` : null,
             verifyLine,
-          ].filter(Boolean).join(" | ")
+          ].filter(Boolean).join(" | ") + unmatchedHint(hwpxResult.unmatched)
 
           const filledList = hwpxResult.filled
             .map(f => `  - ${f.label}: ${mask_values ? `[${[...f.value].length}자]` : f.value}`).join("\n")
@@ -212,7 +217,7 @@ export function registerFormTools(server: McpServer): void {
           fillResult.rejected.length > 0 ? `모호 라벨 거부(2곳+ 매칭): ${fillResult.rejected.join(", ")}` : null,
           fillResult.unmatched.length > 0 ? `매칭 실패: ${fillResult.unmatched.join(", ")}` : null,
           formInfo.fields.length > 0 ? `서식 필드: ${formInfo.fields.length}개 (확신도 ${(formInfo.confidence * 100).toFixed(0)}%)` : null,
-        ].filter(Boolean).join(" | ")
+        ].filter(Boolean).join(" | ") + unmatchedHint(fillResult.unmatched)
 
         if (output_format === "hwpx") {
           const hwpxBuffer = await markdownToHwpx(markdown)
