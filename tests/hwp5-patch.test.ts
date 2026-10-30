@@ -275,6 +275,59 @@ describe("patchHwp — 문단 텍스트 교체", () => {
   })
 })
 
+describe("patchHwp — 1열 표 여러 줄 칸", () => {
+  /** 1열 표 — 칸마다 문단 여러 개(줄) */
+  function columnTable(rows: string[][]): Buffer {
+    const anchorHeader = Buffer.alloc(24)
+    const ctrlChar = Buffer.alloc(16)
+    ctrlChar.writeUInt16LE(0x0b, 0)
+    ctrlChar.write(" lbt", 2, "ascii")
+    ctrlChar.writeUInt16LE(0x0b, 14)
+    const anchorText = Buffer.concat([ctrlChar, Buffer.from([0x0d, 0x00])])
+    anchorHeader.writeUInt32LE(anchorText.length / 2, 0)
+    anchorHeader.writeUInt32LE(1 << 11, 4)
+    anchorHeader.writeUInt16LE(1, 12)
+    anchorHeader.writeUInt16LE(1, 16)
+    const tableData = Buffer.alloc(8)
+    tableData.writeUInt16LE(rows.length, 4)
+    tableData.writeUInt16LE(1, 6)
+    const parts = [rec(0x42, 0, anchorHeader), rec(0x43, 1, anchorText), rec(0x44, 1, Buffer.alloc(8)), rec(0x45, 1, Buffer.alloc(36)),
+      rec(0x47, 1, Buffer.concat([Buffer.from(" lbt", "ascii"), Buffer.alloc(42)])), rec(0x4d, 2, tableData)]
+    rows.forEach((lines, r) => {
+      const lh = Buffer.alloc(34)
+      lh.writeUInt16LE(lines.length, 0); lh.writeUInt16LE(0, 8); lh.writeUInt16LE(r, 10); lh.writeUInt16LE(1, 12); lh.writeUInt16LE(1, 14)
+      parts.push(rec(0x48, 2, lh), ...lines.map(l => paragraph(l, 2)))
+    })
+    return Buffer.concat(parts)
+  }
+
+  it("여러 줄 칸(제목 상자)의 한 줄을 표 좌표로 고친다 — builder 처럼 칸 줄을 따로 재현", async () => {
+    const hwp = buildHwp([paragraph("머리"), columnTable([["법무부 위원회 발족", "및 조사 권고"], ["- 신뢰 회복의 첫걸음 -"]])])
+    const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+    assert.ok(md.includes("법무부 위원회 발족\n및 조사 권고\n- 신뢰 회복의 첫걸음 -"), JSON.stringify(md))
+    const edited = md.replace("및 조사 권고", "및 조사 권고 수정")
+    const r = await patchHwp(hwp, edited)
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.deepEqual(r.skipped, [])
+    assert.equal(parseHwp5Document(Buffer.from(r.data!), { layoutTables: "keep" }).markdown, edited)
+  })
+})
+
+const LICBYL = join(dirname(fileURLToPath(import.meta.url)), "..", "bench", "corpus", "licbyl")
+const licDoc = existsSync(LICBYL) ? readdirSync(LICBYL).find(f => f.startsWith("16414867_") && f.endsWith(".hwp")) : undefined
+describe("patchHwp — 1열 표 여러 줄 칸(실문서)", { skip: !licDoc }, () => {
+  it("별지 서식 \"(뒤쪽) 유의사항\" 상자의 줄을 표 좌표로 고친다", async () => {
+    const hwp = new Uint8Array(readFileSync(join(LICBYL, licDoc!)))
+    const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+    const unit = md.split("\n\n").find(u => u.startsWith("(뒤쪽)") && u.includes("유의사항"))
+    assert.ok(unit, md.slice(0, 400))
+    const edited = md.replace(unit!, unit!.replace(/\s*$/, "") + " 수정")
+    const r = await patchHwp(hwp, edited)
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.deepEqual(r.skipped.filter(s => !s.partial), [])
+  })
+})
+
 describe("patchHwp — 같은 글 문단", () => {
   it("같은 글이 본문과 표 칸에 함께 있어도 본문끼리 등장 순서로 짝짓는다 (칸은 표 경로 몫)", async () => {
     const hwp = buildHwp([paragraph("연구소장 귀하"), table2x2([["연구소장 귀하", "가"], ["나", "다"]]), paragraph("연구소장 귀하")])
