@@ -2,6 +2,20 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.27: patch edit coverage · HWP form filling · 2026-10-31
+
+Benchmark metrics are the same as 4.24.26 (every `bench:gate` stage passes — only the patch and form-filling paths changed). The patch edit experiment (same method as 4.24.25):
+
+| Experiment | 4.24.26 | 4.24.27 |
+| --- | --- | --- |
+| HWPX text edits (117 documents · 540 edits) | 539 | **540** |
+| HWPX table cell edits (117 documents · 467 edits, 195 empty cells) | 465 | **467** |
+| HWP 5.x text edits (30 documents · 140 edits) | 132 | **140** |
+
+The wider sample (138 HWP documents · 605 edits) reaches 600 — the remaining 5 are in a distribution-only document, refused by design.
+
+Rewrites for edits that cannot be applied in place (paragraph insertion or deletion in HWP and the like, `.rewrite.hwpx`) now apply the edits to the HWPX converted from the HWP with formatting intact. In an experiment editing 5 text units and inserting and deleting a paragraph in 101 HWP documents, of 98 rewrites: applied in the original's formatting 0 → **90**, rewritten from the original as a template 0 → 8, kordoc default formatting 98 → 0.
+
 ## 4.24.26: HWP → HWPX conversion · 2026-10-31
 
 New measurement for converting HWP 5.x to HWPX with formatting preserved (`kordoc to-hwpx`, MCP `convert_to_hwpx`): `node bench/hwp2hwpx.mjs`, with a no-regression gate in `bench:gate`.

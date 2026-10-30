@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [4.24.27] - 2026-10-31
 
 ### Changed
 
@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - patch(HWPX): 여러 줄 칸의 한 줄을 고치면 손대지 않은 줄("ㅇ 발 표")까지 줄마다 정리 안정성을 봐 "공백 정규화 불안정"으로 칸 편집을 거부했다 — 균등배분 합치기는 30자 이하 글에만 걸려 줄 하나와 칸 전체가 다르게 정리된다. 재파싱과 같은 단위(인라인 블록 칸은 문단마다, 그 밖은 칸 전체)로 본다. patch 편집 반영 실험 표 칸 466 → **467**/467.
 - patch(HWP 5.x): 같은 글 문단이 본문과 표 칸에 함께 있으면("○○연구소장 귀하") 모호하다고 짝짓기를 포기했다. 칸 문단 수가 IR 표 칸 등장 수와 같고 본문 문단 수가 IR 문단 등장 수와 같으면 칸은 표 경로 몫이므로 본문 문단끼리 등장 순서로 짝짓는다. patch 편집 반영 실험 HWP 5.x 139 → **140**/140(넓은 표본 598 → 599/605).
 - patch: 글이 같은 단위가 문서에 여럿이면 편집본 단위가 앞쪽 같은 글과 짝지어져 멀쩡한 고침이 "블록 추가·삭제"로 보여 건너뛰었다(단위 정렬 LCS 가 비길 때 늘 원본 쪽을 먼저 당김). 비기면 두 목록의 어긋남을 끝의 어긋남 쪽으로 움직여 제자리 짝을 고른다. patch 편집 반영 실험 HWP 5.x 132 → **134**/140, HWPX 539/540·표 칸 465/467 그대로.
+
+### 측정 참고
+
+- patch 편집 반영 실험(4.24.25 와 같은 방식): HWPX 글 539 → 540/540 · 표 칸 465 → 467/467 · HWP 5.x 132 → 140/140. 넓은 표본(HWP 138문서 · 605건)은 600, 남은 5건은 배포용 문서(설계상 거부).
+- HWP 대체본(101문서, 글 5곳 고침 + 문단 넣기·빼기, 대체본 98건): 원본 그대로 반영 0 → 90 · 원본 견본 0 → 8 · kordoc 기본 서식 98 → 0.
+- 나머지 벤치 지표는 4.24.26 과 같다 — PDF 글 재현율 0.99883 · PDF 표 탐지 0.99828/구조 0.98241 · 별표 PDF 343/346 · OCR CER 0.02442/표 34/67 · HWP → HWPX 속성 0.99194 · 포맷·HWPX 구조·라운드트립(`bench:gate` 전 단계 통과).
 
 ## [4.24.26] - 2026-10-31
 
