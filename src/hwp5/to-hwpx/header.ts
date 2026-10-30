@@ -72,13 +72,15 @@ export function imgXml(c: Cur, alpha: number, ref: BinRef): string {
  */
 export function fillBrushXml(c: Cur, ref: BinRef): string {
   const type = c.u32()
-  if (!type) return ""
+  // 채우기가 없어도 추가 채우기 속성 길이(DWORD)는 있다 — 그 뒤 그림자·인스턴스 id 가 밀리지 않게 넘긴다
+  if (!type) { c.skip(c.u32()); return "" }
   let win = "", grad = "", img = ""
   let winFace = 0, winHatch = 0, hatchStyle = -1
   if (type & 1) { winFace = c.u32(); winHatch = c.u32(); hatchStyle = c.i32() }
   let gradAttrs: Array<[string, string | number]> = [], gradColors: number[] = []
   if (type & 4) {
-    const gtype = c.i16(), angle = c.i16(), cx = c.i16(), cy = c.i16(), step = c.i16(), num = c.i16()
+    // 공개 명세는 INT16 들이라 적었지만 실제 저장은 유형 BYTE, 각도·중심·번짐·색 수 INT32 다
+    const gtype = c.u8(), angle = c.i32(), cx = c.i32(), cy = c.i32(), step = c.i32(), num = c.i32()
     const n = Math.max(0, num)
     if (n > 2) c.skip(4 * n)
     for (let i = 0; i < n; i++) gradColors.push(c.u32())

@@ -16,6 +16,8 @@ export interface ConvertContext {
   fields: FieldState
   /** 머리말·꼬리말 일련번호 */
   headerFooterId: number
+  /** 바탕쪽 파트(masterpageN.xml 내용) — 구역 정의를 만나는 차례로 쌓는다 */
+  masterPages: string[]
   /** 차트 OLE(BIN_DATA 순번) → 차트 파트 경로, 차트가 아니면 null */
   chartOf(binId: number): string | null
   /** 그림 BinData 참조 이름 */
@@ -56,13 +58,16 @@ const NUMBERING_TYPES = ["NONE", "PICTURE", "TABLE", "EQUATION"] as const
 export interface ObjCommon {
   attr: number; vertOffset: number; horzOffset: number; width: number; height: number; zOrder: number
   margin: [number, number, number, number]; instanceId: number
+  /** 쪽 나눔 방지 — 개체와 조판 부호를 같은 쪽에 둔다(holdAnchorAndSO) */
+  keepWithAnchor: number
 }
 
 export function readObjCommon(node: RecNode): ObjCommon {
   const c = new Cur(node.rec.data, 4)
   const attr = c.u32(), vertOffset = c.i32(), horzOffset = c.i32(), width = c.u32(), height = c.u32(), zOrder = c.i32()
   const margin: [number, number, number, number] = [c.i16(), c.i16(), c.i16(), c.i16()]
-  return { attr, vertOffset, horzOffset, width, height, zOrder, margin, instanceId: c.u32() }
+  const instanceId = c.u32()
+  return { attr, vertOffset, horzOffset, width, height, zOrder, margin, instanceId, keepWithAnchor: c.i32() & 1 }
 }
 
 /** 개체 요소의 앞 속성 — id·zOrder·번호 종류·배치 */
@@ -77,7 +82,7 @@ export function objPlacementXml(o: ObjCommon): string {
   return el("hp:sz", [["width", o.width], ["widthRelTo", pick(WIDTH_RELS, bits(a, 15, 3))], ["height", o.height],
     ["heightRelTo", pick(HEIGHT_RELS, bits(a, 18, 2))], ["protect", bit(a, 20)]])
     + el("hp:pos", [["treatAsChar", bit(a, 0)], ["affectLSpacing", bit(a, 2)], ["flowWithText", bit(a, 13)], ["allowOverlap", bit(a, 14)],
-      ["holdAnchorAndSO", bit(a, 29)], ["vertRelTo", pick(VERT_RELS, bits(a, 3, 2))], ["horzRelTo", pick(HORZ_RELS, bits(a, 8, 2))],
+      ["holdAnchorAndSO", o.keepWithAnchor], ["vertRelTo", pick(VERT_RELS, bits(a, 3, 2))], ["horzRelTo", pick(HORZ_RELS, bits(a, 8, 2))],
       ["vertAlign", pick(VERT_ALIGNS, bits(a, 5, 3))], ["horzAlign", pick(HORZ_ALIGNS, bits(a, 10, 3))], ["vertOffset", o.vertOffset],
       ["horzOffset", o.horzOffset]])
     + el("hp:outMargin", [["left", o.margin[0]], ["right", o.margin[1]], ["top", o.margin[2]], ["bottom", o.margin[3]]])

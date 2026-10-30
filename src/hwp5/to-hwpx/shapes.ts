@@ -17,9 +17,9 @@ const TAG_SHAPE = {
 } as const
 
 const u32 = (v: number): number => v >>> 0
-/** 단정밀도로 줄여 소수 여섯째 자리, 끝 0 은 지운다 */
+/** 배정밀도 값 그대로 소수 여섯째 자리, 끝 0 은 지운다 */
 export function num6(v: number): string {
-  const s = Math.fround(v).toFixed(6).replace(/\.?0+$/, "")
+  const s = v.toFixed(6).replace(/\.?0+$/, "")
   return s === "-0" ? "0" : s
 }
 
@@ -54,10 +54,10 @@ function readComponent(node: RecNode): Component {
   return { kind, offsetX, offsetY, groupLevel, orgW, orgH, curW, curH, flip, angle, cx, cy, rendering: `<hp:renderingInfo>${rendering}</hp:renderingInfo>`, rest: c }
 }
 
-/** offset · orgSz · curSz(원래 크기 그대로면 0) · flip · rotationInfo · renderingInfo */
+/** offset · orgSz · curSz(원래 크기와 같은 축은 0) · flip · rotationInfo · renderingInfo */
 function componentHeadXml(k: Component): string {
   return el("hp:offset", [["x", u32(k.offsetX)], ["y", u32(k.offsetY)]]) + el("hp:orgSz", [["width", k.orgW], ["height", k.orgH]])
-    + el("hp:curSz", k.curW === k.orgW && k.curH === k.orgH ? [["width", 0], ["height", 0]] : [["width", k.curW], ["height", k.curH]]) + el("hp:flip", [["horizontal", bit(k.flip, 0)], ["vertical", bit(k.flip, 1)]])
+    + el("hp:curSz", [["width", k.curW === k.orgW ? 0 : k.curW], ["height", k.curH === k.orgH ? 0 : k.curH]]) + el("hp:flip", [["horizontal", bit(k.flip, 0)], ["vertical", bit(k.flip, 1)]])
     + el("hp:rotationInfo", [["angle", k.angle], ["centerX", k.cx], ["centerY", k.cy], ["rotateimage", bit(k.flip, 19)]]) + k.rendering
 }
 
@@ -70,14 +70,19 @@ const END_CAPS = ["ROUND", "FLAT"] as const
 const SHADOW_TYPES = ["NONE", "PARELLEL_LEFTTOP", "PARELLEL_RIGHTTOP", "PARELLEL_LEFTBOTTOM", "PARELLEL_RIGHTBOTTOM", "SHEAR_LEFTTOP",
   "SHEAR_RIGHTTOP", "SHEAR_LEFTBOTTOM", "SHEAR_RIGHTBOTTOM", "SHEAR_LEFTTOP", "SHEAR_RIGHTTOP"] as const
 
+/** 선 — 색·굵기·속성(종류·끝 모양·화살표) */
+function lineShapeXml(lineColor: number, width: number, a: number, outline: number): string {
+  return el("hp:lineShape", [["color", color(lineColor)], ["width", width], ["style", pick(BORDER_TYPES, bits(a, 0, 6))],
+    ["endCap", pick(END_CAPS, bits(a, 6, 4))], ["headStyle", pick(ARROW_STYLES, bits(a, 10, 6))], ["tailStyle", pick(ARROW_STYLES, bits(a, 16, 6))],
+    ["headfill", bit(a, 30)], ["tailfill", bit(a, 31)], ["headSz", pick(ARROW_SIZES, bits(a, 22, 4))], ["tailSz", pick(ARROW_SIZES, bits(a, 26, 4))],
+    ["outlineStyle", pick(OUTLINE_STYLES, outline)], ["alpha", 0]])
+}
+
 /** 그리기 개체 공통 — 선(lineShape) · 채우기(fillBrush) · 그림자(shadow), 그 뒤 인스턴스 id */
 function drawingStyle(k: Component, ctx: ConvertContext): { xml: string; instId: number } {
   const c = k.rest
   const lineColor = c.u32(), width = c.i32(), a = c.u32(), outline = c.u8()
-  const line = el("hp:lineShape", [["color", color(lineColor)], ["width", width], ["style", pick(BORDER_TYPES, bits(a, 0, 6))],
-    ["endCap", pick(END_CAPS, bits(a, 6, 4))], ["headStyle", pick(ARROW_STYLES, bits(a, 10, 6))], ["tailStyle", pick(ARROW_STYLES, bits(a, 16, 6))],
-    ["headfill", bit(a, 30)], ["tailfill", bit(a, 31)], ["headSz", pick(ARROW_SIZES, bits(a, 22, 4))], ["tailSz", pick(ARROW_SIZES, bits(a, 26, 4))],
-    ["outlineStyle", pick(OUTLINE_STYLES, outline)], ["alpha", 0]])
+  const line = lineShapeXml(lineColor, width, a, outline)
   const fill = fillBrushXml(c, ctx.binRef)
   const sType = c.u32(), sColor = c.u32(), sx = c.i32(), sy = c.i32()
   const instId = c.u32()
@@ -113,7 +118,9 @@ function shapeXml(comp: RecNode, o: ObjCommon | null, description: string, ctx: 
 
   if (k.kind === "$pic") {
     const p = sub(TAG_SHAPE.PICTURE)
-    p.u32(); p.i32(); p.u32() // 테두리 색·굵기·속성
+    const borderColor = p.u32(), borderWidth = p.i32(), borderAttr = p.u32()
+    // 테두리 선이 있을 때만(선 종류 ≠ 없음) 한글이 lineShape 를 쓴다
+    const border = bits(borderAttr, 0, 6) ? lineShapeXml(borderColor, borderWidth, borderAttr, 0) : ""
     const xs: number[] = [], ys: number[] = []
     for (let i = 0; i < 4; i++) { xs.push(p.i32()); ys.push(p.i32()) }
     const cl = p.i32(), ct = p.i32(), cr = p.i32(), cb = p.i32()
@@ -128,7 +135,7 @@ function shapeXml(comp: RecNode, o: ObjCommon | null, description: string, ctx: 
       ["effect", pick(["REAL_PIC", "GRAY_SCALE", "BLACK_WHITE", "PATTERN8x8"], effect)], ["alpha", alpha]])
     const rect = `<hp:imgRect>${[0, 1, 2, 3].map(i => el(`hc:pt${i}`, [["x", xs[i]], ["y", ys[i]]])).join("")}</hp:imgRect>`
     return el("hp:pic", [...head, ["href", ""], ["groupLevel", k.groupLevel], ["instid", instId], ["reverse", 0]],
-      common + img + rect + el("hp:imgClip", [["left", cl], ["right", cr], ["top", ct], ["bottom", cb]])
+      common + img + border + rect + el("hp:imgClip", [["left", cl], ["right", cr], ["top", ct], ["bottom", cb]])
       + el("hp:inMargin", [["left", m[0]], ["right", m[1]], ["top", m[2]], ["bottom", m[3]]]) + el("hp:imgDim", [["dimwidth", dimW], ["dimheight", dimH]])
       + "<hp:effects/>" + tail)
   }
@@ -137,6 +144,8 @@ function shapeXml(comp: RecNode, o: ObjCommon | null, description: string, ctx: 
 
   if (k.kind === "$con") {
     const kids = comp.kids.filter(x => x.rec.tagId === TAG.SHAPE_COMPONENT).map(x => shapeXml(x, null, "", ctx, "")).join("")
+    // 행렬 뒤 자식 수(WORD)·자식 컨트롤 ID 목록, 그 뒤 인스턴스 id
+    k.rest.skip(4 * k.rest.u16())
     const instId = k.rest.rest >= 4 ? k.rest.u32() : 0
     return el("hp:container", [...head, ["href", ""], ["groupLevel", k.groupLevel], ["instid", instId]], common + kids + tail)
   }
@@ -180,6 +189,19 @@ function shapeXml(comp: RecNode, o: ObjCommon | null, description: string, ctx: 
       const segs = types.map((t, i) => el("hp:seg", [["type", t ? "CURVE" : "LINE"], ["x1", ps[i][0]], ["y1", ps[i][1]], ["x2", ps[i + 1][0]], ["y2", ps[i + 1][1]]])).join("")
       return el("hp:curve", [...head, ...ref], common + s.xml + text + segs + tail)
     }
+    case "$col": {
+      // 연결선 — 시작·끝 점, 종류, 이어진 개체(id·연결점 번호), 꺾임 점(x·y·종류 WORD)
+      const r = sub(TAG_SHAPE.LINE)
+      const sx = r.i32(), sy = r.i32(), ex = r.i32(), ey = r.i32(), type = r.u32()
+      const ends = [r.u32(), r.u32(), r.u32(), r.u32()]
+      const n = r.u32()
+      let cps = ""
+      for (let i = 0; i < n && r.rest >= 10; i++) cps += el("hp:point", [["x", r.i32()], ["y", r.i32()], ["type", r.u16()]])
+      return el("hp:connectLine", [...head, ...ref, ["type", pick(CONNECT_TYPES, type)]], common + s.xml
+        + el("hp:startPt", [["x", sx], ["y", sy], ["subjectIDRef", ends[0]], ["subjectIdx", ends[1]]])
+        + el("hp:endPt", [["x", ex], ["y", ey], ["subjectIDRef", ends[2]], ["subjectIdx", ends[3]]])
+        + `<hp:controlPoints>${cps}</hp:controlPoints>` + tail)
+    }
     case "$lin": {
       const r = sub(TAG_SHAPE.LINE)
       const sp = pt("hc:startPt", r), ep = pt("hc:endPt", r)
@@ -190,6 +212,9 @@ function shapeXml(comp: RecNode, o: ObjCommon | null, description: string, ctx: 
       return ""
   }
 }
+
+const CONNECT_TYPES = ["STRAIGHT_NOARROW", "STRAIGHT_ONEWAY", "STRAIGHT_BOTH", "STROKE_NOARROW", "STROKE_ONEWAY", "STROKE_BOTH",
+  "ARC_NOARROW", "ARC_ONEWAY", "ARC_BOTH"] as const
 
 const OLE_ASPECTS: Record<number, string> = { 1: "CONTENT", 2: "THUMBNAIL", 4: "ICON", 8: "DOCPRINT" }
 const OLE_TYPES = ["UNKNOWN", "EMBEDDED", "LINK", "STATIC", "EQUATION"] as const

@@ -8,7 +8,7 @@
 
 import { Cur, type RecNode, el, esc, escText, color, bit, bits, pick, BORDER_TYPES, BORDER_WIDTHS, NUM_FORMATS } from "./util.js"
 import { XML_DECL, NS } from "./header.js"
-import { controlXml, type ConvertContext } from "./controls.js"
+import { controlXml, listGroups, subListAttrs, type ConvertContext } from "./controls.js"
 import { fieldEndXml } from "./fields.js"
 
 export const TAG = {
@@ -50,7 +50,11 @@ function paragraphXml(p: RecNode, ctx: ConvertContext): string {
   const text = texts.length ? Buffer.concat(texts.map(k => k.rec.data)) : Buffer.alloc(0)
   const csNode = p.kids.find(k => k.rec.tagId === TAG.PARA_CHAR_SHAPE)
   const runs: Array<[number, number]> = []
-  if (csNode) for (const c = new Cur(csNode.rec.data); c.rest >= 8;) runs.push([c.u32(), c.u32()])
+  // 같은 글자 모양이 잇달아 오는 경계는 한글이 run 하나로 합쳐 저장한다
+  if (csNode) for (const c = new Cur(csNode.rec.data); c.rest >= 8;) {
+    const pos = c.u32(), id = c.u32()
+    if (!runs.length || runs[runs.length - 1][1] !== id) runs.push([pos, id])
+  }
   if (!runs.length) runs.push([0, 0])
   const ctrls = p.kids.filter(k => k.rec.tagId === TAG.CTRL_HEADER)
   const toks = tokenize(text, ctrls, ctx, new Set(runs.map(r => r[0])))
@@ -203,6 +207,9 @@ export function secPrXml(node: RecNode, ctx: ConvertContext): string {
       ["hideFirstPageNum", bit(a, 5)], ["hideFirstEmptyLine", bit(a, 19)], ["showLineNumber", bit(a, 6)]])
     + el("hp:lineNumberShape", [["restartType", 0], ["countBy", 0], ["distance", 0], ["startNumber", 0]])
   let notes = 0, borders = 0
+  // 바탕쪽 — 구역 정의 자식 LIST_HEADER 와 뒤따르는 문단. 종류는 구역 속성 비트 29(양쪽)·30(짝수)·31(홀수) 중 선 것의 차례로 놓인다
+  const kinds = MASTER_KINDS.filter((_, i) => bit(a, 29 + i))
+  const masters = listGroups(node.kids).map((g, i) => masterPageRef(g, kinds[i] ?? "BOTH", ctx))
   for (const k of node.kids) {
     const d = k.rec.data
     if (k.rec.tagId === TAG.PAGE_DEF) {
@@ -224,7 +231,21 @@ export function secPrXml(node: RecNode, ctx: ConvertContext): string {
   }
   return el("hp:secPr", [["id", ""], ["textDirection", bits(a, 16, 3) ? "VERTICAL" : "HORIZONTAL"], ["spaceColumns", spaceColumns],
     ["tabStop", tabStop], ["tabStopVal", Math.trunc(tabStop / 2)], ["tabStopUnit", "HWPUNIT"], ["outlineShapeIDRef", outline],
-    ["memoShapeIDRef", ctx.memoShapes ? 1 : 0], ["textVerticalWidthHead", 0], ["masterPageCnt", 0]], inner)
+    ["memoShapeIDRef", ctx.memoShapes ? 1 : 0], ["textVerticalWidthHead", 0], ["masterPageCnt", masters.length]], inner + masters.join(""))
+}
+
+const MASTER_KINDS = ["BOTH", "EVEN", "ODD"] as const
+
+/** 바탕쪽 하나 → masterpageN.xml(ctx.masterPages 에 쌓음), 구역 정의에 둘 참조. LIST_HEADER 목록 머리 뒤 글 폭·높이·글/번호 참조·확장 플래그 */
+function masterPageRef(g: { head: RecNode; paras: RecNode[] }, kind: string, ctx: ConvertContext): string {
+  const d = g.head.rec.data
+  const c = new Cur(d, 8)
+  const size: Record<string, number> = { textWidth: c.u32(), textHeight: c.u32(), hasTextRef: c.u8(), hasNumRef: c.u8() }
+  const ext = c.u16()
+  const id = `masterpage${ctx.masterPages.length}`
+  ctx.masterPages.push(XML_DECL + `<masterPage ${NS} id="${id}" type="${kind}" pageNumber="0" pageDuplicate="${bit(ext, 0)}" pageFront="0">`
+    + el("hp:subList", subListAttrs(d).map(([k, v]) => [k, size[k] ?? v]), paragraphsXml(g.paras, ctx)) + "</masterPage>")
+  return el("hp:masterPage", [["idRef", id]])
 }
 
 /** 'cold' 단 정의 → hp:ctrl/hp:colPr */

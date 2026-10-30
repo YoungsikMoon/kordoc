@@ -105,6 +105,7 @@ export async function hwpToHwpx(input: Uint8Array | ArrayBuffer, options?: HwpTo
     memoShapes: docInfo.filter(r => r.tagId === TAG_MEMO_SHAPE).length,
     fields: { stack: [] },
     headerFooterId: 0,
+    masterPages: [],
     chartOf(binId) {
       if (chartByBin.has(binId)) return chartByBin.get(binId)!
       const item = items.find(b => b.index === binId)
@@ -129,7 +130,13 @@ export async function hwpToHwpx(input: Uint8Array | ArrayBuffer, options?: HwpTo
   const sectionItems: string[] = []
   sections.forEach((recs, i) => {
     const name = `Contents/section${i}.xml`
+    const mp0 = ctx.masterPages.length
     zip.file(name, sectionXml(recordTree((recs ?? []) as Rec[]), ctx))
+    // 구역의 바탕쪽은 매니페스트에서 그 구역 앞에 둔다(한글 저장 꼴)
+    for (let k = mp0; k < ctx.masterPages.length; k++) {
+      zip.file(`Contents/masterpage${k}.xml`, ctx.masterPages[k])
+      sectionItems.push(el("opf:item", [["id", `masterpage${k}`], ["href", `Contents/masterpage${k}.xml`], ["media-type", "application/xml"]]))
+    }
     sectionNames.push(name)
     sectionItems.push(el("opf:item", [["id", `section${i}`], ["href", name], ["media-type", "application/xml"]]))
   })
