@@ -12,8 +12,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import JSZip from "jszip"
-import { hwpToHwpx, convertToHwpx, parse, patchHwp } from "../src/index.js"
+import { hwpToHwpx, convertToHwpx, parse, patchHwp, fillForm } from "../src/index.js"
 import { registerConvertTools } from "../src/mcp/tools-convert.js"
+import { registerFormTools } from "../src/mcp/tools-form.js"
 import { needsRewrite, rewriteEdited } from "../src/roundtrip/rewrite-fallback.js"
 
 const require = createRequire(import.meta.url)
@@ -183,6 +184,69 @@ describe("convertToHwpx·CLI·MCP — 저장 경로", () => {
     assert.match(ok.content[0].text, /서식 그대로/)
     assert.ok((await parse(new Uint8Array(readFileSync(out)).buffer)).markdown.includes("본문"))
     rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe("fill_form·fill — HWP 서식을 원본 서식으로 채우기", () => {
+  it("HWP 5.x 서식을 서식 그대로 HWPX 로 바꿔 표 칸을 채운다 (라이브러리·MCP·CLI)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kordoc-fill-hwp-"))
+    const previousRoot = process.env.KORDOC_ROOT
+    process.env.KORDOC_ROOT = dir
+    try {
+      const src = join(dir, "신청서.hwp")
+      writeFileSync(src, buildHwp(Buffer.concat([paragraph("신청서"), table2x2([["성명", ""], ["연락처", ""]])])))
+      let fill: any
+      registerFormTools({ tool(name: string, ...args: any[]) { if (name === "fill_form") fill = args.at(-1) } } as any)
+      const out = join(dir, "mcp.hwpx")
+      const r = await fill({ file_path: src, fields: { 성명: "홍길동" }, output_format: "hwpx-preserve", output_path: out, mask_values: false })
+      assert.ok(!r.isError, r.content[0].text)
+      assert.match(r.content[0].text, /HWP 를 서식 그대로 HWPX 로 바꿔 채움/)
+      const cli = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
+      const cliOut = join(dir, "cli.hwpx")
+      const c = spawnSync(process.execPath, ["--import", "tsx", cli, "fill", src, "-f", "성명=김철수", "-o", cliOut], { encoding: "utf8", timeout: 60000 })
+      assert.equal(c.status, 0, c.stderr)
+      assert.match(c.stderr, /서식 그대로 HWPX 로 바꿔 채웁니다/)
+      const lib = await fillForm(readFileSync(src), { 성명: "이영희" }, "hwpx-preserve")
+      for (const [data, name] of [[new Uint8Array(readFileSync(out)), "홍길동"], [new Uint8Array(readFileSync(cliOut)), "김철수"],
+        [new Uint8Array(lib.output as ArrayBuffer), "이영희"]] as const) {
+        assert.match(await sectionOf(data), /<hp:tbl id="777"/) // 원본 표째 — 새로 짠 표가 아니다
+        assert.ok((await parse(data.buffer)).markdown.includes(name))
+      }
+    } finally {
+      if (previousRoot === undefined) delete process.env.KORDOC_ROOT
+      else process.env.KORDOC_ROOT = previousRoot
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("HWP 5.x 에 도장을 찍으면 서식 그대로 바꾼 HWPX 에 찍는다 (MCP·CLI)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kordoc-seal-hwp-"))
+    const previousRoot = process.env.KORDOC_ROOT
+    process.env.KORDOC_ROOT = dir
+    try {
+      const src = join(dir, "확인서.hwp")
+      writeFileSync(src, buildHwp(Buffer.concat([paragraph("확인서", [[0, 0]], 0, 31), paragraph("신청인 홍길동 (인)", [[0, 0]], 0, 32)])))
+      const png = join(dir, "도장.png")
+      writeFileSync(png, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64"))
+      let seal: any
+      registerFormTools({ tool(name: string, ...args: any[]) { if (name === "place_seal") seal = args.at(-1) } } as any)
+      const out = join(dir, "mcp.hwpx")
+      const r = await seal({ file_path: src, image_path: png, output_path: out, anchor: "(인)" })
+      assert.ok(!r.isError, r.content[0].text)
+      const cli = fileURLToPath(new URL("../src/cli.ts", import.meta.url))
+      const c = spawnSync(process.execPath, ["--import", "tsx", cli, "seal", src, "--image", png], { encoding: "utf8", timeout: 60000 })
+      assert.equal(c.status, 0, c.stderr)
+      assert.match(c.stderr, /서식 그대로 HWPX 로 바꿔 찍습니다/)
+      for (const file of [out, join(dir, "확인서.sealed.hwpx")]) {
+        const zip = await JSZip.loadAsync(readFileSync(file))
+        assert.ok(zip.file("BinData/image1.png"), file)
+        assert.match(await zip.file("Contents/section0.xml")!.async("string"), /<hp:p id="32"/) // 원본 문단째
+      }
+    } finally {
+      if (previousRoot === undefined) delete process.env.KORDOC_ROOT
+      else process.env.KORDOC_ROOT = previousRoot
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

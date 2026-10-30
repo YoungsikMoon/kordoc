@@ -124,7 +124,7 @@ if (r.success) {
   // form.fields → [{ label: "성명", value: "홍길동", row: 0, col: 0 }, ...], form.confidence → 0.85
 }
 
-// HWPX 원본 서식 보존 모드 — 글꼴·크기·정렬 유지
+// 원본 서식 보존 모드 — 글꼴·크기·정렬 유지 (HWP 5.x 는 서식 그대로 HWPX 로 바꿔 채워 HWPX 로 낸다)
 const filled = await fillForm(readFileSync("신청서.hwpx"), {
   성명: "홍길동", 주민등록번호: "900101-1234567", 주소: "서울특별시 광진구 능동로 120",
 }, "hwpx-preserve")

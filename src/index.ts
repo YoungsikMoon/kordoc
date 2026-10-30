@@ -395,10 +395,15 @@ export async function fillForm(
     if (format === "hwpx") {
       const zipFormat = await detectZipFormat(buffer)
       if (zipFormat !== "hwpx") {
-        throw new Error(`hwpx-preserve 포맷은 HWPX 입력만 지원합니다 (감지된 포맷: ${zipFormat})`)
+        throw new Error(`hwpx-preserve 포맷은 HWPX·HWP 5.x 입력만 지원합니다 (감지된 포맷: ${zipFormat})`)
       }
+    } else if (format === "hwp" && detectOle2Format(buffer) === "hwp") {
+      // HWP 5.x 서식은 서식 그대로 HWPX 로 바꿔 채운다 (결과는 HWPX)
+      const { hwpToHwpx } = await import("./hwp5/to-hwpx/index.js")
+      const hwpx = await hwpToHwpx(new Uint8Array(buffer))
+      buffer = hwpx.buffer.slice(hwpx.byteOffset, hwpx.byteOffset + hwpx.byteLength) as ArrayBuffer
     } else {
-      throw new Error(`hwpx-preserve 포맷은 HWPX 입력만 지원합니다 (감지된 포맷: ${format})`)
+      throw new Error(`hwpx-preserve 포맷은 HWPX·HWP 5.x 입력만 지원합니다 (감지된 포맷: ${format})`)
     }
     const hwpxResult = await fillHwpx(buffer, values)
     return {

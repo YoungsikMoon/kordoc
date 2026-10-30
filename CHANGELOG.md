@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 서식 채우기·도장: HWP 5.x 서식도 원본 서식으로 채우고 찍는다. MCP `fill_form`·CLI `fill`·`fillForm` 의 `hwpx-preserve`(기본)와 MCP `place_seal`·CLI `seal` 이 HWP 5.x 를 받으면 서식 그대로 HWPX 로 바꾼 뒤 HWPX 경로(누름틀 이름·표 라벨 칸 채우기, 앵커 위 도장)를 쓰고 HWPX 로 낸다. 종전엔 MCP·라이브러리는 거부, CLI 는 parse 결과로 새 문서를 짜 원본 서식을 버렸다. 배포용·암호 문서처럼 못 바꾸는 HWP 는 그 사유로 거부한다(CLI `fill` 은 종전 `hwpx` 모드로).
 - patch(HWP 5.x) 대체본: 제자리 반영 못 한 편집(문단 추가·삭제 등)을 담는 대체본(`<출력>.rewrite.hwpx`)을 kordoc 기본 서식 대신 원본 서식으로 만든다. HWP 를 서식 그대로 바꾼 HWPX 에 편집을 제자리 반영하고 — HWP·HWPX 파서가 같은 문서에도 달리 다는 제목·굵게 표지와 띄어쓰기는 바꾼 판 것을 두고 바뀐 글만 옮겨 싣는다 — 편집 글이 다 들어갔는지 확인한다. 거기서도 남는 편집(표 안 문단 삭제 등)이 있으면 바꾼 판을 견본으로 새로 쓴다. 코퍼스 실험(HWP 101문서에 글 5곳 고침·문단 넣기·빼기, 대체본 98건): 원본 그대로 반영 0 → **90**, 원본 견본 0 → 8, kordoc 기본 서식 98 → 0. 배포용 문서는 예전처럼 대체본을 만들지 않는다.
 
 ### Fixed

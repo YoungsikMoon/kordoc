@@ -124,7 +124,7 @@ if (r.success) {
   // form.fields → [{ label: "성명", value: "홍길동", row: 0, col: 0 }, ...], form.confidence → 0.85
 }
 
-// HWPX format-preserving mode — fonts, sizes, alignment intact
+// format-preserving mode — fonts, sizes, alignment intact (HWP 5.x is converted to HWPX with its format kept, then filled; output is HWPX)
 const filled = await fillForm(readFileSync("application.hwpx"), {
   성명: "홍길동", 주민등록번호: "900101-1234567", 주소: "서울특별시 광진구 능동로 120",
 }, "hwpx-preserve")

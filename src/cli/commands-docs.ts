@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "fs"
 import { basename, dirname, resolve, extname } from "path"
 import { Command } from "commander"
-import { parse, detectFormat, detectZipFormat, fillFormFields, extractFormFields, blocksToMarkdown, markdownToHwpx, fillHwpx, fillWithUniqueGuard, PRESET_ALIAS, extractClickHereFields, BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate } from "../index.js"
+import { parse, detectFormat, detectZipFormat, fillFormFields, extractFormFields, blocksToMarkdown, markdownToHwpx, fillHwpx, fillWithUniqueGuard, PRESET_ALIAS, extractClickHereFields, BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate, hwpToHwpx } from "../index.js"
 import type { FillInput } from "../index.js"
 import { fillPlan } from "../form/match.js"
 import { toArrayBuffer, sanitizeError } from "../utils.js"
@@ -107,6 +107,17 @@ export function registerDocCommands(program: Command): void {
 
         if (!opts.silent) process.stderr.write(`[kordoc] ${inputName} 파싱 중...\n`)
 
+        // HWP 5.x 서식은 서식 그대로 HWPX 로 바꿔 누름틀 목록·원본 서식 채우기에 쓴다 (못 바꾸면 null)
+        const hwpAsHwpx = async (): Promise<ArrayBuffer | null> => {
+          if (detectFormat(arrayBuffer) !== "hwp") return null
+          try {
+            const hwpx = await hwpToHwpx(new Uint8Array(arrayBuffer))
+            return hwpx.buffer.slice(hwpx.byteOffset, hwpx.byteOffset + hwpx.byteLength) as ArrayBuffer
+          } catch {
+            return null
+          }
+        }
+
         // --dry-run: 필드 목록만 출력 — 서식 입력란(빈 후행 열)이 목록에 나오도록 보존 (#47). 값을 함께 주면 아래에서 대상 칸을 낸다
         if (opts.dryRun && !opts.json && !opts.fields) {
           const result = await parse(arrayBuffer, { keepTrailingEmptyCols: true, layoutTables: "keep" })
@@ -116,9 +127,8 @@ export function registerDocCommands(program: Command): void {
           }
           const formInfo = extractFormFields(result.blocks)
           // 누름틀(CLICK_HERE) 필드도 함께 나열 — 표준 서식은 라벨 표 없이 누름틀만 있을 수 있다
-          const clickHereFields = detectFormat(arrayBuffer) === "hwpx"
-            ? await extractClickHereFields(arrayBuffer)
-            : []
+          const hwpxView = detectFormat(arrayBuffer) === "hwpx" ? arrayBuffer : await hwpAsHwpx()
+          const clickHereFields = hwpxView ? await extractClickHereFields(hwpxView) : []
           if (formInfo.fields.length === 0 && clickHereFields.length === 0) {
             process.stderr.write(`[kordoc] 서식 필드를 찾을 수 없습니다.\n`)
             process.exit(1)
@@ -195,6 +205,12 @@ export function registerDocCommands(program: Command): void {
           if (isHwpx) {
             const zipFormat = await detectZipFormat(arrayBuffer)
             isHwpx = zipFormat === "hwpx"
+          }
+          const converted = await hwpAsHwpx()
+          if (converted) {
+            arrayBuffer = converted
+            isHwpx = true
+            if (!opts.silent) process.stderr.write(`[kordoc] HWP 를 서식 그대로 HWPX 로 바꿔 채웁니다\n`)
           }
           if (!isHwpx) {
             if (!opts.silent) process.stderr.write(`[kordoc] HWPX가 아니므로 hwpx 모드로 전환합니다\n`)
@@ -299,7 +315,7 @@ export function registerDocCommands(program: Command): void {
     .option("--silent", "진행 메시지 숨기기")
     .action(async (file: string, opts) => {
       try {
-        const { placeSealHwpx, detectFormat } = await import("../index.js")
+        const { placeSealHwpx, detectFormat, hwpToHwpx } = await import("../index.js")
         const rootOpts = program.opts()
         const output: string | undefined = opts.output ?? rootOpts.output
         const silent: boolean = opts.silent ?? rootOpts.silent
@@ -308,9 +324,16 @@ export function registerDocCommands(program: Command): void {
           process.stderr.write(`[kordoc] --mode 는 overlap/right/auto 중 하나여야 합니다\n`)
           process.exit(1)
         }
-        const buf = new Uint8Array(readFileSync(resolve(file)))
-        if (detectFormat(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer) !== "hwpx") {
-          process.stderr.write(`[kordoc] seal 은 HWPX 전용입니다 (HWP 5.x 바이너리는 미지원)\n`)
+        let buf: Uint8Array = new Uint8Array(readFileSync(resolve(file)))
+        let format = detectFormat(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer)
+        if (format === "hwp") {
+          // HWP 5.x 는 서식 그대로 HWPX 로 바꿔 찍는다
+          buf = await hwpToHwpx(buf)
+          format = "hwpx"
+          if (!silent) process.stderr.write(`[kordoc] HWP 를 서식 그대로 HWPX 로 바꿔 찍습니다\n`)
+        }
+        if (format !== "hwpx") {
+          process.stderr.write(`[kordoc] seal 은 HWPX·HWP 5.x 전용입니다 (감지된 포맷: ${format})\n`)
           process.exit(1)
         }
         const imgPath = resolve(opts.image)
@@ -353,7 +376,7 @@ export function registerDocCommands(program: Command): void {
             dyMm: parseNum("--dy", opts.dy, { allowNeg: true }),
           }],
         )
-        const outPath = resolve(output ?? file.replace(/\.hwpx$/i, "") + ".sealed.hwpx")
+        const outPath = resolve(output ?? file.replace(/\.hwpx?$/i, "") + ".sealed.hwpx")
         mkdirSync(dirname(outPath), { recursive: true })
         writeFileSync(outPath, Buffer.from(result.buffer))
         if (!silent) {

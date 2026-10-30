@@ -3,7 +3,7 @@
 import { z } from "zod"
 import { readFile, mkdir, stat, realpath } from "fs/promises"
 import { extname, dirname } from "path"
-import { parse, detectFormat, detectZipFormat, detectOle2Format, blocksToMarkdown, extractFormFields, fillFormFields, markdownToHwpx, fillHwpx, patchHwpx, patchHwp, BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate } from "../index.js"
+import { parse, detectFormat, detectZipFormat, detectOle2Format, blocksToMarkdown, extractFormFields, fillFormFields, markdownToHwpx, fillHwpx, patchHwpx, patchHwp, hwpToHwpx, BUILTIN_TEMPLATES, resolveBuiltinTemplate, readBuiltinTemplate } from "../index.js"
 import { fillWithUniqueGuard, type FillInput, type FillValue } from "../form/match.js"
 import { KordocError } from "../utils.js"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
@@ -83,7 +83,7 @@ export function registerFormTools(server: McpServer): void {
 
   server.tool(
     "fill_form",
-    "한국 서식 문서의 빈칸을 채워서 새 문서로 출력합니다. hwpx-preserve를 사용하면 원본 서식(테두리, 폰트, 병합 등)을 100% 유지합니다. HWPX 누름틀(CLICK_HERE) 필드는 이름으로 정확 매칭되어 우선 채워집니다. file_path 대신 template으로 내장 정부 표준 기안문 서식을 쓸 수 있습니다 — gian(일반기안문, 별지 제1호서식: 행정기관명·수신자·경유·제목·본문·붙임·발신명의·기안자·검토자·결재권자 등 23필드) / gian-simple(간이기안문, 별지 제2호서식: 내부결재용 13필드).",
+    "한국 서식 문서의 빈칸을 채워서 새 문서로 출력합니다. hwpx-preserve를 사용하면 원본 서식(테두리, 폰트, 병합 등)을 100% 유지합니다 — HWP 5.x 서식은 서식 그대로 HWPX 로 바꿔 채워 HWPX 로 냅니다. 누름틀(CLICK_HERE) 필드는 이름으로 정확 매칭되어 우선 채워집니다. file_path 대신 template으로 내장 정부 표준 기안문 서식을 쓸 수 있습니다 — gian(일반기안문, 별지 제1호서식: 행정기관명·수신자·경유·제목·본문·붙임·발신명의·기안자·검토자·결재권자 등 23필드) / gian-simple(간이기안문, 별지 제2호서식: 내부결재용 13필드).",
     {
       file_path: z.string().min(1).optional().describe("서식 템플릿 문서의 절대 경로 (HWP, HWPX, PDF, XLSX, DOCX). template 사용 시 생략"),
       template: z.enum(["gian", "gian-simple", "일반기안문", "간이기안문"]).optional().describe("내장 정부 표준 서식 이름 — file_path 대신 사용. gian=일반기안문(별지 제1호서식), gian-simple=간이기안문(별지 제2호서식)"),
@@ -92,7 +92,7 @@ export function registerFormTools(server: McpServer): void {
       formats: z.record(z.string(), z.string()).optional().describe("필드별 값 서식 (라벨 → 포맷). 정준값 하나로 서식마다 다른 모양을 채울 때: date:yy.mm.dd / phone:hyphen·dot·digits / rrn:hyphen·masked / mask:###-## / 자유 패턴(yyyy년 m월 d일, ###-####-####)"),
       require_unique: z.boolean().optional().describe("한 키가 서식의 2곳 이상에 매칭되면 채우지 않고 거부 — 반복 라벨 양식에서 남의 블록 오염 방지 (배열 값은 예외)"),
       mask_values: z.boolean().optional().describe("응답에 값 대신 글자수만 표시 — 개인정보 채움 시 값이 대화 로그에 남지 않게 (fields_file 이면 기본 켬)"),
-      output_format: z.enum(["markdown", "hwpx", "hwpx-preserve"]).default("hwpx-preserve").describe("출력 포맷: hwpx-preserve (원본 스타일 보존, HWPX 전용), hwpx (새 HWPX 생성), markdown"),
+      output_format: z.enum(["markdown", "hwpx", "hwpx-preserve"]).default("hwpx-preserve").describe("출력 포맷: hwpx-preserve (원본 스타일 보존, HWPX·HWP 5.x — HWP 는 서식 그대로 HWPX 로 바꿔 채움), hwpx (새 HWPX 생성), markdown"),
       output_path: z.string().optional().describe("출력 파일 저장 경로 (선택). 지정 시 파일로 저장, 미지정 시 텍스트로 반환"),
     },
     async ({ file_path, template, fields: fieldArgs, fields_file, formats, require_unique, mask_values: maskArg, output_format, output_path }) => {
@@ -135,10 +135,22 @@ export function registerFormTools(server: McpServer): void {
           // 다른 포맷으로 확인될 때만 거부하고, 판별 불가(손상 ZIP 등)는 종전대로 HWPX 로 시도
           let format: string = detectFormat(buffer)
           if (format === "hwpx") { const z = await detectZipFormat(buffer); if (z !== "unknown") format = z }
-          const isHwpx = format === "hwpx"
-          if (!isHwpx) {
+          else if (format === "hwp") { const o = detectOle2Format(buffer); if (o !== "unknown") format = o }
+          // HWP 5.x 서식은 서식 그대로 HWPX 로 바꿔 채운다 — 누름틀·표 칸이 그대로 옮겨진다
+          const fromHwp = format === "hwp"
+          if (fromHwp) {
+            try {
+              const hwpx = await hwpToHwpx(new Uint8Array(buffer))
+              buffer = hwpx.buffer.slice(hwpx.byteOffset, hwpx.byteOffset + hwpx.byteLength) as ArrayBuffer
+            } catch (err) {
+              return {
+                content: [{ type: "text", text: `HWP 서식을 HWPX 로 바꾸지 못해 원본 서식 채우기를 할 수 없습니다 (${describeError(err)}). hwpx 또는 markdown을 사용하세요.` }],
+                isError: true,
+              }
+            }
+          } else if (format !== "hwpx") {
             return {
-              content: [{ type: "text", text: `hwpx-preserve는 HWPX 파일만 지원합니다 (감지된 포맷: ${format}). hwpx 또는 markdown을 사용하세요.` }],
+              content: [{ type: "text", text: `hwpx-preserve는 HWPX·HWP 5.x 파일만 지원합니다 (감지된 포맷: ${format}). hwpx 또는 markdown을 사용하세요.` }],
               isError: true,
             }
           }
@@ -162,7 +174,7 @@ export function registerFormTools(server: McpServer): void {
             verifyLine = `검증(마스킹): ${okCount}/${hwpxResult.filled.length} FILLED — 재파싱 대조, 값 미노출`
           }
           const summary = [
-            `채워진 필드: ${hwpxResult.filled.length}개 (원본 스타일 보존)`,
+            `채워진 필드: ${hwpxResult.filled.length}개 (원본 스타일 보존${fromHwp ? " — HWP 를 서식 그대로 HWPX 로 바꿔 채움" : ""})`,
             hwpxResult.rejected.length > 0 ? `모호 라벨 거부(2곳+ 매칭): ${hwpxResult.rejected.join(", ")}` : null,
             hwpxResult.unmatched.length > 0 ? `매칭 실패: ${hwpxResult.unmatched.join(", ")}` : null,
             verifyLine,
@@ -257,9 +269,9 @@ export function registerFormTools(server: McpServer): void {
 
   server.tool(
     "place_seal",
-    "도장/서명 이미지를 앵커 문구(\"(인)\"·\"서명 또는 인\" 등) 위에 부유(글 앞) 배치합니다. 표/페이지를 키우지 않습니다 (HWPX 전용).",
+    "도장/서명 이미지를 앵커 문구(\"(인)\"·\"서명 또는 인\" 등) 위에 부유(글 앞) 배치합니다. 표/페이지를 키우지 않습니다 (HWPX·HWP 5.x — HWP 는 서식 그대로 HWPX 로 바꿔 찍어 HWPX 로 냅니다).",
     {
-      file_path: z.string().min(1).describe("대상 HWPX 문서의 절대 경로"),
+      file_path: z.string().min(1).describe("대상 HWPX·HWP 문서의 절대 경로"),
       image_path: z.string().min(1).describe("도장/서명 이미지 절대 경로 (투명 배경 PNG 권장)"),
       anchor: z.string().default("(인)").describe("앵커 문구 — 이 문구 기준으로 배치"),
       occurrence: z.number().int().min(0).default(0).describe("같은 앵커가 여럿일 때 0-based 선택"),
@@ -272,11 +284,17 @@ export function registerFormTools(server: McpServer): void {
     async ({ file_path, image_path, anchor, occurrence, size_mm, mode, dx_mm, dy_mm, output_path }) => {
       try {
         const outPath = safeOutputPath(output_path, new Set([".hwpx"]))
-        const { buffer } = await readValidatedFile(file_path)
-        const format = detectFormat(buffer)
+        let { buffer } = await readValidatedFile(file_path)
+        let format: string = detectFormat(buffer)
+        if (format === "hwp" && detectOle2Format(buffer) === "hwp") {
+          // HWP 5.x 는 서식 그대로 HWPX 로 바꿔 찍는다
+          const hwpx = await hwpToHwpx(new Uint8Array(buffer))
+          buffer = hwpx.buffer.slice(hwpx.byteOffset, hwpx.byteOffset + hwpx.byteLength) as ArrayBuffer
+          format = "hwpx"
+        }
         if (format !== "hwpx") {
           return {
-            content: [{ type: "text", text: `place_seal 은 HWPX 파일만 지원합니다 (감지된 포맷: ${format}).` }],
+            content: [{ type: "text", text: `place_seal 은 HWPX·HWP 5.x 파일만 지원합니다 (감지된 포맷: ${format}).` }],
             isError: true,
           }
         }
