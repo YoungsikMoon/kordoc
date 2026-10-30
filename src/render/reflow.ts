@@ -955,7 +955,7 @@ function reflowBlockFlow(
       // 어긋난 만큼 이 문단과 같은 쪽의 뒤 캐시 문단을 함께 옮긴다(한컴 PDF: 줄 정보 없는 9pt 머리 문단 1440 뒤 표 문단의 저장 자리 1920 이 1440 에).
       // 위로는 얼마든 옮긴다(같은 판 한컴 PDF: 사진을 지운 표의 낡은 sz 11565 아래 저장된 뒤 문단 36800 이 102.8pt 위). 쪽 넘김으로 생긴 차이(수만, 아래로)와
       // 쪽에 걸친 문단은 건드리지 않는다
-      if (lsa && bodyFlow) {
+      if (lsa && (bodyFlow || bodyH === 0)) {
         const segs = elements(lsa).filter(e => ln(e) === "lineseg")
         const vs = segs.map(e => num(e, "vertpos")), v0 = vs[0] ?? 0
         const mono = vs.every((v, i) => i === 0 || v >= vs[i - 1])
