@@ -139,6 +139,16 @@ describe("암호 문서 열기 (실물 픽스처)", () => {
     assert.equal(enc.markdown, plain.markdown)
   })
 
+  it("HWPX 렌더: 암호로 복호해 평문 대조본과 같은 쪽을 그리고, 암호가 없으면 XML 오류 대신 암호 안내로 실패한다", async (t) => {
+    if (!has("HWP5-password-123456.hwpx") || !has("HWP5-nopassword-123456.hwpx")) return t.skip("픽스처 없음")
+    const { renderDocumentToScene } = await import("../src/render/document.js")
+    const enc = await renderDocumentToScene(readFileSync(fixture("HWP5-password-123456.hwpx")), { password: "123456" })
+    const plain = await renderDocumentToScene(readFileSync(fixture("HWP5-nopassword-123456.hwpx")))
+    assert.equal(enc.pageSvgs.size, plain.pageSvgs.size)
+    assert.equal(enc.pageSvgs.get(1), plain.pageSvgs.get(1))
+    await assert.rejects(renderDocumentToScene(readFileSync(fixture("HWP5-password-123456.hwpx"))), /암호로 보호된 HWPX/)
+  })
+
   it("parse() 자동 라우팅에도 password가 전달된다", async (t) => {
     if (!has("HWP3-password-123456.hwp")) return t.skip("픽스처 없음")
     const r = await parse(readFileSync(fixture("HWP3-password-123456.hwp")), { password: "123456" })

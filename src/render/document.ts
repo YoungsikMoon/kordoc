@@ -26,7 +26,7 @@ export interface SceneRenderOptions {
   pages?: number[] | string
   /** 조판 캐시 없는 HWPX 를 순수 TS 조판으로 렌더 (기본 true — 캐시가 있으면 무시) */
   reflow?: boolean
-  /** 암호 HWP5 열기 암호 */
+  /** 암호로 보호된 HWP5·HWPX 열기 암호 */
   password?: string
   reflowMode?: WrapMode
   highlights?: string[]
@@ -114,7 +114,7 @@ export async function renderDocumentToScene(input: RenderInput, options: SceneRe
   const renderOptions = { reflow: options.reflow ?? true, reflowMode: options.reflowMode, highlights: options.highlights, maxImageBytes: options.maxImageBytes }
   const { scene, pageSvgs } = source === "hwp"
     ? renderHwp5Pages(buffer, { ...renderOptions, password: options.password }, select)
-    : await renderHwpxPages(buffer, renderOptions, select)
+    : await renderHwpxPages(buffer, { ...renderOptions, password: options.password }, select)
   return { scene, pageSvgs }
 }
 

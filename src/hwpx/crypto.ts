@@ -44,6 +44,18 @@ export function isEncryptedManifest(manifestXml: string): boolean {
   return manifestXml.includes("encryption-data")
 }
 
+/** 암호를 모르는 암호 HWPX 의 안내 — 배포용 문서(content.hpf hpf:distribution="1")는 열기 암호 없이 보는 문서라 "열기 암호" 안내가 틀린다.
+ *  정책브리핑 보도자료(156776047 산업활동동향)가 섹션까지 AES-256 으로 암호화된 배포용 HWPX 로 올라온다 */
+export async function lockedHwpxError(zip: JSZip): Promise<KordocError> {
+  const hpfFile = zip.file("Contents/content.hpf")
+  const hpf = hpfFile ? await readZipEntry(hpfFile, "text").catch(() => "") : ""
+  return new KordocError(
+    /\bdistribution="1"/.test(hpf ?? "")
+      ? "배포용으로 암호화된 HWPX 파일입니다 (배포용 복호는 지원하지 않음). 한컴오피스에서 일반 문서로 저장한 뒤 여세요."
+      : "암호로 보호된 HWPX 파일입니다. password 옵션에 열기 암호를 지정하세요.",
+  )
+}
+
 const attrOf = (xml: string, name: string): string | undefined =>
   xml.match(new RegExp(`${name}="([^"]*)"`))?.[1]
 

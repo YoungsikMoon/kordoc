@@ -39,7 +39,7 @@ export function registerRenderCommands(program: Command): void {
           // 종전 동작(HWPX) — 전체 페이지 세로 스택 SVG 한 파일. HWP5 는 통합 렌더러(페이지별)
           const { renderHwpxToSvg } = await import("../render/index.js")
           const buffer = readFileSync(absPath)
-          const result = await renderHwpxToSvg(toArrayBuffer(buffer), { highlights, reflow: opts.reflow, reflowMode: opts.reflowMode })
+          const result = await renderHwpxToSvg(toArrayBuffer(buffer), { highlights, reflow: opts.reflow, reflowMode: opts.reflowMode, password: rootOpts.password })
           const outPath = resolve(output ?? stem + ".svg")
           mkdirSync(dirname(outPath), { recursive: true })
           writeFileSync(outPath, result.svg, "utf-8")
@@ -52,7 +52,7 @@ export function registerRenderCommands(program: Command): void {
         const { renderDocument } = await import("../render/index.js")
         const { scene, assets } = await renderDocument(absPath, {
           format: fmt as "svg" | "html" | "png" | "jpeg" | "pdf", pages, highlights, reflow: opts.reflow, reflowMode: opts.reflowMode,
-          maxWidthPx: opts.maxWidth ? Number(opts.maxWidth) : undefined, title: opts.title, browserExecutablePath: opts.browser,
+          maxWidthPx: opts.maxWidth ? Number(opts.maxWidth) : undefined, title: opts.title, browserExecutablePath: opts.browser, password: rootOpts.password,
         })
         const ext = fmt === "jpeg" ? "jpg" : fmt
         const written: string[] = []

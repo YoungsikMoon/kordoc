@@ -40,6 +40,7 @@ import { subFloatBottoms } from "./reflow-tables.js"
 import { mulAffine, objectGeometry, renderingMatrix, shapeGeometry, rotatedBounds, SHAPE_TAGS, type Affine, type RegionRotation } from "./shape-geometry.js"
 import { anchorObject, linePushedBy, squareStackTops } from "./object-anchor.js"
 import { readZipEntry } from "../hwpx/parser-shared.js"
+import { decryptHwpxInPlace, isEncryptedManifest, lockedHwpxError } from "../hwpx/crypto.js"
 import { escapeXml, pt, ptNum, pageNo, bboxOf, regionOpenTag, parentId, emit, warnOnce, drawPara, cellParaTop, type PageGeom, type Ctx, type PaintJob } from "./svg-content.js"
 export { escapeXml } from "./svg-content.js"
 export { buildPara, measureTableHeight, tabAdvance, type Seg, type ParaChar, type ParaModel, type ExtentMemo } from "./para-model.js"
@@ -57,6 +58,8 @@ export interface RenderSvgOptions {
    *  breakSetting 선언이 있으면 그 값이 우선하며(BREAK_WORD=어절, KEEP_WORD=글자 —
    *  이름 역전 주의), 이 옵션은 선언 없는 문단에만 적용된다. */
   reflowMode?: WrapMode
+  /** 암호로 보호된 HWPX 의 열기 암호 */
+  password?: string
 }
 
 export interface RenderSvgResult {
@@ -1009,6 +1012,13 @@ async function renderHwpxInternal(input: ArrayBuffer | Uint8Array, options?: Ren
     zip = await JSZip.loadAsync(input)
   } catch {
     throw new KordocError("HWPX(ZIP) 형식이 아닙니다 — 렌더는 HWPX만 지원")
+  }
+  // 암호 HWPX — 구역이 AES 로 암호화돼 있어 그대로 읽으면 XML 파싱 오류가 났다. 암호가 있으면 파서처럼 제자리 복호, 없으면 안내
+  const manifestFile = zip.file("META-INF/manifest.xml")
+  const manifestXml = manifestFile ? await readZipEntry(manifestFile, "text") : ""
+  if (isEncryptedManifest(manifestXml)) {
+    if (!options?.password) throw await lockedHwpxError(zip)
+    await decryptHwpxInPlace(zip, manifestXml, options.password)
   }
   // 모든 구역 파일 (section0, section1, … — 파서와 같은 번호 순. 이름 정렬이면 section10 이 section2 앞에 온다)
   const secFiles = zip.file(/Contents\/section\d+\.xml$/i).sort((a, b) => compareSectionPaths(a.name, b.name))
