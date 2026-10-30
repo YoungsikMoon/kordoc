@@ -2,6 +2,19 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.23: PDF tables, OCR tables and rendering · 2026-10-30
+
+Every benchmark was compared document by document against 4.24.22 with the same corpora and scorers (rounds 245–254; suites x245 and x252 had no per-document decrease in any stage). Rendering text runs and images were compared document by document on the Hancom PDF pairs.
+
+| Metric | 4.24.22 | 4.24.23 |
+| --- | --- | --- |
+| Statute annex PDF table exact match · cell F1 | 342/346 (98.84%) · 0.99778 | **343/346 (99.13%) · 0.99789** |
+| OCR table structure match · cell F1 | 31/67 · 0.5850 | **33/67 · 0.5899** |
+| Render text position (±1.5pt) · image position (±2pt) | 106,790 / 111,423 · 4,167 / 4,259 | **106,818 / 111,423 · 4,169 / 4,259** (0 down) |
+| Render page count · PDF text · tables · ODL · HWPX · round trip · generation · OCR characters · degraded input | — | unchanged |
+
+The OCR table gain 31 → 33 comes from the text-layer unit-line fix: OCR table ground truth is the same parser's text layer, so the caption row dropped out of two Goesan budget tables on the reference side and now matches the OCR output. The fix did not change PDF text, table, annex or ODL results.
+
 ## 4.24.22: OCR tables and rendering · 2026-10-30
 
 Every benchmark was compared document by document against 4.24.21 with the same corpora and scorers (rounds 238–247; suite x239e had no per-document decrease in any stage). Rendering was compared document by document on the Hancom PDF pairs.

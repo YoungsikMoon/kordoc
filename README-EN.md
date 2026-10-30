@@ -106,7 +106,7 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 
 ## Validation
 
-**4.22.14 verification · 2026-10-19** (render layout, PDF text, PDF tables and OCR: 4.24.22 · 2026-10-30). Results use fixed corpora and reference criteria.
+**4.22.14 verification · 2026-10-19** (render layout, PDF text, PDF tables, statute annexes and OCR: 4.24.23 · 2026-10-30). Results use fixed corpora and reference criteria.
 
 | Target | Population | Result |
 | --- | --- | --- |
@@ -116,25 +116,25 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 | PDF tables | 708 pairs · 2,331 tables | Detection **99.83%** · structure match **98.24%** · cell F1 **0.9919** |
 | HWPX reflow | 25,187 multiline paragraphs (12 folders) | All line starts match **24,941/25,187 · 99.02%** |
 | Nested PDF tables (text layer) | 29 documents · 101 tables | Structure and cell content **101/101 · 100%** |
-| Statute annexes | 272 documents · 346 tables | HWP **346/346**, PDF **342/346 · 98.84%** |
+| Statute annexes | 272 documents · 346 tables | HWP **346/346**, PDF **343/346 · 99.13%** |
 | All PDFs | 1,729 scored out of 1,911 documents | Text coverage **99.80%** |
-| OCR | 53 documents · 102 pages · 67 tables | CER **0.0244** · character recall **99.32%** · table structure **31/67** |
+| OCR | 53 documents · 102 pages · 67 tables | CER **0.0244** · character recall **99.32%** · table structure **33/67** |
 | opendataloader-bench | 200 PDF documents | Overall **0.964** with defaults · **0.939** with OCR off |
-| HWPX render layout | 1,565 Hancom PDF pairs (1,507 with matching page counts) · 111,423 text runs · 4,259 images | Text position (±1.5pt) **106,790 · 95.8%** · image position (±2pt) **4,167 · 97.8%** |
+| HWPX render layout | 1,565 Hancom PDF pairs (1,507 with matching page counts) · 111,423 text runs · 4,259 images | Text position (±1.5pt) **106,818 · 95.9%** · image position (±2pt) **4,169 · 97.9%** |
 
 Table structure, cell content and visual fidelity are separate metrics. The nested-table 100% applies only to these 101 tables, not all PDF parsing or page layout. See [benchmark details](docs/benchmarks-en.md) for scope, exclusions, per-option scores and reproduction.
 
 ## Recent updates
 
-Latest release: **[4.24.22](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.22)** · 2026-10-30
+Latest release: **[4.24.23](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.23)** · 2026-10-30
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.23 | PDF tables: band of a row split at a page break merged into that row, a line with a unit note above a table no longer taken as a header row · Rendering: horizontal position of paragraph-relative objects | Statute annex PDF tables 342 → **343**/346 (**99.13%**) · OCR table structure match 31 → **33**/67 · render text position 106,790 → **106,818** · images 4,167 → **4,169** (0 down) · other metrics unchanged |
 | 4.24.22 | OCR and PDF tables: rules stretched across empty indent columns by white row-background outlines · Rendering: paragraphs after overflowing cached lines, cell caches whose text height does not match the font size, row boundary of the first-page part stored in table sz, continuation part of split merged cells, merged-cell heights in multi-page tables | OCR table structure match 26 → **31**/67 · cell F1 0.576 → **0.585** · render text position 106,570 → **106,790** (5 documents up, 0 down) · other metrics unchanged |
 | 4.24.21 | Rendering: footnote page for paragraphs spanning pages, non-splitting tables (page break and following text), paragraphs above tables pushed down by a vertical offset, trailing empty sections with master pages, overflowing multi-row cells in multi-page tables | Render page-count match 1,505 → **1,507** documents · text position 100,019 → **106,570** (4 existing documents up, 0 down, 3 newly measured after page counts matched) · 1 measurement exception (see changelog) · other metrics unchanged |
 | 4.24.20 | Rendering: page of paragraphs after multi-page floating tables inside cells, cell caches whose lines do not advance, caches that never reset per page (text drawn off the page) | Render page-count match 1,504 → **1,505** documents · text position 100,015 → **100,019** · a regulatory impact report 116 → 66 pages (PDF 64) · other metrics unchanged |
 | 4.24.19 | Rendering: page breaks in saved-split cells and merged cells (overlapping draws and an extra page), first-line spacing of table rows split at the page bottom, render failure on HWPX with a UTF-8 BOM | Render page-count match 1,492 → **1,504** documents · render failures 17 → **14** · text position 97,156 → **100,015** (3 existing documents up, none down; 8 newly measured) · other metrics unchanged |
-| 4.24.18 | Rendering: stale heights of tables whose cell content was removed, baseline of side-by-side inline tables, leftover height of table rows split at the page bottom, moving co-anchored tables to the next page, saved positions after paragraphs without line data | Rendered text position 96,993 → **97,156** (1,565 Hancom PDF pairs; 12 documents up, none down) · image position 4,148 → **4,149** · other metrics unchanged |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 
