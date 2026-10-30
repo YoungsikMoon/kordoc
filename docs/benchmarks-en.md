@@ -2,6 +2,18 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.24: OCR tables and rendering · 2026-10-30
+
+Every benchmark was compared document by document against 4.24.23 with the same corpora and scorers (rounds 255–260; suite x258 had no per-document decrease in any stage, and after the OCR ruling fix x259 had one degraded-input decrease — see the changelog notes). Rendering text runs and images were compared document by document on the Hancom PDF pairs, including documents with fewer than 20 runs.
+
+| Metric | 4.24.23 | 4.24.24 |
+| --- | --- | --- |
+| OCR table structure match · cell F1 | 33/67 · 0.5899 | **34/67 · 0.5904** |
+| Render page-count match | 1,507 / 1,565 | **1,508 / 1,565** |
+| Render text position (±1.5pt) | 106,818 / 111,423 | **106,904 / 111,480** (5 documents up, 0 down; 1 newly measured document 57/57) |
+| Render image position (±2pt) | 4,169 / 4,259 | **4,213 / 4,300** (1 newly measured document 41/41) |
+| PDF text · tables · statute annexes · ODL · HWPX · round trip · generation · OCR characters | — | unchanged |
+
 ## 4.24.23: PDF tables, OCR tables and rendering · 2026-10-30
 
 Every benchmark was compared document by document against 4.24.22 with the same corpora and scorers (rounds 245–254; suites x245 and x252 had no per-document decrease in any stage). Rendering text runs and images were compared document by document on the Hancom PDF pairs.
