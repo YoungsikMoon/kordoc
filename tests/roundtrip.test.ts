@@ -143,6 +143,22 @@ describe("patchHwpx: 표 셀 수정", () => {
     assert.ok(unbold.skipped.some(s => s.partial && /강조/.test(s.reason)), JSON.stringify(unbold.skipped))
   })
 
+  it("1열 표의 여러 줄 칸(제목 상자)도 줄마다 표 좌표로 고친다 — 원문 글 찾기가 못 맞대는 사용자 정의 글자(《》) 칸", async () => {
+    // 한글 문서의 《》는 사용자 정의 영역 글자(U+F0854·U+F0855)로 저장되고 파서가 《》로 바꿔 낸다
+    const zip = await JSZip.loadAsync(await markdownToHwpx("| 법무부 위원회 발족<br>및 조사 권고 |\n| --- |\n| - 신뢰 회복의 첫걸음 - |"))
+    const sec = await zip.file("Contents/section0.xml")!.async("string")
+    assert.ok(sec.includes("위원회"))
+    zip.file("Contents/section0.xml", sec.replace("위원회", "\u{F0854}위원회\u{F0855}"))
+    const original = await zip.generateAsync({ type: "uint8array" })
+    const markdown = (await parseHwpx(toAB(original), { layoutTables: "keep" })).markdown
+    assert.ok(markdown.includes("법무부 《위원회》 발족\n및 조사 권고\n- 신뢰 회복의 첫걸음 -"), JSON.stringify(markdown))
+    const edited = markdown.replace("및 조사 권고", "및 조사 권고 수정")
+    const res = await patchHwpx(original, edited)
+    assert.equal(res.applied, 1, JSON.stringify(res.skipped))
+    assert.deepEqual(res.skipped, [])
+    assert.equal((await reparse(res.data!)).markdown, edited)
+  })
+
   const REAL = join(dirname(fileURLToPath(import.meta.url)), "..", "bench", "corpus", "korea-kr")
   const realDoc = existsSync(REAL) ? readdirSync(REAL).find(f => f.startsWith("156765958_") && f.includes("기본계획 시안") && f.endsWith(".hwpx")) : undefined
   it("굵은 칸·두 줄 칸 GFM 표(실문서) — 칸 끝 고침을 표 좌표로 반영한다", { skip: !realDoc }, async () => {

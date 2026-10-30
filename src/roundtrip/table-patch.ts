@@ -342,22 +342,25 @@ export function patchTextChunkTable(
   }
 
   if (table.cols === 1 && table.rows >= 2) {
+    // builder 1열 다행 경로 재현 — 칸 안 줄바꿈도 줄로 따로 낸다(v4.12.1, 별지서식 1열 틀 표). 줄마다 격자 행을 기록한다.
+    // 종전엔 칸 줄을 공백으로 이어 여러 줄 칸이 든 표(제목 상자 등)를 늘 "재현 불일치"로 건너뛰었다
     const replica: { line: string; gridR: number }[] = []
     for (let r = 0; r < table.rows; r++) {
-      const line = escapeGfm(sanitizeText(table.cells[r][0].text)).replace(/\n/g, " ")
-      if (line) replica.push({ line, gridR: r })
+      for (const line of escapeGfm(sanitizeText(table.cells[r][0].text)).split("\n").map(l => l.trim()).filter(Boolean)) replica.push({ line, gridR: r })
     }
     if (replica.map(x => x.line).join("\n") !== orig.lines.join("\n")) return skip("표 좌표 재현 불일치 — 매핑 신뢰 불가")
     if (edited.lines.length !== replica.length) return skip("표 행 추가/삭제는 미지원 (표 구조 변경)")
     let applied = 0
-    for (let i = 0; i < replica.length; i++) {
-      if (replica[i].line === edited.lines[i]) continue
-      if (extractCellTokens(replica[i].line) !== extractCellTokens(edited.lines[i])) {
+    for (let r = 0; r < table.rows; r++) {
+      const idx = replica.flatMap((x, i) => (x.gridR === r ? [i] : []))
+      if (idx.every(i => replica[i].line === edited.lines[i])) continue
+      const before = idx.map(i => replica[i].line), after = idx.map(i => edited.lines[i])
+      if (extractCellTokens(before.join(" ")) !== extractCellTokens(after.join(" "))) {
         skip("셀 내 이미지 변경은 미지원")
         continue
       }
-      const newLines = [stripCellTokens(unescapeGfm(edited.lines[i])).trim()].filter(Boolean)
-      applied += applyCellEdit(table, scanTable, replica[i].gridR, 0, newLines, ctx, replica[i].line, edited.lines[i], 1)
+      const newLines = after.map(l => stripCellTokens(unescapeGfm(l)).trim()).filter(Boolean)
+      applied += applyCellEdit(table, scanTable, r, 0, newLines, ctx, before.join("<br>"), after.join("<br>"), before.length)
     }
     return applied
   }
