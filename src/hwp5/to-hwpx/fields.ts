@@ -6,7 +6,7 @@
  * 매개변수는 명령을 종류별로 풀어 쓴다 — 누름틀 안내문·도움말, 하이퍼링크 경로·종류, 계산식·결과 형식·마지막 값.
  */
 
-import { Cur, type RecNode, el, esc, escText } from "./util.js"
+import { Cur, type RecNode, el, escText } from "./util.js"
 import { TAG, paragraphsXml } from "./section.js"
 import { subListAttrs, type ConvertContext } from "./controls.js"
 

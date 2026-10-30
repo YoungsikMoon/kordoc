@@ -6,7 +6,7 @@
  * 하이픈)은 hp:t 안 요소, 개체(표·그림·도형·수식)는 hp:t 와 같은 run 의 형제다. 줄 나눔 정보(PARA_LINE_SEG)는 hp:linesegarray.
  */
 
-import { Cur, type RecNode, el, esc, escText, color, bit, bits, pick, readParamSet, subSet, type Param, BORDER_TYPES, BORDER_WIDTHS, NUM_FORMATS } from "./util.js"
+import { Cur, type RecNode, el, escText, color, bit, bits, pick, readParamSet, subSet, type Param, BORDER_TYPES, BORDER_WIDTHS, NUM_FORMATS } from "./util.js"
 import { XML_DECL, NS, GRADATIONS } from "./header.js"
 import { controlXml, listGroups, subListAttrs, type ConvertContext } from "./controls.js"
 import { fieldEndXml } from "./fields.js"
@@ -34,8 +34,7 @@ export function paragraphsXml(nodes: RecNode[], ctx: ConvertContext): string {
   return out
 }
 
-/** 글 토큰 — 글자, 인라인 요소(hp:t 안), 개체·컨트롤 요소(run 형제) */
-/** cs: 글자 스타일(영역 태그 종류 1) — 같은 run 안에서도 hp:t 를 따로 연다 */
+/** 글 토큰 — 글자, 인라인 요소(hp:t 안), 개체·컨트롤 요소(run 형제). cs 는 글자 스타일(영역 태그 종류 1) — 같은 run 안에서도 hp:t 를 따로 연다 */
 type Tok = { pos: number; t: "text"; s: string; cs?: number } | { pos: number; t: "inline"; xml: string; mark?: boolean; cs?: number }
   | { pos: number; t: "ctrl"; xml: string; obj: boolean; def?: boolean }
 

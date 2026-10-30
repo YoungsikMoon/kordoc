@@ -108,12 +108,13 @@ Extract Markdown for format-preserving patches with `--keep-layout-tables`. Unsu
 
 ## Validation
 
-**4.22.14 verification · 2026-10-19** (render layout, PDF text, PDF tables, statute annexes and OCR: 4.24.24 · 2026-10-30). Results use fixed corpora and reference criteria.
+**4.22.14 verification · 2026-10-19** (render layout, PDF text, PDF tables, statute annexes and OCR: 4.24.24 · 2026-10-30; HWP → HWPX conversion: 4.24.26 · 2026-10-31). Results use fixed corpora and reference criteria.
 
 | Target | Population | Result |
 | --- | --- | --- |
 | HWPX | 2,424 documents · 10,342 tables | Table structure match **10,342/10,342 · 100%** |
 | HWP 5.x ↔ HWPX | 1,130 pairs · 4,315 tables | Paired-document table structure match **100%** |
+| HWP 5.x → HWPX conversion | 264 pairs saved by Hangul (232 compared attribute by attribute) | Attribute match **99.19%** · text **264/264** · 80 documents checked side by side in Hangul |
 | PDF text | 744 pairs | Character recall **99.883%** · precision **99.678%** · reading order **99.312%** · word-boundary F1 **99.067%** |
 | PDF tables | 708 pairs · 2,331 tables | Detection **99.83%** · structure match **98.24%** · cell F1 **0.9919** |
 | HWPX reflow | 25,187 multiline paragraphs (12 folders) | All line starts match **24,941/25,187 · 99.02%** |
@@ -128,15 +129,15 @@ Table structure, cell content and visual fidelity are separate metrics. The nest
 
 ## Recent updates
 
-Latest release: **[4.24.25](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.25)** · 2026-10-30
+Latest release: **[4.24.26](https://github.com/chrisryugj/kordoc/releases/tag/v4.24.26)** · 2026-10-31
 
 | Version | Highlights | Measured change |
 | --- | --- | --- |
+| 4.24.26 | HWP → HWPX conversion (`kordoc to-hwpx`, MCP `convert_to_hwpx`): HWP 5.x with formatting preserved — master pages, tables, pictures, shapes, linked text boxes, equations, fields, memos, form controls and charts · patch (HWP): paragraphs with tabs or fields edited character by character · Markdown: list markers at the start of list items escaped | Conversion attribute match **0.992** · text **264/264** (pairs saved by Hangul) · 80 documents checked in Hangul · patch HWP 123 → **132**/140 · benchmark metrics unchanged |
 | 4.24.25 | patch: editing paragraphs with forced line breaks, edits where position mapping fails (layout frames, title boxes, paragraphs with superscripts) located by their text, remaining edits delivered as a rewrite in the original's formatting (`.rewrite.hwpx`) · password-protected HWPX rendering | patch edits applied (corpus experiment) HWPX 487 → **539**/540 · table cells 455 → **465**/467 · HWP 111 → **123**/140 · benchmark metrics unchanged |
 | 4.24.24 | OCR tables: short column dividers inside header bands · Rendering: objects that escape their cell, cached paragraphs after uncached ones inside cells, stacking and page break of non-overlapping square-wrapped tables in one paragraph · COM fallback temp-folder cleanup (#177) | OCR table structure match 33 → **34**/67 · render page-count match 1,507 → **1,508** · text position 106,818 → **106,904** · images 4,169 → **4,213** (0 documents down) · 1 measurement exception (see changelog) · other metrics unchanged |
 | 4.24.23 | PDF tables: band of a row split at a page break merged into that row, a line with a unit note above a table no longer taken as a header row · Rendering: horizontal position of paragraph-relative objects | Statute annex PDF tables 342 → **343**/346 (**99.13%**) · OCR table structure match 31 → **33**/67 · render text position 106,790 → **106,818** · images 4,167 → **4,169** (0 down) · other metrics unchanged |
 | 4.24.22 | OCR and PDF tables: rules stretched across empty indent columns by white row-background outlines · Rendering: paragraphs after overflowing cached lines, cell caches whose text height does not match the font size, row boundary of the first-page part stored in table sz, continuation part of split merged cells, merged-cell heights in multi-page tables | OCR table structure match 26 → **31**/67 · cell F1 0.576 → **0.585** · render text position 106,570 → **106,790** (5 documents up, 0 down) · other metrics unchanged |
-| 4.24.21 | Rendering: footnote page for paragraphs spanning pages, non-splitting tables (page break and following text), paragraphs above tables pushed down by a vertical offset, trailing empty sections with master pages, overflowing multi-row cells in multi-page tables | Render page-count match 1,505 → **1,507** documents · text position 100,019 → **106,570** (4 existing documents up, 0 down, 3 newly measured after page counts matched) · 1 measurement exception (see changelog) · other metrics unchanged |
 
 See the [changelog](CHANGELOG.md) for earlier releases and details.
 

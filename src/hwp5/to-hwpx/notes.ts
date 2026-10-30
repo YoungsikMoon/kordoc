@@ -7,7 +7,7 @@
  * 형제 문단을 hp:subList 로 쓴다.
  */
 
-import { Cur, type RecNode, el, esc, escText, color, pick, bit, bits, readParamSet, NUM_FORMATS } from "./util.js"
+import { Cur, type RecNode, el, escText, color, pick, bit, bits, readParamSet, NUM_FORMATS } from "./util.js"
 import { paragraphsXml } from "./section.js"
 import { type ConvertContext, type CtrlXml, readObjCommon, objHeadAttrs, objPlacementXml, subListAttrs, listGroups, captionXml } from "./controls.js"
 

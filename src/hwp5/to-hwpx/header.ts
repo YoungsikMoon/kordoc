@@ -6,7 +6,7 @@
  * 레코드 값을 둔다(레코드는 HWPUNIT 의 2배로 적혀 있다).
  */
 
-import { Cur, type Rec, el, esc, escText, color, bit, bits, pick, BORDER_TYPES, BORDER_WIDTHS, LINE_SHAPES, NUM_FORMATS } from "./util.js"
+import { Cur, type Rec, el, escText, color, bit, bits, pick, BORDER_TYPES, BORDER_WIDTHS, LINE_SHAPES, NUM_FORMATS } from "./util.js"
 
 export const NS = 'xmlns:ha="http://www.hancom.co.kr/hwpml/2011/app" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" '
   + 'xmlns:hp10="http://www.hancom.co.kr/hwpml/2016/paragraph" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" '

@@ -2,6 +2,23 @@
 
 Scoring rules, reproduction steps and per-option results behind the README [Validation](../README-EN.md#validation) section. Internal corpora are checked by `npm run bench:gate` and mandatory release gates. The external opendataloader-bench is measured separately.
 
+## 4.24.26: HWP → HWPX conversion · 2026-10-31
+
+New measurement for converting HWP 5.x to HWPX with formatting preserved (`kordoc to-hwpx`, MCP `convert_to_hwpx`): `node bench/hwp2hwpx.mjs`, with a no-regression gate in `bench:gate`.
+
+- Ground truth: documents Hangul saved as both .hwp and .hwpx. Only same-name pairs of the same revision (identical Hangul preview text) whose HWPX was saved by Hangul are used — HWPX files produced by another conversion tool (853) are excluded by a rule fixed before looking at results. 264 pairs; attribute comparison uses the 232 pairs in the Hangul 2020+ format (xmlVersion 1.5).
+- Scoring: header, section and master-page XML trees are compared node by node; the share of attribute values and text nodes that match (missing or extra nodes count in the denominator).
+
+| Metric | Result |
+| --- | --- |
+| Attribute match (232 pairs) | **0.99194** (header 0.98193 · section 0.99763) |
+| Text match (264 pairs) | **264/264** |
+| Exact match | 14/232 |
+
+Most remaining differences are information the HWP does not hold — the Hangul version that saved the reference (textDir written only by Hangul 2024, the level-8 heading form), font substitution on the machine Hangul ran on, and edits between the two saves. 80 documents were opened side by side in Hangul (Mac) as the original HWP and the converted HWPX (page 1, the status-bar page/character/section counts, a multi-page view): all open, and every document that differed was fixed until it matched (one very large document was captured before pagination finished and left out).
+
+The patch edit experiment's HWP 5.x text edits rise from 123 to **132**/140 now that paragraphs with tabs or fields are edited byte by byte. Other benchmark metrics are the same as 4.24.25.
+
 ## 4.24.25: patch edit coverage · 2026-10-30
 
 Benchmark metrics are the same as 4.24.24 (only the patch and password-render paths changed). How many edits patch applies in place was measured separately on the corpus: per document, a word appended to five text units, or two cells changed per table unit (a word appended to a text cell, an empty cell filled).

@@ -7,7 +7,7 @@
  * 변환 행렬은 단정밀도로 줄여 소수 여섯째 자리까지.
  */
 
-import { Cur, type RecNode, readParamSet, subSet, el, esc, escText, color, pick, bit, bits, BORDER_TYPES } from "./util.js"
+import { Cur, type RecNode, readParamSet, subSet, el, escText, color, pick, bit, bits, BORDER_TYPES } from "./util.js"
 import { fillBrushXml } from "./header.js"
 import { TAG, paragraphsXml } from "./section.js"
 import { type ConvertContext, type ObjCommon, readObjCommon, objHeadAttrs, objPlacementXml, subListAttrs, listGroups, captionXml } from "./controls.js"

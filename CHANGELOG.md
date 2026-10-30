@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [4.24.26] - 2026-10-31
 
 ### Fixed
 
@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 한글(맥)에서 원본 HWP 와 변환본을 나란히 열어 80문서를 대조했다(1쪽·상태줄의 쪽/글자/구역 수·최소 배율 여러 쪽 화면) — 모두 열린다. 차이가 났던 문서(쪽 배경 워터마크·연결 글상자·차트 캡션·하이픈·음수 위치 오프셋·제목 차례·그러데이션)는 원인을 고쳐 같아졌다. 아주 큰 문서 1건은 한글이 쪽 나누기를 마치기 전에 찍혀 판정에서 뺐다.
   - `bench:gate` 에 hwp2hwpx 무후퇴 게이트(속성 0.9919·글 100%·짝 264)를 더했다.
 - fill_form: 칸 이름이 안 맞아 못 채운 값이 있으면 다음 행동(parse_form 칸 이름으로 다시 채우기, 또는 patch_document 로 칸에 직접 쓰기)을 결과에 붙인다.
+
+### 측정 참고
+
+- HWP → HWPX 변환(새 지표, `bench/hwp2hwpx.mjs`): 한글 저장 짝 264쌍 — 속성 일치 0.99194(232쌍, header 0.98193·section 0.99763) · 글 264/264 · 완전 일치 14. `bench:gate` 무후퇴 게이트로 건다.
+- patch 편집 반영 실험 HWP 5.x 글 편집 123 → 132/140.
+- 나머지 벤치 지표는 4.24.25 와 같다 — PDF 글 재현율 0.99883 · PDF 표 탐지 0.99828/구조 0.98241 · 별표 PDF 343/346 · OCR CER 0.02442/표 34/67 · 포맷·HWPX 구조·라운드트립(`bench:gate` 전 단계 통과). 렌더 코드는 바뀌지 않았다.
 
 ## [4.24.25] - 2026-10-30
 
