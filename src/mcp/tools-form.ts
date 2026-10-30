@@ -316,10 +316,10 @@ export function registerFormTools(server: McpServer): void {
 
   server.tool(
     "patch_document",
-    "원본 HWPX/HWP의 서식(글꼴·표·도장칸·로고·결재란·이미지)을 그대로 두고, 편집된 마크다운대로 글을 바꿔 새 문서로 출력합니다. 두 가지 용도: (1) 문구 수정·빈칸 채우기, (2) ★서식 베끼기 — \"이 문서 서식대로/똑같은 양식으로/이거 참고해서 ○○ 문서 써줘\"처럼 견본의 분위기를 그대로 재현해 새 공문서를 쓰는 요청. 절차: parse_document(견본, keep_layout_tables: true) → 받은 마크다운의 골격(표지·결재란 표, 제목, □·ㅇ·- 부호와 들여쓰기, 강조 표지 **, 표 표기)을 유지한 채 내용만 새로 쓰기 → 이 도구(file_path=견본, output_path=새 파일) → render_document 로 확인. HWPX 견본은 문단을 자유롭게 늘리고 줄여도 됩니다: 새 줄은 같은 항목 부호(□·ㅇ·-·※·1.·가.)를 단 견본 문단을 복제해 같은 들여쓰기·글꼴·굵기로 들어가고, 지운 줄은 문단째 빠집니다. 표는 견본 표를 그대로 두고 칸 글만 바꾸며 행은 추가·삭제(<table> 표기면 그 HTML 꼴 유지, GFM 으로 바꾸지 말 것). 견본에 없는 요소를 새로 만들거나 kordoc 기본 서식으로 다시 짜는 generate_document 는 서식 베끼기에 쓰지 마세요. HWP(5.x) 견본은 문단 추가·삭제가 안 돼 줄 수를 견본에 맞춰야 합니다. 좌표가 어긋난 자리(틀 표·제목 상자·강제 줄바꿈 문단 등)는 원문 글을 찾아 그 자리만 고치고, 그래도 제자리 반영 못 한 편집이 있으면 편집 내용을 다 담은 대체본(원본 서식으로 새로 쓴 <출력>.rewrite.hwpx)을 함께 만듭니다 — 서식을 맞추려고 칸을 비우거나 내용을 빼지 말고 넣을 내용을 그대로 쓰세요.",
+    "원본 HWPX/HWP의 서식(글꼴·표·도장칸·로고·결재란·이미지)을 그대로 두고, 편집된 마크다운대로 글을 바꿔 새 문서로 출력합니다. 두 가지 용도: (1) 문구 수정·빈칸 채우기, (2) ★서식 베끼기 — \"이 문서 서식대로/똑같은 양식으로/이거 참고해서 ○○ 문서 써줘\"처럼 견본의 분위기를 그대로 재현해 새 공문서를 쓰는 요청. 절차: parse_document(견본, keep_layout_tables: true) → 받은 마크다운의 골격(표지·결재란 표, 제목, □·ㅇ·- 부호와 들여쓰기, 강조 표지 **, 표 표기)을 유지한 채 내용만 새로 쓰기 → 이 도구(file_path=견본, output_path=새 파일) → render_document 로 확인. HWPX 견본은 문단을 자유롭게 늘리고 줄여도 됩니다: 새 줄은 같은 항목 부호(□·ㅇ·-·※·1.·가.)를 단 견본 문단을 복제해 같은 들여쓰기·글꼴·굵기로 들어가고, 지운 줄은 문단째 빠집니다. 표는 견본 표를 그대로 두고 칸 글만 바꾸며 행은 추가·삭제(<table> 표기면 그 HTML 꼴 유지, GFM 으로 바꾸지 말 것). 견본에 없는 요소를 새로 만들거나 kordoc 기본 서식으로 다시 짜는 generate_document 는 서식 베끼기에 쓰지 마세요. HWP(5.x) 견본은 제자리 수정에서 문단 추가·삭제가 안 됩니다 — 줄 수가 바뀌면 원본을 서식 그대로 HWPX 로 바꿔 반영한 대체본(<출력>.rewrite.hwpx)을 받습니다(HWP 결과가 꼭 필요하면 줄 수를 견본에 맞추세요). 좌표가 어긋난 자리(틀 표·제목 상자·강제 줄바꿈 문단 등)는 원문 글을 찾아 그 자리만 고치고, 그래도 제자리 반영 못 한 편집이 있으면 편집 내용을 다 담은 대체본(원본 서식으로 새로 쓴 <출력>.rewrite.hwpx)을 함께 만듭니다 — 서식을 맞추려고 칸을 비우거나 내용을 빼지 말고 넣을 내용을 그대로 쓰세요.",
     {
       file_path: z.string().min(1).describe("원본 문서의 절대 경로 (HWPX 또는 HWP 5.x)"),
-      edited_markdown: z.string().min(1).describe("parse_document(keep_layout_tables: true) 출력 마크다운을 편집한 전체 마크다운. 문단 사이는 빈 줄, 줄마다 견본과 같은 항목 부호로 시작(부호가 서식 견본을 고른다). HWPX 는 문단 추가·삭제 반영, 블록 순서 바꾸기는 미지원. 견본의 이미지 줄·<img> 는 그대로 둘 것"),
+      edited_markdown: z.string().min(1).describe("parse_document(keep_layout_tables: true) 출력 마크다운을 편집한 전체 마크다운. 문단 사이는 빈 줄, 줄마다 견본과 같은 항목 부호로 시작(부호가 서식 견본을 고른다). HWPX 는 문단 추가·삭제 반영(HWP 는 대체본에), 블록 순서 바꾸기는 미지원. 견본의 이미지 줄·<img> 는 그대로 둘 것"),
       output_path: z.string().min(1).describe("출력 파일 저장 절대 경로 (원본과 같은 확장자: .hwpx 또는 .hwp)"),
       structure: z.boolean().optional().describe("문단 추가·삭제 반영 (HWPX, 기본 true). false 면 추가·삭제를 건너뛰고 미적용으로 보고 — 글 수정만 하고 문서 골격을 절대 바꾸지 않을 때"),
     },
@@ -355,7 +355,7 @@ export function registerFormTools(server: McpServer): void {
           await writeOutputFile(rwOut, Buffer.from(rewrite.data))
         }
         const rewriteLine = rewrite && rwOut
-          ? `대체본(편집 내용 전부 반영, ${rewrite.templated ? "원본을 견본으로 글꼴·문단·표 서식·쪽 설정 유지" : "kordoc 기본 서식"}) → ${rwOut}\n`
+          ? `대체본(편집 내용 전부 반영, ${{ patch: "원본 HWP 를 서식 그대로 HWPX 로 바꿔 그 자리에 반영", template: "원본을 견본으로 글꼴·문단·표 서식·쪽 설정 유지", plain: "kordoc 기본 서식" }[rewrite.how]}) → ${rwOut}\n`
             + "제자리 수정본과 대체본을 render_document 로 비교해 사용자에게 맞는 쪽을 주세요. 칸을 비워 두거나 내용을 빼고 따로 체크리스트로 넘기지 마세요."
           : null
 

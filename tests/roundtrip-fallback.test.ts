@@ -11,7 +11,7 @@ import JSZip from "jszip"
 import { markdownToHwpx, parseHwpx, patchHwpx } from "../src/index.js"
 import { scanSectionXml, applySplices, type SpliceEdit } from "../src/roundtrip/source-map.js"
 import { fallbackTextEdit, fallbackTableEdits } from "../src/roundtrip/text-fallback.js"
-import { needsRewrite, rewriteEdited, rewritePath } from "../src/roundtrip/rewrite-fallback.js"
+import { needsRewrite, rebaseEdits, rewriteEdited, rewritePath } from "../src/roundtrip/rewrite-fallback.js"
 
 async function withSection(md: string, edit: (xml: string) => string): Promise<Uint8Array> {
   const zip = await JSZip.loadAsync(await markdownToHwpx(md))
@@ -120,11 +120,26 @@ describe("새로쓰기 대체본 (rewrite-fallback)", () => {
     assert.equal(rewritePath("/a/b/out.HWP"), "/a/b/out.rewrite.hwpx")
   })
 
+  it("HWP parse 기준 편집을 바꾼 판 parse 위로 옮긴다 — 표지·띄어쓰기는 바꾼 판 것, 바뀐 글만 편집본 것", () => {
+    // HWP 파서는 글자 크기로 # 제목을 달고 균등 배분 글자를 붙여 내고, HWPX 파서는 ** 굵게를 단다
+    const base = "### 공고 제1호\n\n# 재무상태표\n\n지울 문단\n\n본문 끝"
+    const target = "**공고 제1호**\n\n**재 무 상 태 표**\n\n지울 문단\n\n본문 끝"
+    assert.equal(rebaseEdits(base, "### 공고 제2호\n\n# 재무상태표 수정\n\n본문 끝\n\n새 문단", target),
+      "**공고 제2호**\n\n**재 무 상 태 표 수정**\n\n본문 끝\n\n새 문단")
+  })
+
+  it("바뀐 자리가 굵게·칸 경계를 가로지르거나 바꾼 판에서 짝을 못 찾으면 옮기지 않는다", () => {
+    assert.equal(rebaseEdits("가 나 다", "가 라 다", "**가 나** 다"), null)
+    assert.equal(rebaseEdits("<table><tr><td>A</td><td>B</td></tr></table>", "<table><tr><td>A1</td><td>B1</td></tr></table>",
+      "<table><tr><td>**A**</td><td>B</td></tr></table>"), null)
+    assert.equal(rebaseEdits("첫 문단\n\n둘째", "첫 문단 고침\n\n둘째", "전혀 다른 글\n\n둘째"), null)
+  })
+
   it("HWPX 원본은 견본으로 편집 내용 전부를 새로 쓴다", async () => {
     const src = new Uint8Array(await markdownToHwpx("# 제목\n\n□ 첫 항목\n\n| 구분 | 값 |\n| --- | --- |\n| 가 | 1 |"))
     const r = await rewriteEdited(src, true, "# 새 제목\n\n□ 바꾼 항목\n\n□ 늘린 항목\n\n| 구분 | 값 | 비고 |\n| --- | --- | --- |\n| 가 | 1 | 열 추가 |", false)
     assert.ok(r)
-    assert.equal(r.templated, true)
+    assert.equal(r.how, "template")
     const md = await markdownOf(r.data)
     for (const s of ["새 제목", "바꾼 항목", "늘린 항목", "열 추가"]) assert.ok(md.includes(s), md)
   })

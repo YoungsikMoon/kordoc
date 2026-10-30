@@ -371,7 +371,7 @@ export function registerDocCommands(program: Command): void {
 
   program
     .command("patch <original> <edited>")
-    .description("서식 보존 라운드트립 패치 — 편집된 마크다운을 원본 HWPX/HWP에 in-place 반영 (kordoc patch 원본.hwpx 편집.md -o 출력.hwpx). 견본 서식 그대로 새 문서 쓰기(서식 베끼기)도 이 경로: 견본을 --keep-layout-tables 로 읽어 내용만 새로 쓴 뒤 patch — HWPX 는 문단 추가·삭제를 같은 항목 부호 견본 문단 서식으로 반영. 제자리 반영 못 한 편집이 있으면 편집 내용을 다 담은 대체본 <출력>.rewrite.hwpx(원본 서식 새로쓰기)도 쓰고 exit 2")
+    .description("서식 보존 라운드트립 패치 — 편집된 마크다운을 원본 HWPX/HWP에 in-place 반영 (kordoc patch 원본.hwpx 편집.md -o 출력.hwpx). 견본 서식 그대로 새 문서 쓰기(서식 베끼기)도 이 경로: 견본을 --keep-layout-tables 로 읽어 내용만 새로 쓴 뒤 patch — HWPX 는 문단 추가·삭제를 같은 항목 부호 견본 문단 서식으로 반영. 제자리 반영 못 한 편집(HWP 의 문단 추가·삭제 등)이 있으면 편집 내용을 다 담은 대체본 <출력>.rewrite.hwpx(HWP 는 서식 그대로 HWPX 로 바꿔 반영, HWPX 는 원본 서식 새로쓰기)도 쓰고 exit 2")
     .option("-o, --output <path>", "출력 경로 (기본: <원본>.patched.hwpx|.hwp)")
     .option("--no-verify", "패치 후 재파싱 자동 검증 생략")
     .option("--no-structure", "문단 추가·삭제를 반영하지 않고 건너뜀 (HWPX — 글 수정만, 문서 골격 고정)")
@@ -401,7 +401,7 @@ export function registerDocCommands(program: Command): void {
         if (rewrite && rewriteOut) {
           mkdirSync(dirname(rewriteOut), { recursive: true })
           writeFileSync(rewriteOut, rewrite.data)
-          if (!silent && !opts.json) process.stderr.write(`[kordoc] 대체본(편집 내용 전부 반영, ${rewrite.templated ? "원본 서식 견본" : "kordoc 기본 서식"}) → ${rewriteOut}\n`)
+          if (!silent && !opts.json) process.stderr.write(`[kordoc] 대체본(편집 내용 전부 반영, ${{ patch: "원본 서식 그대로 HWPX 로 바꿔 반영", template: "원본 서식 견본", plain: "kordoc 기본 서식" }[rewrite.how]}) → ${rewriteOut}\n`)
         }
 
         if (!result.success || !result.data) {

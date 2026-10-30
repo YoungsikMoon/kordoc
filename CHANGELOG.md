@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- patch(HWP 5.x) 대체본: 제자리 반영 못 한 편집(문단 추가·삭제 등)을 담는 대체본(`<출력>.rewrite.hwpx`)을 kordoc 기본 서식 대신 원본 서식으로 만든다. HWP 를 서식 그대로 바꾼 HWPX 에 편집을 제자리 반영하고 — HWP·HWPX 파서가 같은 문서에도 달리 다는 제목·굵게 표지와 띄어쓰기는 바꾼 판 것을 두고 바뀐 글만 옮겨 싣는다 — 편집 글이 다 들어갔는지 확인한다. 거기서도 남는 편집(표 안 문단 삭제 등)이 있으면 바꾼 판을 견본으로 새로 쓴다. 코퍼스 실험(HWP 101문서에 글 5곳 고침·문단 넣기·빼기, 대체본 98건): 원본 그대로 반영 0 → **90**, 원본 견본 0 → 8, kordoc 기본 서식 98 → 0. 배포용 문서는 예전처럼 대체본을 만들지 않는다.
+
 ## [4.24.26] - 2026-10-31
 
 ### Fixed

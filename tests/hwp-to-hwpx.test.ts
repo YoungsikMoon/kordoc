@@ -12,8 +12,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import JSZip from "jszip"
-import { hwpToHwpx, convertToHwpx, parse } from "../src/index.js"
+import { hwpToHwpx, convertToHwpx, parse, patchHwp } from "../src/index.js"
 import { registerConvertTools } from "../src/mcp/tools-convert.js"
+import { needsRewrite, rewriteEdited } from "../src/roundtrip/rewrite-fallback.js"
 
 const require = createRequire(import.meta.url)
 const CFB = require("cfb")
@@ -124,6 +125,22 @@ describe("hwpToHwpx — 합성 문서", () => {
     }
     assert.equal(await zip.file("mimetype")!.async("string"), "application/hwp+zip")
     assert.equal(await zip.file("Preview/PrvText.txt")!.async("string"), "미리보기")
+  })
+})
+
+describe("patch 대체본 — HWP 원본", () => {
+  it("HWP 제자리 수정이 못 하는 문단 추가를 서식 그대로 바꾼 HWPX 에 그 자리에서 반영한다", async () => {
+    const hwp = buildHwp(Buffer.concat([paragraph("첫 문단", [[0, 0]], 0, 11), paragraph("둘째 문단", [[0, 1]], 0, 12), paragraph("셋째 문단", [[0, 0]], 0, 13)]))
+    const edited = "첫 문단 고침\n\n둘째 문단\n\n늘린 문단\n\n셋째 문단"
+    assert.ok(needsRewrite(await patchHwp(hwp, edited)))
+    const r = await rewriteEdited(hwp, false, edited, true)
+    assert.ok(r)
+    assert.equal(r.how, "patch")
+    const md = (await parse(r.data.buffer.slice(r.data.byteOffset, r.data.byteOffset + r.data.byteLength) as ArrayBuffer, { layoutTables: "keep" })).markdown
+    assert.equal(md.trim(), edited)
+    const xml = await sectionOf(r.data)
+    for (const id of [11, 12, 13]) assert.match(xml, new RegExp(`<hp:p id="${id}"`))
+    assert.match(xml, /<hp:run charPrIDRef="1"><hp:t>둘째 문단<\/hp:t>/)
   })
 })
 
