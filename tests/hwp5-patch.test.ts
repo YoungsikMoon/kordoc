@@ -275,6 +275,19 @@ describe("patchHwp — 문단 텍스트 교체", () => {
   })
 })
 
+describe("patchHwp — 같은 글 문단", () => {
+  it("같은 글이 본문과 표 칸에 함께 있어도 본문끼리 등장 순서로 짝짓는다 (칸은 표 경로 몫)", async () => {
+    const hwp = buildHwp([paragraph("연구소장 귀하"), table2x2([["연구소장 귀하", "가"], ["나", "다"]]), paragraph("연구소장 귀하")])
+    const md = parseHwp5Document(Buffer.from(hwp), { layoutTables: "keep" }).markdown
+    assert.equal(md.split("연구소장 귀하").length - 1, 3, md)
+    const i = md.lastIndexOf("연구소장 귀하")
+    const edited = md.slice(0, i) + "연구소장 귀하 수정" + md.slice(i + "연구소장 귀하".length)
+    const r = await patchHwp(hwp, edited)
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.equal(parseHwp5Document(Buffer.from(r.data!), { layoutTables: "keep" }).markdown, edited)
+  })
+})
+
 describe("patchHwp — 표 셀", () => {
   it("GFM 표 셀 수정이 좌표 기반으로 적용된다", async () => {
     const hwp = buildHwp([

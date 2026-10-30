@@ -448,7 +448,8 @@ interface ParaMapping5 {
 /**
  * 같은 정규화 텍스트끼리 등장 순서대로 페어링 (중복 문단 대응) — HWPX 패처와 동일 방식.
  * 셀 문단도 버킷에 포함 (flattenLayoutTables로 해체된 레이아웃 표 문단이 IR에선 문단 블록).
- * 단, 같은 텍스트가 여러 위치에 있고 본문 문단만으로 구성되지 않으면 모호 — 매핑 포기.
+ * 단, 같은 텍스트가 여러 위치에 있고 본문 문단만으로 구성되지 않으면 모호 — 매핑 포기. 다만 칸 문단 수가 IR 표 칸 등장 수와 같고
+ * 본문 문단 수가 IR 문단 등장 수와 같으면 칸은 표 경로 몫이므로 본문 문단끼리 순서대로 짝짓는다("○○소장 귀하"가 본문과 서식 표에)
  */
 function resolveParaMappings(blocks: IRBlock[], scans: SectionScan5[]): Map<number, ParaMapping5> {
   const buckets = new Map<string, ScanPara5[]>()
@@ -462,9 +463,20 @@ function resolveParaMappings(blocks: IRBlock[], scans: SectionScan5[]): Map<numb
       list.push(para)
     }
   }
-  /** 중복 텍스트는 전부 본문 문단일 때만 등장 순서 페어링 신뢰 가능 */
-  const usable = (list: ScanPara5[]): boolean =>
-    list.length === 1 || list.every(p => p.kind === "body")
+  // IR 문단 블록·표 칸(칸은 한 번씩, 줄마다)에 나오는 횟수
+  const irParas = new Map<string, number>(), inTables = new Map<string, number>()
+  const bump = (m: Map<string, number>, k: string): void => { if (k) m.set(k, (m.get(k) ?? 0) + 1) }
+  for (const b of blocks) {
+    if ((b.type === "paragraph" || b.type === "heading") && b.text) bump(irParas, normForMatch(b.text))
+    if (b.type !== "table" || !b.table) continue
+    for (const cell of new Set(b.table.cells.flat())) if (cell) for (const line of cell.text.split("\n")) bump(inTables, normForMatch(line))
+  }
+  /** 등장 순서로 짝지을 문단 목록 — 하나뿐이거나 전부 본문이면 그대로, 칸이 섞였으면 위 조건일 때 본문만, 아니면 null(모호) */
+  const pairable = (key: string, list: ScanPara5[]): ScanPara5[] | null => {
+    if (list.length === 1 || list.every(p => p.kind === "body")) return list
+    const body = list.filter(p => p.kind === "body")
+    return body.length && body.length === (irParas.get(key) ?? 0) && list.length - body.length === (inTables.get(key) ?? 0) ? body : null
+  }
 
   const counters = new Map<string, number>()
   const result = new Map<number, ParaMapping5>()
@@ -481,8 +493,9 @@ function resolveParaMappings(blocks: IRBlock[], scans: SectionScan5[]): Map<numb
         if (alt && buckets.has(alt)) { key = alt; prefixStripped = true }
       }
     }
-    const list = buckets.get(key)
-    if (!list || !usable(list)) { result.set(i, {}); continue }
+    const found = buckets.get(key)
+    const list = found ? pairable(key, found) : null
+    if (!list) { result.set(i, {}); continue }
     const occ = counters.get(key) ?? 0
     counters.set(key, occ + 1)
     result.set(i, occ < list.length ? { para: list[occ], prefixStripped } : {})
