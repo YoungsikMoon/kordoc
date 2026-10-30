@@ -580,6 +580,14 @@ function mergeSplitRow(table: IRTable, owner: (Anchor | null)[][], first: number
   // 나머지는 앞 행에서 끝나는 칸과 뒤 행에서 시작하는 칸의 열 범위가 같아야 한다
   const pairs: Array<[Anchor, Anchor]> = []
   let carried = false
+  // 뒤 조각 첫 행에서 시작하는 한 행 칸이 모두 비고, 글은 앞 조각에서도 여러 행을 덮던 칸의 나머지(뒤 조각에서도 여러 행 칸)뿐이면
+  // 그 행은 앞 쪽 끝 행이 갈려 넘어온 띠다 — 새 행이면 한 행 칸에 글이 있다(가산대상 자격증 "전송기술" 행이 갈리고 옆 4행 병합 칸
+  // "기술사: … / 기능사: …" 나머지가 다음 쪽 첫 띠를 차지, 다음 행 "전자통신기술" 은 그 아래 — 띠를 새 행으로 두면 91행, HWP 90행)
+  const starts: Anchor[] = []
+  for (let c = 0; c < table.cols;) { const b = owner[first][c]; if (b && b.r === first) starts.push(b); c = b ? b.c + b.cs : c + 1 }
+  const tall = starts.filter(b => b.rs > 1 && hasContent(b.cell))
+  const band = !textOnly && tall.length > 0 && starts.every(b => b.rs > 1 || !hasContent(b.cell))
+    && tall.every(b => { const a = owner[last][b.c]; return !!a && a.rs > 1 && a.c === b.c && a.cs === b.cs && a.r + a.rs - 1 === last && hasContent(a.cell) })
   for (let c = 0; c < table.cols;) {
     const a = owner[last][c], b = owner[first][c]
     // 두 쪽 모두 클립이 없던 자리 — 글 없는 칸이 쪽을 넘은 부분이다 (행정업무운영 편람 신구조문 대비표: 시행규칙 쪽이 빈 조문 행이
@@ -593,7 +601,7 @@ function mergeSplitRow(table: IRTable, owner: (Anchor | null)[][], first: number
       // 위반한 경우" 가 다음 쪽 두 행을 덮는다). 앞 쪽 칸이 비었으면 새로 시작한 세로 병합 이름표(가산대상 자격증 빈 칸 아래 "임업"),
       // 앞 쪽에서도 여러 행을 덮었으면 행은 새로 시작하고 이름표만 쪽 경계를 넘은 것이다(과태료 기준 "…준용하는 / 경우를 포함한다)" 옆
       // "5회 | 70만원" / "6회 | 90만원" — mergeStraddlingCells 가 잇는다)
-      if (b.rs > 1 && (a.rs > 1 || !hasContent(a.cell))) return false
+      if (b.rs > 1 && (a.rs > 1 || !hasContent(a.cell)) && !band) return false
       pairs.push([a, b])
     } else if (a.r === last && a.rs === 2) carried = true // 앞 쪽 끝 행에서 시작한 칸을 뒤 쪽 첫 행 빈 자리로만 이어 늘렸다 — 더 아래까지
     // 비어 있으면 뒤 쪽 여러 행을 덮는 세로 병합 칸이다(규제영향분석서 "기타"). 쪼개진 행의 이어진 조각은 첫 행 띠 하나다
@@ -620,7 +628,7 @@ function mergeSplitRow(table: IRTable, owner: (Anchor | null)[][], first: number
   const contentPairs = pairs.filter(([u, d]) => hasContent(u.cell) && hasContent(d.cell))
   const carriedSplit = !textOnly && carried && !newCell && (contentPairs.length <= 1 || contentPairs.every(([, d]) => d.rs > 1)
     || (!cut.ruled && contentPairs.some(([u, d]) => wordOverflows(cell(u), cell(d), colXs[u.c], colXs[u.c + u.cs]))))
-  if (!carriedSplit) {
+  if (!carriedSplit && !band) {
     // 앞 쪽 칸이 한 줄로 끝난 이름표(다음 어절이 들어갈 자리가 남음)인데 뒤 쪽 같은 열에 다른 글이 있으면 그 열은 새 칸이다 — 끝난 칸의
     // 이어진 조각은 글이 없어 클립조차 없다. 다른 열 끝줄이 꽉 찬 것(글 이어짐)보다 이 모순이 앞선다 (편람 [별표 4] 가로 판
     // "8. 글자 | …꽉 찬 끝줄" 다음 쪽 "9. 한글과 함께 적는 외국글자 | 가. 단어를 …", 시험기준표 "액성한계·소성한계 | KS F 2303" 다음 쪽
