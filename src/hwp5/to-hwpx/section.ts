@@ -6,8 +6,8 @@
  * 하이픈)은 hp:t 안 요소, 개체(표·그림·도형·수식)는 hp:t 와 같은 run 의 형제다. 줄 나눔 정보(PARA_LINE_SEG)는 hp:linesegarray.
  */
 
-import { Cur, type RecNode, el, esc, escText, color, bit, bits, pick, BORDER_TYPES, BORDER_WIDTHS, NUM_FORMATS } from "./util.js"
-import { XML_DECL, NS } from "./header.js"
+import { Cur, type RecNode, el, esc, escText, color, bit, bits, pick, readParamSet, subSet, type Param, BORDER_TYPES, BORDER_WIDTHS, NUM_FORMATS } from "./util.js"
+import { XML_DECL, NS, GRADATIONS } from "./header.js"
 import { controlXml, listGroups, subListAttrs, type ConvertContext } from "./controls.js"
 import { fieldEndXml } from "./fields.js"
 
@@ -35,7 +35,8 @@ export function paragraphsXml(nodes: RecNode[], ctx: ConvertContext): string {
 }
 
 /** 글 토큰 — 글자, 인라인 요소(hp:t 안), 개체·컨트롤 요소(run 형제) */
-type Tok = { pos: number; t: "text"; s: string } | { pos: number; t: "inline"; xml: string } | { pos: number; t: "ctrl"; xml: string; obj: boolean; def?: boolean }
+type Tok = { pos: number; t: "text"; s: string } | { pos: number; t: "inline"; xml: string; mark?: boolean }
+  | { pos: number; t: "ctrl"; xml: string; obj: boolean; def?: boolean }
 
 function paragraphXml(p: RecNode, ctx: ConvertContext): string {
   const h = new Cur(p.rec.data)
@@ -50,20 +51,25 @@ function paragraphXml(p: RecNode, ctx: ConvertContext): string {
   const text = texts.length ? Buffer.concat(texts.map(k => k.rec.data)) : Buffer.alloc(0)
   const csNode = p.kids.find(k => k.rec.tagId === TAG.PARA_CHAR_SHAPE)
   const runs: Array<[number, number]> = []
-  // 같은 글자 모양이 잇달아 오는 경계는 한글이 run 하나로 합쳐 저장한다
+  // 같은 글자 모양이 잇달아 오는 경계는 한글이 run 하나로 합쳐 저장한다 — 문단 끝(CR) 자리에서 시작하는 구간은 빈 run 으로 남긴다
+  const crPos = text.length / 2 - 1
   if (csNode) for (const c = new Cur(csNode.rec.data); c.rest >= 8;) {
     const pos = c.u32(), id = c.u32()
-    if (!runs.length || runs[runs.length - 1][1] !== id) runs.push([pos, id])
+    if (!runs.length || runs[runs.length - 1][1] !== id || pos >= crPos) runs.push([pos, id])
   }
   if (!runs.length) runs.push([0, 0])
   const ctrls = p.kids.filter(k => k.rec.tagId === TAG.CTRL_HEADER)
-  const toks = tokenize(text, ctrls, ctx, new Set(runs.map(r => r[0])))
+  const toks = tokenize(text, ctrls, ctx, new Set(runs.map(r => r[0])), rangeMarks(p.kids.find(k => k.rec.tagId === TAG.PARA_RANGE_TAG)))
 
   const units = text.length / 2
+  const hasCtrl = toks.some(t => t.t === "ctrl")
   let body = ""
   for (let i = 0; i < runs.length; i++) {
     const from = runs[i][0], to = i + 1 < runs.length ? runs[i + 1][0] : Math.max(units, nChars)
-    body += runXml(runs[i][1], toks.filter(t => t.pos >= from && t.pos < to))
+    let seg = toks.filter(t => t.pos >= from && t.pos < to)
+    // 문단 끝(CR)만 담은 run — 문단에 개체·컨트롤이 있으면 빈 글 마디를 둔다(없으면 빈 run)
+    if (!seg.length && i > 0 && from >= crPos && hasCtrl) seg = [{ pos: from, t: "text", s: "" }]
+    body += runXml(runs[i][1], seg)
   }
 
   const ls = p.kids.find(k => k.rec.tagId === TAG.PARA_LINE_SEG)
@@ -79,8 +85,26 @@ function paragraphXml(p: RecNode, ctx: ConvertContext): string {
     ["columnBreak", bit(breaks, 3)], ["merged", merged]], body)
 }
 
+/** 영역 태그(PARA_RANGE_TAG: 시작·끝 위치, 종류 상위 8비트·데이터 하위 24비트) → 글자 위치마다 그 글자 앞에 둘 인라인 요소. 형광펜(종류 2, 데이터는 색)만 옮긴다 */
+function rangeMarks(node: RecNode | undefined): Map<number, string[]> {
+  const marks = new Map<number, string[]>()
+  if (!node) return marks
+  const add = (pos: number, xml: string, first: boolean): void => {
+    const list = marks.get(pos) ?? []
+    if (first) list.unshift(xml); else list.push(xml)
+    marks.set(pos, list)
+  }
+  for (const c = new Cur(node.rec.data); c.rest >= 12;) {
+    const start = c.u32(), end = c.u32(), tag = c.u32()
+    if (tag >>> 24 !== 2 || end <= start) continue
+    add(start, el("hp:markpenBegin", [["color", color(tag & 0xffffff)]]), false)
+    add(end, "<hp:markpenEnd/>", true) // 같은 자리에서는 앞 영역을 닫고 연다
+  }
+  return marks
+}
+
 /** 글 → 토큰. 글은 글자 모양 구간 경계(cuts)에서 끊는다 */
-function tokenize(text: Buffer, ctrls: RecNode[], ctx: ConvertContext, cuts: Set<number>): Tok[] {
+function tokenize(text: Buffer, ctrls: RecNode[], ctx: ConvertContext, cuts: Set<number>, marks: Map<number, string[]>): Tok[] {
   const toks: Tok[] = []
   const n = text.length / 2
   let ci = 0
@@ -89,6 +113,8 @@ function tokenize(text: Buffer, ctrls: RecNode[], ctx: ConvertContext, cuts: Set
   for (let i = 0; i < n;) {
     const c = text.readUInt16LE(i * 2)
     if (cuts.has(i)) flush()
+    const mk = marks.get(i)
+    if (mk) { flush(); for (const xml of mk) toks.push({ pos: i, t: "inline", xml, mark: true }) }
     if (c >= 32) {
       if (!buf) bufPos = i
       buf += String.fromCharCode(c)
@@ -98,7 +124,7 @@ function tokenize(text: Buffer, ctrls: RecNode[], ctx: ConvertContext, cuts: Set
     flush()
     if (CHAR_CTRL.has(c)) {
       if (c === 10) toks.push({ pos: i, t: "inline", xml: "<hp:lineBreak/>" })
-      else if (c === 24) toks.push({ pos: i, t: "inline", xml: "<hp:hyphen/>" })
+      else if (c === 24) toks.push({ pos: i, t: "inline", xml: "<hp:hypen/>" }) // 한글 저장 이름 그대로(hypen)
       else if (c === 30) toks.push({ pos: i, t: "inline", xml: "<hp:nbSpace/>" })
       else if (c === 31) toks.push({ pos: i, t: "inline", xml: "<hp:fwSpace/>" })
       i++
@@ -113,7 +139,7 @@ function tokenize(text: Buffer, ctrls: RecNode[], ctx: ConvertContext, cuts: Set
       } else if (c === 4) {
         toks.push({ pos: i, t: "ctrl", obj: false, xml: fieldEndXml(ctx.fields) })
       } else if (c === 8) {
-        toks.push({ pos: i, t: "inline", xml: el("hp:titleMark", [["ignore", 0]]) })
+        toks.push({ pos: i, t: "inline", xml: el("hp:titleMark", [["ignore", 1]]) })
       }
       i += 8
       continue
@@ -127,6 +153,8 @@ function tokenize(text: Buffer, ctrls: RecNode[], ctx: ConvertContext, cuts: Set
     i += 8
   }
   flush()
+  // 글 끝 너머에서 닫히는 영역은 마지막 글자 자리에서 닫는다(짝이 깨지지 않게)
+  for (const [pos, list] of marks) if (pos >= n) for (const xml of list) toks.push({ pos: Math.max(0, n - 1), t: "inline", xml, mark: true })
   // 컨트롤 뒤 글 자리 — 바로 뒤(8 WCHAR 다음)에 아무것도 없으면(문단 끝) 빈 글을 둔다. 그 자리가 다음 글자 모양 구간이면 빈 hp:t 도
   // 다음 run 에 든다. 개체가 잇달아 오면(수식 둘) 사이에 빈 글이 없다
   for (let k = toks.length - 1; k >= 0; k--) {
@@ -147,16 +175,19 @@ function runXml(charShape: number, toks: Tok[]): string {
   const closeT = (): void => { if (t !== null) out += t ? `<hp:t>${t}</hp:t>` : "<hp:t/>"; t = null }
   toks.forEach((k, i) => {
     if (k.t === "text") t = (t ?? "") + escText(k.s)
+    // 영역 표시(형광펜) 바로 뒤가 개체면 글 마디 밖, run 바로 아래에 둔다
+    else if (k.t === "inline" && k.mark && toks[i + 1]?.t === "ctrl") { closeT(); out += k.xml }
     else if (k.t === "inline") t = (t ?? "") + k.xml
     else {
       closeT()
       out += k.xml
       const next = toks[i + 1]
-      if (k.def && next && !(next.t === "ctrl" && next.def)) out += "</hp:run>" + open
+      if (k.def && !(next?.t === "ctrl" && next.def)) out += "</hp:run>" + open
     }
   })
   closeT()
-  return open + out + "</hp:run>"
+  // 정의 뒤 내용이 없으면 같은 글자 모양의 빈 run 이 남는다
+  return (open + out + "</hp:run>").replace(`${open}</hp:run>`, el("hp:run", [["charPrIDRef", charShape]]))
 }
 
 /** 섹션 레코드 트리 → sectionN.xml */
@@ -229,9 +260,28 @@ export function secPrXml(node: RecNode, ctx: ConvertContext): string {
       borders++
     }
   }
+  const data = node.kids.find(k => k.rec.tagId === TAG.CTRL_DATA)
   return el("hp:secPr", [["id", ""], ["textDirection", bits(a, 16, 3) ? "VERTICAL" : "HORIZONTAL"], ["spaceColumns", spaceColumns],
     ["tabStop", tabStop], ["tabStopVal", Math.trunc(tabStop / 2)], ["tabStopUnit", "HWPUNIT"], ["outlineShapeIDRef", outline],
-    ["memoShapeIDRef", ctx.memoShapes ? 1 : 0], ["textVerticalWidthHead", 0], ["masterPageCnt", masters.length]], inner + masters.join(""))
+    ["memoShapeIDRef", ctx.memoShapes ? 1 : 0], ["textVerticalWidthHead", 0], ["masterPageCnt", masters.length]],
+    inner + masters.join("") + (data ? presentationXml(data.rec.data) : ""))
+}
+
+/**
+ * 구역 정의 매개변수 묶음의 프레젠테이션(쪽 전환) 설정 → hp:presentation. 한글이 이 묶음을 두는 문서는 기본값(효과 없음·문서 전체·
+ * 그러데이션 배경)이다 — 그 밖의 효과·적용 범위·채우기는 이름 대응을 모르므로 쓰지 않는다
+ */
+function presentationXml(data: Buffer): string {
+  const p = subSet(readParamSet(data, { o: 0 }), 0x219)
+  const fill = subSet(p ?? undefined, 0x266)
+  if (!p || !fill || p[0x4000] || p[0x4005] || fill[0x4001] !== 4) return ""
+  const num = (v: Param | undefined): number => (typeof v === "number" ? v : 0)
+  const colors = Array.isArray(fill[0x4008]) ? fill[0x4008].slice(0, num(fill[0x4007])) : []
+  return el("hp:presentation", [["effect", "none"], ["soundIDRef", ""], ["invertText", num(p[0x4002])], ["autoshow", num(p[0x4003])],
+    ["showtime", num(p[0x4004])], ["applyto", "WholeDoc"]],
+    `<hc:fillBrush>${el("hc:gradation", [["type", pick(GRADATIONS, num(fill[0x4002]))], ["angle", num(fill[0x4003])], ["centerX", num(fill[0x4004])],
+      ["centerY", num(fill[0x4005])], ["step", num(fill[0x4006])], ["colorNum", colors.length], ["stepCenter", num(fill[0x400a])], ["alpha", 0]],
+    colors.map(v => el("hc:color", [["value", color(v)]])).join(""))}</hc:fillBrush>`)
 }
 
 const MASTER_KINDS = ["BOTH", "EVEN", "ODD"] as const

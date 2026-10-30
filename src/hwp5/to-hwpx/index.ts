@@ -104,7 +104,6 @@ export async function hwpToHwpx(input: Uint8Array | ArrayBuffer, options?: HwpTo
   const ctx: ConvertContext = {
     memoShapes: docInfo.filter(r => r.tagId === TAG_MEMO_SHAPE).length,
     fields: { stack: [] },
-    headerFooterId: 0,
     masterPages: [],
     chartOf(binId) {
       if (chartByBin.has(binId)) return chartByBin.get(binId)!

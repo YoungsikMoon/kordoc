@@ -46,8 +46,10 @@ export function otherControlXml(id: string, node: RecNode, ctx: ConvertContext):
   switch (id) {
     case "head":
     case "foot": {
-      const a = data(node).u32()
-      return ctrl(el(id === "head" ? "hp:header" : "hp:footer", [["id", ctx.headerFooterId++], ["applyPageType", pick(PAGE_APPLY, bits(a, 0, 2))]],
+      // 속성 뒤 일련번호가 HWPX id 다
+      const c = data(node)
+      const a = c.u32(), serial = c.u32()
+      return ctrl(el(id === "head" ? "hp:header" : "hp:footer", [["id", serial], ["applyPageType", pick(PAGE_APPLY, bits(a, 0, 2))]],
         subListXml(node, ctx, true)))
     }
     case "fn  ":

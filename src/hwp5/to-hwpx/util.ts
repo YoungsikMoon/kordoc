@@ -95,3 +95,34 @@ export const BORDER_WIDTHS = ["0.1 mm", "0.12 mm", "0.15 mm", "0.2 mm", "0.25 mm
 export const NUM_FORMATS = ["DIGIT", "CIRCLED_DIGIT", "ROMAN_CAPITAL", "ROMAN_SMALL", "LATIN_CAPITAL", "LATIN_SMALL", "CIRCLED_LATIN_CAPITAL",
   "CIRCLED_LATIN_SMALL", "HANGUL_SYLLABLE", "CIRCLED_HANGUL_SYLLABLE", "HANGUL_JAMO", "CIRCLED_HANGUL_JAMO", "HANGUL_PHONETIC",
   "IDEOGRAPH", "CIRCLED_IDEOGRAPH", "DECAGON_CIRCLE", "DECAGON_CIRCLE_HANJA"] as const
+
+export type Param = number | number[] | ParamSet
+export interface ParamSet { [id: number]: Param }
+
+/** 매개변수 묶음(CTRL_DATA) — 묶음 id(WORD)·항목 수(DWORD), 항목마다 id(WORD)·종류(WORD)·값. 묶음 안 묶음(0x8000)·배열(0x8001: 개수 WORD·0·종류+값)은 펼친다 */
+export function readParamSet(d: Buffer, at: { o: number }): ParamSet {
+  const set: ParamSet = {}
+  if (at.o + 6 > d.length) return set
+  const n = d.readUInt32LE(at.o + 2)
+  at.o += 6
+  for (let i = 0; i < n && at.o + 4 <= d.length; i++) {
+    const id = d.readUInt16LE(at.o), type = d.readUInt16LE(at.o + 2)
+    at.o += 4
+    if (type === 0x8000) set[id] = readParamSet(d, at)
+    else if (type === 0x8001) {
+      const cnt = d.readUInt16LE(at.o), arr: number[] = []
+      at.o += 4
+      for (let j = 0; j < cnt && at.o + 6 <= d.length; j++, at.o += 6) arr.push(d.readUInt32LE(at.o + 2))
+      set[id] = arr
+    } else if (type === 0x8002) { set[id] = d.readUInt16LE(at.o); at.o += 2 }
+    else if (type === 1) { at.o += 2 + d.readUInt16LE(at.o) * 2; set[id] = 0 }
+    else { set[id] = d.readInt32LE(at.o); at.o += 4 }
+  }
+  return set
+}
+
+/** 묶음 안 묶음(SET) 하나 — 없으면 null */
+export function subSet(set: ParamSet | undefined, id: number): ParamSet | null {
+  const v = set?.[id]
+  return v && typeof v === "object" && !Array.isArray(v) ? v : null
+}

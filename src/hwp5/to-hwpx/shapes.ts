@@ -113,7 +113,8 @@ function shapeXml(comp: RecNode, o: ObjCommon | null, description: string, ctx: 
   const sub = (tag: number): Cur => new Cur(comp.kids.find(x => x.rec.tagId === tag)?.rec.data ?? Buffer.alloc(0))
   const head: Array<[string, string | number]> = o ? objHeadAttrs(o)
     : [["id", 0], ["zOrder", 0], ["numberingType", "NONE"], ["textWrap", "TOP_AND_BOTTOM"], ["textFlow", "BOTH_SIDES"], ["lock", 0], ["dropcapstyle", "None"]]
-  const tail = (o ? objPlacementXml(o) + caption : "") + (o && description ? `<hp:shapeComment>${escText(description)}</hp:shapeComment>` : "")
+  const comment = o && description ? `<hp:shapeComment>${escText(description)}</hp:shapeComment>` : ""
+  const tail = (o ? objPlacementXml(o) + caption : "") + comment
   const common = componentHeadXml(k)
 
   if (k.kind === "$pic") {
@@ -140,7 +141,7 @@ function shapeXml(comp: RecNode, o: ObjCommon | null, description: string, ctx: 
       + "<hp:effects/>" + tail)
   }
 
-  if (k.kind === "$ole") return oleXml(comp, k, head, common, o, tail, ctx)
+  if (k.kind === "$ole") return oleXml(comp, k, head, common, o, caption, comment, ctx)
 
   if (k.kind === "$con") {
     const kids = comp.kids.filter(x => x.rec.tagId === TAG.SHAPE_COMPONENT).map(x => shapeXml(x, null, "", ctx, "")).join("")
@@ -224,8 +225,8 @@ const CHART_NS = "http://www.hancom.co.kr/hwpml/2016/ooxmlchart"
  * OLE 개체 — 속성(그리기 방식·모니커·기준선·개체 종류)·크기·BinData id·테두리. 차트 OLE(스토리지에 OOXML 차트 스트림이 있음)는
  * 한글처럼 hp:switch 의 차트 갈래(Chart/chartN.xml)와 OLE 기본 갈래로 쓴다
  */
-function oleXml(comp: RecNode, k: Component, head: Array<[string, string | number]>, common: string, o: ObjCommon | null, tail: string,
-  ctx: ConvertContext): string {
+function oleXml(comp: RecNode, k: Component, head: Array<[string, string | number]>, common: string, o: ObjCommon | null, caption: string,
+  comment: string, ctx: ConvertContext): string {
   const r = new Cur(comp.kids.find(x => x.rec.tagId === TAG_SHAPE.OLE)?.rec.data ?? Buffer.alloc(0))
   const a = r.u32(), ex = r.i32(), ey = r.i32(), binId = r.u16()
   const lineColor = r.u32(), lineWidth = r.i32(), la = r.u32()
@@ -234,12 +235,14 @@ function oleXml(comp: RecNode, k: Component, head: Array<[string, string | numbe
     ["headfill", bit(la, 30)], ["tailfill", bit(la, 31)], ["headSz", pick(ARROW_SIZES, bits(la, 22, 4))], ["tailSz", pick(ARROW_SIZES, bits(la, 26, 4))],
     ["outlineStyle", "NORMAL"], ["alpha", 0]])
   const chart = o ? ctx.chartOf(binId) : null
+  // 차트의 OLE 기본 갈래는 조판 전 꼴로 쓴다 — 캡션 마지막 줄 폭 0xFFFFFFFF, 줄 나눔 정보 없음. 조판된 캡션은 차트 갈래에 둔다
+  const oleCaption = chart ? caption.replace(/ lastWidth="\d+"/, ' lastWidth="4294967295"').replace(/<hp:linesegarray>[\s\S]*?<\/hp:linesegarray>/g, "") : caption
   const ole = el("hp:ole", [...head, ["href", ""], ["groupLevel", k.groupLevel], ["instid", 0], ["objectType", pick(OLE_TYPES, bits(a, 16, 6))],
     ["binaryItemIDRef", ctx.oleRef(binId, !!chart)], ["hasMoniker", bit(a, 8)], ["drawAspect", OLE_ASPECTS[bits(a, 0, 8)] ?? "CONTENT"],
     ["eqBaseLine", bits(a, 9, 7)]],
-  common + el("hc:extent", [["x", ex], ["y", ey]]) + line + tail)
+  common + el("hc:extent", [["x", ex], ["y", ey]]) + line + (o ? objPlacementXml(o) + oleCaption : "") + comment)
   if (!chart) return ole
-  const chartEl = el("hp:chart", [...head, ["chartIDRef", chart]], objPlacementXml(o!))
+  const chartEl = el("hp:chart", [...head, ["chartIDRef", chart]], objPlacementXml(o!) + caption)
   return `<hp:switch><hp:case hp:required-namespace="${CHART_NS}">${chartEl}</hp:case><hp:default>${ole}</hp:default></hp:switch>`
 }
 

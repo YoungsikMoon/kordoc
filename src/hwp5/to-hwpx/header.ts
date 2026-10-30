@@ -49,7 +49,7 @@ const HEADING_TYPES = ["NONE", "OUTLINE", "NUMBER", "BULLET"] as const
 const LATIN_BREAKS = ["KEEP_WORD", "HYPHENATION", "BREAK_WORD"] as const
 const LINE_WRAPS = ["BREAK", "SQUEEZE", "KEEP"] as const
 const LINE_SPACINGS = ["PERCENT", "FIXED", "BETWEEN_LINES", "AT_LEAST"] as const
-const GRADATIONS = ["LINEAR", "LINEAR", "RADIAL", "CONICAL", "SQUARE"] as const
+export const GRADATIONS = ["LINEAR", "LINEAR", "RADIAL", "CONICAL", "SQUARE"] as const
 const IMG_MODES = ["TILE", "TILE_HORZ_TOP", "TILE_HORZ_BOTTOM", "TILE_VERT_LEFT", "TILE_VERT_RIGHT", "TOTAL", "CENTER", "CENTER_TOP",
   "CENTER_BOTTOM", "LEFT_CENTER", "LEFT_TOP", "LEFT_BOTTOM", "RIGHT_CENTER", "RIGHT_TOP", "RIGHT_BOTTOM", "ZOOM"] as const
 const IMG_EFFECTS = ["REAL_PIC", "GRAY_SCALE", "BLACK_WHITE", "PATTERN8x8"] as const
@@ -61,7 +61,8 @@ export type BinRef = (binId: number) => string
 
 /** 그림 채우기의 그림 — 밝기·명암·효과·BinData id */
 export function imgXml(c: Cur, alpha: number, ref: BinRef): string {
-  const bright = c.i8(), contrast = c.i8(), effect = c.u8(), id = c.u16()
+  // 그림 개체(SHAPE_COMPONENT_PICTURE)와 같이 명암이 먼저다 — 쪽 배경 워터마크(밝기 50·명암 -15)로 확인
+  const contrast = c.i8(), bright = c.i8(), effect = c.u8(), id = c.u16()
   return el("hc:img", [["binaryItemIDRef", id ? ref(id) : ""], ["bright", bright], ["contrast", contrast],
     ["effect", pick(IMG_EFFECTS, effect)], ["alpha", alpha]])
 }

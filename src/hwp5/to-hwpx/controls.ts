@@ -2,7 +2,7 @@
  * HWP 5.x 확장 컨트롤(CTRL_HEADER) → HWPX 요소. 구역·단 정의, 표, 개체 공통 위치·크기, 그리고 컨트롤별 모듈로 나눈다.
  */
 
-import { Cur, type RecNode, el, pick, bit, bits } from "./util.js"
+import { Cur, type RecNode, el, pick, bit, bits, readParamSet, subSet } from "./util.js"
 import { TAG, ctrlId, paragraphsXml, secPrXml, colPrXml } from "./section.js"
 import { fieldBeginXml, type FieldState } from "./fields.js"
 import { gsoXml } from "./shapes.js"
@@ -14,8 +14,6 @@ export interface ConvertContext {
   memoShapes: number
   /** 열린 필드 — 필드 끝 컨트롤이 짝을 찾는다 */
   fields: FieldState
-  /** 머리말·꼬리말 일련번호 */
-  headerFooterId: number
   /** 바탕쪽 파트(masterpageN.xml 내용) — 구역 정의를 만나는 차례로 쌓는다 */
   masterPages: string[]
   /** 차트 OLE(BIN_DATA 순번) → 차트 파트 경로, 차트가 아니면 null */
@@ -83,9 +81,19 @@ export function objPlacementXml(o: ObjCommon): string {
     ["heightRelTo", pick(HEIGHT_RELS, bits(a, 18, 2))], ["protect", bit(a, 20)]])
     + el("hp:pos", [["treatAsChar", bit(a, 0)], ["affectLSpacing", bit(a, 2)], ["flowWithText", bit(a, 13)], ["allowOverlap", bit(a, 14)],
       ["holdAnchorAndSO", o.keepWithAnchor], ["vertRelTo", pick(VERT_RELS, bits(a, 3, 2))], ["horzRelTo", pick(HORZ_RELS, bits(a, 8, 2))],
-      ["vertAlign", pick(VERT_ALIGNS, bits(a, 5, 3))], ["horzAlign", pick(HORZ_ALIGNS, bits(a, 10, 3))], ["vertOffset", o.vertOffset],
-      ["horzOffset", o.horzOffset]])
+      ["vertAlign", pick(VERT_ALIGNS, bits(a, 5, 3))], ["horzAlign", pick(HORZ_ALIGNS, bits(a, 10, 3))], ["vertOffset", o.vertOffset >>> 0],
+      ["horzOffset", o.horzOffset >>> 0]])
     + el("hp:outMargin", [["left", o.margin[0]], ["right", o.margin[1]], ["top", o.margin[2]], ["bottom", o.margin[3]]])
+}
+
+/** 라벨 용지(표 매개변수 묶음 0x242) — 위·왼쪽 여백, 칸 폭·높이·간격, 칸 수, 용지 방향·크기 */
+function labelXml(data: RecNode | undefined): string {
+  const s = data ? subSet(readParamSet(data.rec.data, { o: 0 }), 0x242) : null
+  if (!s) return ""
+  const v = (id: number): number => (typeof s[id] === "number" ? (s[id] as number) : 0)
+  return el("hp:label", [["topmargin", v(0x4000)], ["leftmargin", v(0x4001)], ["boxwidth", v(0x4002)], ["boxlength", v(0x4003)],
+    ["boxmarginhor", v(0x4004)], ["boxmarginver", v(0x4005)], ["labelcols", v(0x4006)], ["labelrows", v(0x4007)],
+    ["landscape", v(0x4008) ? "NARROWLY" : "WIDELY"], ["pagewidth", v(0x4009)], ["pageheight", v(0x400a)]])
 }
 
 // ─── 문단 목록 머리(LIST_HEADER) ───────────────────
@@ -167,6 +175,7 @@ function tableXml(node: RecNode, ctx: ConvertContext): string {
     + el("hp:inMargin", [["left", inMargin[0]], ["right", inMargin[1]], ["top", inMargin[2]], ["bottom", inMargin[3]]])
     + (zoneXml ? `<hp:cellzoneList>${zoneXml}</hp:cellzoneList>` : "")
     + rowsXml.filter(Boolean).map(r => `<hp:tr>${r}</hp:tr>`).join("")
+    + labelXml(node.kids.find(k => k.rec.tagId === TAG.CTRL_DATA))
   return el("hp:tbl", [...objHeadAttrs(o), ["pageBreak", pick(PAGE_BREAKS, bits(ta, 0, 2))], ["repeatHeader", bit(ta, 2)],
     ["rowCnt", rows], ["colCnt", cols], ["cellSpacing", spacing], ["borderFillIDRef", borderFill], ["noAdjust", bit(ta, 3)]], inner)
 }
