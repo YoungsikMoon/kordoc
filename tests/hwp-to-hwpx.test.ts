@@ -1,0 +1,141 @@
+/**
+ * hwpToHwpx (HWP 5.x → HWPX 서식 그대로 변환) — 합성 CFB 문서로 구조를, 코퍼스가 있으면 한글 저장 짝으로 글을 확인한다.
+ * 속성 단위 일치율은 bench/hwp2hwpx.mjs 가 잰다.
+ */
+
+import { describe, it } from "node:test"
+import assert from "node:assert/strict"
+import { createRequire } from "module"
+import { existsSync, readFileSync, readdirSync } from "node:fs"
+import { join } from "node:path"
+import JSZip from "jszip"
+import { hwpToHwpx, parse } from "../src/index.js"
+
+const require = createRequire(import.meta.url)
+const CFB = require("cfb")
+
+const rec = (tagId: number, level: number, data: Buffer): Buffer => {
+  const h = Buffer.alloc(4)
+  h.writeUInt32LE((tagId & 0x3ff) | ((level & 0x3ff) << 10) | (data.length << 20), 0)
+  return Buffer.concat([h, data])
+}
+const utf16 = (s: string): Buffer => Buffer.from(s, "utf16le")
+
+/** 문단 — runs: [글자 위치, 글자 모양 id] */
+function paragraph(text: string, runs: Array<[number, number]> = [[0, 0]], level = 0, instanceId = 0): Buffer {
+  const header = Buffer.alloc(24)
+  header.writeUInt32LE(text.length + 1, 0)
+  header.writeUInt16LE(runs.length, 12)
+  header.writeUInt16LE(1, 16)
+  header.writeUInt32LE(instanceId, 18)
+  const cs = Buffer.alloc(8 * runs.length)
+  runs.forEach(([p, id], i) => { cs.writeUInt32LE(p, i * 8); cs.writeUInt32LE(id, i * 8 + 4) })
+  const seg = Buffer.alloc(36)
+  seg.writeInt32LE(1000, 8)
+  return Buffer.concat([rec(0x42, level, header), rec(0x43, level + 1, Buffer.concat([utf16(text), Buffer.from([0x0d, 0])])),
+    rec(0x44, level + 1, cs), rec(0x45, level + 1, seg)])
+}
+
+/** 2×2 표 앵커 문단 */
+function table2x2(cells: string[][]): Buffer {
+  const anchor = Buffer.alloc(16)
+  anchor.writeUInt16LE(0x0b, 0)
+  anchor.write(" lbt", 2, "ascii")
+  anchor.writeUInt16LE(0x0b, 14)
+  const text = Buffer.concat([anchor, Buffer.from([0x0d, 0])])
+  const header = Buffer.alloc(24)
+  header.writeUInt32LE(text.length / 2, 0)
+  header.writeUInt32LE(1 << 11, 4)
+  header.writeUInt16LE(1, 12)
+  const ctrl = Buffer.alloc(46)
+  ctrl.write(" lbt", 0, "ascii")
+  ctrl.writeUInt32LE((1 << 0) | (2 << 26), 4) // 글자처럼 취급 · 표 번호
+  ctrl.writeUInt32LE(20000, 16)
+  ctrl.writeUInt32LE(2000, 20)
+  ctrl.writeUInt32LE(777, 36) // 인스턴스 id
+  const table = Buffer.alloc(26)
+  table.writeUInt32LE(0b0110, 0) // 셀 단위 나눔 · 제목 줄 반복
+  table.writeUInt16LE(2, 4)
+  table.writeUInt16LE(2, 6)
+  table.writeUInt16LE(2, 18)
+  table.writeUInt16LE(2, 20)
+  table.writeUInt16LE(1, 22) // 테두리
+  const parts = [rec(0x42, 0, header), rec(0x43, 1, text), rec(0x44, 1, Buffer.alloc(8)), rec(0x47, 1, ctrl), rec(0x4d, 2, table)]
+  for (let r = 0; r < 2; r++) for (let c = 0; c < 2; c++) {
+    const lh = Buffer.alloc(34)
+    lh.writeUInt16LE(1, 0)
+    lh.writeUInt16LE(c, 8)
+    lh.writeUInt16LE(r, 10)
+    lh.writeUInt16LE(1, 12)
+    lh.writeUInt16LE(1, 14)
+    lh.writeUInt32LE(10000, 16)
+    lh.writeUInt32LE(1000, 20)
+    parts.push(rec(0x48, 2, lh), paragraph(cells[r][c], [[0, 0]], 2, 0x80000000))
+  }
+  return Buffer.concat(parts)
+}
+
+function buildHwp(section: Buffer): Uint8Array {
+  const fileHeader = Buffer.alloc(256)
+  fileHeader.write("HWP Document File", 0, "ascii")
+  fileHeader.writeUInt32LE(0x05010100, 32)
+  const cfb = CFB.utils.cfb_new()
+  CFB.utils.cfb_add(cfb, "/FileHeader", fileHeader)
+  CFB.utils.cfb_add(cfb, "/DocInfo", Buffer.alloc(0))
+  CFB.utils.cfb_add(cfb, "/BodyText/Section0", section)
+  CFB.utils.cfb_add(cfb, "/PrvText", utf16("미리보기"))
+  return new Uint8Array(CFB.write(cfb, { type: "buffer" }) as Buffer)
+}
+
+async function sectionOf(hwpx: Uint8Array): Promise<string> {
+  return (await JSZip.loadAsync(hwpx)).file("Contents/section0.xml")!.async("string")
+}
+
+describe("hwpToHwpx — 합성 문서", () => {
+  it("문단 글을 글자 모양 구간마다 run 으로 나누고 문단 id·줄 캐시를 옮긴다", async () => {
+    const hwp = buildHwp(Buffer.concat([paragraph("굵은앞 보통뒤", [[0, 1], [3, 0]], 0, 1234), paragraph("둘째 문단")]))
+    const xml = await sectionOf(await hwpToHwpx(hwp))
+    assert.match(xml, /<hp:p id="1234" paraPrIDRef="0"/)
+    assert.match(xml, /<hp:run charPrIDRef="1"><hp:t>굵은앞<\/hp:t><\/hp:run><hp:run charPrIDRef="0"><hp:t> 보통뒤<\/hp:t><\/hp:run>/)
+    assert.match(xml, /<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000"/)
+  })
+
+  it("표를 칸·주소·병합째 옮기고 개체 뒤 빈 글 자리를 둔다", async () => {
+    const hwp = buildHwp(Buffer.concat([paragraph("표 앞"), table2x2([["가", "나"], ["다", "라"]])]))
+    const out = await hwpToHwpx(hwp)
+    const xml = await sectionOf(out)
+    assert.match(xml, /<hp:tbl id="777"[^>]* numberingType="TABLE"[^>]* pageBreak="CELL" repeatHeader="1" rowCnt="2" colCnt="2"/)
+    assert.match(xml, /<hp:pos treatAsChar="1"/)
+    assert.equal((xml.match(/<hp:tc /g) ?? []).length, 4)
+    assert.match(xml, /<\/hp:tbl><hp:t\/><\/hp:run>/)
+    const md = (await parse(out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer)).markdown
+    for (const s of ["표 앞", "가", "나", "다", "라"]) assert.ok(md.includes(s), md)
+  })
+
+  it("패키지에 한글이 읽는 항목을 갖춘다", async () => {
+    const zip = await JSZip.loadAsync(await hwpToHwpx(buildHwp(paragraph("본문"))))
+    for (const n of ["mimetype", "version.xml", "Contents/header.xml", "Contents/section0.xml", "Contents/content.hpf",
+      "META-INF/container.xml", "META-INF/manifest.xml", "META-INF/container.rdf", "settings.xml", "Preview/PrvText.txt"]) {
+      assert.ok(zip.file(n), n)
+    }
+    assert.equal(await zip.file("mimetype")!.async("string"), "application/hwp+zip")
+    assert.equal(await zip.file("Preview/PrvText.txt")!.async("string"), "미리보기")
+  })
+})
+
+const CORPUS = join(import.meta.dirname, "..", "bench", "corpus", "korea-kr-pairs")
+describe("hwpToHwpx — 한글 저장 짝(코퍼스)", { skip: !existsSync(CORPUS) }, () => {
+  it("변환본의 글이 한글이 저장한 HWPX 의 글과 같다", async () => {
+    const tText = (xml: string): string => [...xml.matchAll(/<hp:t>([^<]*)<\/hp:t>/g)].map(m => m[1]).join("")
+    let n = 0
+    for (const f of readdirSync(CORPUS).filter(f => f.endsWith(".hwp")).slice(0, 8)) {
+      const truth = join(CORPUS, f + "x")
+      if (!existsSync(truth)) continue
+      const ours = await sectionOf(await hwpToHwpx(new Uint8Array(readFileSync(join(CORPUS, f)))))
+      const hancom = await (await JSZip.loadAsync(readFileSync(truth))).file("Contents/section0.xml")!.async("string")
+      assert.equal(tText(ours), tText(hancom), f)
+      n++
+    }
+    assert.ok(n > 0)
+  })
+})

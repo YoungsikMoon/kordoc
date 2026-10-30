@@ -445,6 +445,8 @@ export type { BuiltinTemplate } from "./form/templates.js"
 export { placeSealHwpx } from "./form/seal.js"
 export type { SealOp, SealPlacement, PlaceSealResult } from "./form/seal.js"
 export { markdownToHwpx } from "./hwpx/generator.js"
+// HWP 5.x → HWPX 서식 그대로 변환
+export { hwpToHwpx, type HwpToHwpxOptions } from "./hwp5/to-hwpx/index.js"
 // 기관팩 — 기관 문서(HWPX) 몇 건으로 만든 서식 묶음(.kpack). markdownToHwpx(md, { template: packTemplate(pack, "report") })
 export { buildAgencyPack, loadAgencyPack, packTemplate, resolvePackKind, packRoleWarnings, packSummary } from "./hwpx/agency-pack.js"
 export type { AgencyPack, PackManifest, PackKindInfo, PackSample } from "./hwpx/agency-pack.js"

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `hwpToHwpx`: HWP 5.x 문서를 HWPX 로 서식 그대로 옮긴다(라이브러리 API, 진행 중). 글꼴·글자/문단 모양·스타일·번호·테두리/배경, 문단·글자 모양 구간·줄 나눔 정보, 구역/단 정의, 표(칸·병합·캡션), 그림·도형·묶음·글상자, 수식, 필드(누름틀·하이퍼링크·계산식 …), 머리말·꼬리말, 각주·미주, 자동/새 번호·쪽 번호, 차트(OLE 안 OOXML 차트)·OLE, 스크립트를 옮긴다. 암호 문서(password)·배포용 문서도 받는다. 같은 문서를 한글이 .hwp·.hwpx 로 함께 저장한 짝 232개와 속성 단위로 대조해 0.988 일치(bench/hwp2hwpx.mjs — 정답은 한글 저장본, 다른 도구의 변환본은 모수에서 뺀다).
 - fill_form: 칸 이름이 안 맞아 못 채운 값이 있으면 다음 행동(parse_form 칸 이름으로 다시 채우기, 또는 patch_document 로 칸에 직접 쓰기)을 결과에 붙인다.
 
 ## [4.24.25] - 2026-10-30

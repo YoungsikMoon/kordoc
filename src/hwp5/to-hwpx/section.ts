@@ -1,0 +1,251 @@
+/**
+ * HWP 5.x BodyText 섹션 → HWPX Contents/sectionN.xml.
+ *
+ * 문단(PARA_HEADER)마다 글(PARA_TEXT)을 글자 모양 구간(PARA_CHAR_SHAPE)으로 run 에 나누고, 확장 컨트롤 글자(8 WCHAR)는 순서대로 자식
+ * CTRL_HEADER 를 하나씩 받아 그 자리에 요소로 쓴다. 인라인 컨트롤(탭·필드 끝·제목 차례)과 글자 컨트롤(줄바꿈·묶음/고정폭 빈칸·
+ * 하이픈)은 hp:t 안 요소, 개체(표·그림·도형·수식)는 hp:t 와 같은 run 의 형제다. 줄 나눔 정보(PARA_LINE_SEG)는 hp:linesegarray.
+ */
+
+import { Cur, type RecNode, el, esc, escText, color, bit, bits, pick, BORDER_TYPES, BORDER_WIDTHS, NUM_FORMATS } from "./util.js"
+import { XML_DECL, NS } from "./header.js"
+import { controlXml, type ConvertContext } from "./controls.js"
+import { fieldEndXml } from "./fields.js"
+
+export const TAG = {
+  PARA_HEADER: 0x42, PARA_TEXT: 0x43, PARA_CHAR_SHAPE: 0x44, PARA_LINE_SEG: 0x45, PARA_RANGE_TAG: 0x46, CTRL_HEADER: 0x47,
+  LIST_HEADER: 0x48, PAGE_DEF: 0x49, FOOTNOTE_SHAPE: 0x4a, PAGE_BORDER_FILL: 0x4b, SHAPE_COMPONENT: 0x4c, TABLE: 0x4d,
+  CTRL_DATA: 0x57,
+} as const
+
+/** 1 WCHAR 글자 컨트롤 */
+const CHAR_CTRL = new Set([0, 10, 13, 24, 25, 26, 27, 28, 29, 30, 31])
+/** 8 WCHAR 인라인 컨트롤 (자식 레코드 없음) */
+const INLINE_CTRL = new Set([4, 5, 6, 7, 8, 9, 19, 20])
+
+export function ctrlId(node: RecNode): string {
+  const d = node.rec.data
+  return d.length >= 4 ? String.fromCharCode(d[3], d[2], d[1], d[0]) : ""
+}
+
+/** 문단 목록(섹션 최상위·칸·글상자·머리말 등) */
+export function paragraphsXml(nodes: RecNode[], ctx: ConvertContext): string {
+  let out = ""
+  for (const n of nodes) if (n.rec.tagId === TAG.PARA_HEADER) out += paragraphXml(n, ctx)
+  return out
+}
+
+/** 글 토큰 — 글자, 인라인 요소(hp:t 안), 개체·컨트롤 요소(run 형제) */
+type Tok = { pos: number; t: "text"; s: string } | { pos: number; t: "inline"; xml: string } | { pos: number; t: "ctrl"; xml: string; obj: boolean; def?: boolean }
+
+function paragraphXml(p: RecNode, ctx: ConvertContext): string {
+  const h = new Cur(p.rec.data)
+  const nChars = h.u32() & 0x7fffffff
+  h.u32() // 컨트롤 마스크
+  const paraShape = h.u16(), styleId = h.u8(), breaks = h.u8()
+  h.skip(6)
+  const instanceId = p.rec.data.length >= 22 ? h.u32() : 0
+  const merged = p.rec.data.length >= 24 ? h.u16() : 0
+
+  const texts = p.kids.filter(k => k.rec.tagId === TAG.PARA_TEXT)
+  const text = texts.length ? Buffer.concat(texts.map(k => k.rec.data)) : Buffer.alloc(0)
+  const csNode = p.kids.find(k => k.rec.tagId === TAG.PARA_CHAR_SHAPE)
+  const runs: Array<[number, number]> = []
+  if (csNode) for (const c = new Cur(csNode.rec.data); c.rest >= 8;) runs.push([c.u32(), c.u32()])
+  if (!runs.length) runs.push([0, 0])
+  const ctrls = p.kids.filter(k => k.rec.tagId === TAG.CTRL_HEADER)
+  const toks = tokenize(text, ctrls, ctx, new Set(runs.map(r => r[0])))
+
+  const units = text.length / 2
+  let body = ""
+  for (let i = 0; i < runs.length; i++) {
+    const from = runs[i][0], to = i + 1 < runs.length ? runs[i + 1][0] : Math.max(units, nChars)
+    body += runXml(runs[i][1], toks.filter(t => t.pos >= from && t.pos < to))
+  }
+
+  const ls = p.kids.find(k => k.rec.tagId === TAG.PARA_LINE_SEG)
+  if (ls) {
+    let segs = ""
+    for (const c = new Cur(ls.rec.data); c.rest >= 36;) {
+      segs += el("hp:lineseg", [["textpos", c.u32()], ["vertpos", c.i32()], ["vertsize", c.i32()], ["textheight", c.i32()],
+        ["baseline", c.i32()], ["spacing", c.i32()], ["horzpos", c.i32()], ["horzsize", c.i32()], ["flags", c.u32()]])
+    }
+    body += `<hp:linesegarray>${segs}</hp:linesegarray>`
+  }
+  return el("hp:p", [["id", instanceId], ["paraPrIDRef", paraShape], ["styleIDRef", styleId], ["pageBreak", bit(breaks, 2)],
+    ["columnBreak", bit(breaks, 3)], ["merged", merged]], body)
+}
+
+/** 글 → 토큰. 글은 글자 모양 구간 경계(cuts)에서 끊는다 */
+function tokenize(text: Buffer, ctrls: RecNode[], ctx: ConvertContext, cuts: Set<number>): Tok[] {
+  const toks: Tok[] = []
+  const n = text.length / 2
+  let ci = 0
+  let buf = "", bufPos = 0
+  const flush = (): void => { if (buf) toks.push({ pos: bufPos, t: "text", s: buf }); buf = "" }
+  for (let i = 0; i < n;) {
+    const c = text.readUInt16LE(i * 2)
+    if (cuts.has(i)) flush()
+    if (c >= 32) {
+      if (!buf) bufPos = i
+      buf += String.fromCharCode(c)
+      i++
+      continue
+    }
+    flush()
+    if (CHAR_CTRL.has(c)) {
+      if (c === 10) toks.push({ pos: i, t: "inline", xml: "<hp:lineBreak/>" })
+      else if (c === 24) toks.push({ pos: i, t: "inline", xml: "<hp:hyphen/>" })
+      else if (c === 30) toks.push({ pos: i, t: "inline", xml: "<hp:nbSpace/>" })
+      else if (c === 31) toks.push({ pos: i, t: "inline", xml: "<hp:fwSpace/>" })
+      i++
+      continue
+    }
+    const data = text.subarray(i * 2 + 2, i * 2 + 14)
+    if (INLINE_CTRL.has(c)) {
+      if (c === 9) {
+        const d = new Cur(data)
+        const width = d.u32(), leader = d.u8(), type = d.u8()
+        toks.push({ pos: i, t: "inline", xml: el("hp:tab", [["width", width], ["leader", leader], ["type", type]]) })
+      } else if (c === 4) {
+        toks.push({ pos: i, t: "ctrl", obj: false, xml: fieldEndXml(ctx.fields) })
+      } else if (c === 8) {
+        toks.push({ pos: i, t: "inline", xml: el("hp:titleMark", [["ignore", 0]]) })
+      }
+      i += 8
+      continue
+    }
+    // 확장 컨트롤 — 자식 CTRL_HEADER 를 순서대로 하나
+    const node = ctrls[ci++]
+    if (node) {
+      const r = controlXml(node, ctx)
+      if (r) toks.push({ pos: i, t: "ctrl", obj: r.obj, xml: r.xml, def: r.def })
+    }
+    i += 8
+  }
+  flush()
+  // 컨트롤 뒤 글 자리 — 바로 뒤(8 WCHAR 다음)에 아무것도 없으면(문단 끝) 빈 글을 둔다. 그 자리가 다음 글자 모양 구간이면 빈 hp:t 도
+  // 다음 run 에 든다. 개체가 잇달아 오면(수식 둘) 사이에 빈 글이 없다
+  for (let k = toks.length - 1; k >= 0; k--) {
+    const o = toks[k]
+    if (o.t === "ctrl" && toks[k + 1]?.pos !== o.pos + 8) toks.splice(k + 1, 0, { pos: o.pos + 8, t: "text", s: "" })
+  }
+  return toks
+}
+
+/**
+ * run 하나 — 글·인라인 요소는 hp:t 로 묶는다(개체 뒤 빈 글은 tokenize 가 넣는다). 구역·단 정의는 제 run 에 두고
+ * 뒤따르는 내용은 같은 글자 모양의 새 run 에서 시작한다(한글 2022 이상 저장 꼴)
+ */
+function runXml(charShape: number, toks: Tok[]): string {
+  const open = `<hp:run charPrIDRef="${charShape}">`
+  if (!toks.length) return el("hp:run", [["charPrIDRef", charShape]])
+  let out = "", t: string | null = null
+  const closeT = (): void => { if (t !== null) out += t ? `<hp:t>${t}</hp:t>` : "<hp:t/>"; t = null }
+  toks.forEach((k, i) => {
+    if (k.t === "text") t = (t ?? "") + escText(k.s)
+    else if (k.t === "inline") t = (t ?? "") + k.xml
+    else {
+      closeT()
+      out += k.xml
+      const next = toks[i + 1]
+      if (k.def && next && !(next.t === "ctrl" && next.def)) out += "</hp:run>" + open
+    }
+  })
+  closeT()
+  return open + out + "</hp:run>"
+}
+
+/** 섹션 레코드 트리 → sectionN.xml */
+export function sectionXml(top: RecNode[], ctx: ConvertContext): string {
+  return XML_DECL + `<hs:sec ${NS}>` + paragraphsXml(top, ctx) + "</hs:sec>"
+}
+
+// ─── 구역·단 정의 ────────────────────────────────────
+
+const NOTE_PLACES = ["EACH_COLUMN", "MERGED_COLUMN", "RIGHT_MOST_COLUMN"] as const
+const END_PLACES = ["END_OF_DOCUMENT", "END_OF_SECTION"] as const
+const NOTE_NUMBERING = ["CONTINUOUS", "ON_SECTION", "ON_PAGE"] as const
+const PAGE_STARTS = ["BOTH", "EVEN", "ODD"] as const
+const GUTTERS = ["LEFT_ONLY", "LEFT_RIGHT", "TOP_BOTTOM"] as const
+const FILL_AREAS = ["PAPER", "PAGE", "BORDER"] as const
+const PAGE_BORDER_TYPES = ["BOTH", "EVEN", "ODD"] as const
+const COL_TYPES = ["NEWSPAPER", "BALANCED_NEWSPAPER", "PARALLEL"] as const
+const COL_LAYOUTS = ["LEFT", "RIGHT", "MIRROR"] as const
+
+const ch = (code: number): string => (code ? String.fromCharCode(code) : "")
+
+function notePrXml(name: string, data: Buffer, endNote: boolean): string {
+  const c = new Cur(data)
+  const a = c.u32()
+  const user = c.u16(), prefix = c.u16(), suffix = c.u16(), start = c.u16()
+  const length = c.i32()
+  const above = c.i16(), below = c.i16(), between = c.i16()
+  const lineType = c.u8(), lineWidth = c.u8(), lineColor = c.u32()
+  return el(name, [], el("hp:autoNumFormat", [["type", pick(NUM_FORMATS, bits(a, 0, 8))], ["userChar", ch(user)], ["prefixChar", ch(prefix)],
+    ["suffixChar", ch(suffix)], ["supscript", bit(a, 12)]])
+    + el("hp:noteLine", [["length", length], ["type", pick(BORDER_TYPES, lineType)], ["width", pick(BORDER_WIDTHS, lineWidth)], ["color", color(lineColor)]])
+    + el("hp:noteSpacing", [["betweenNotes", between], ["belowLine", below], ["aboveLine", above]])
+    + el("hp:numbering", [["type", pick(NOTE_NUMBERING, bits(a, 10, 2))], ["newNum", start]])
+    + el("hp:placement", [["place", endNote ? pick(END_PLACES, bits(a, 8, 2)) : pick(NOTE_PLACES, bits(a, 8, 2))], ["beneathText", bit(a, 13)]]))
+}
+
+/** 'secd' 구역 정의 → hp:secPr */
+export function secPrXml(node: RecNode, ctx: ConvertContext): string {
+  const c = new Cur(node.rec.data, 4)
+  const a = c.u32()
+  const spaceColumns = c.i16(), lineGrid = c.i16(), charGrid = c.i16()
+  const tabStop = c.u32()
+  const outline = c.u16(), page = c.u16(), pic = c.u16(), tbl = c.u16(), eq = c.u16()
+  let inner = el("hp:grid", [["lineGrid", lineGrid], ["charGrid", charGrid], ["wonggojiFormat", bit(a, 22)]])
+    + el("hp:startNum", [["pageStartsOn", pick(PAGE_STARTS, bits(a, 20, 2))], ["page", page], ["pic", pic], ["tbl", tbl], ["equation", eq]])
+    + el("hp:visibility", [["hideFirstHeader", bit(a, 0)], ["hideFirstFooter", bit(a, 1)], ["hideFirstMasterPage", bit(a, 2)],
+      ["border", bit(a, 3) ? "HIDE_FIRST" : bit(a, 8) ? "SHOW_FIRST" : "SHOW_ALL"], ["fill", bit(a, 4) ? "HIDE_FIRST" : bit(a, 9) ? "SHOW_FIRST" : "SHOW_ALL"],
+      ["hideFirstPageNum", bit(a, 5)], ["hideFirstEmptyLine", bit(a, 19)], ["showLineNumber", bit(a, 6)]])
+    + el("hp:lineNumberShape", [["restartType", 0], ["countBy", 0], ["distance", 0], ["startNumber", 0]])
+  let notes = 0, borders = 0
+  for (const k of node.kids) {
+    const d = k.rec.data
+    if (k.rec.tagId === TAG.PAGE_DEF) {
+      const p = new Cur(d)
+      const w = p.u32(), hgt = p.u32(), l = p.u32(), r = p.u32(), t = p.u32(), b = p.u32(), hd = p.u32(), ft = p.u32(), g = p.u32(), pa = p.u32()
+      inner += el("hp:pagePr", [["landscape", bit(pa, 0) ? "NARROWLY" : "WIDELY"], ["width", w], ["height", hgt], ["gutterType", pick(GUTTERS, bits(pa, 1, 2))]],
+        el("hp:margin", [["header", hd], ["footer", ft], ["gutter", g], ["left", l], ["right", r], ["top", t], ["bottom", b]]))
+    } else if (k.rec.tagId === TAG.FOOTNOTE_SHAPE) {
+      inner += notePrXml(notes ? "hp:endNotePr" : "hp:footNotePr", d, notes > 0)
+      notes++
+    } else if (k.rec.tagId === TAG.PAGE_BORDER_FILL) {
+      const p = new Cur(d)
+      const pa = p.u32(), l = p.i16(), r = p.i16(), t = p.i16(), b = p.i16(), id = p.u16()
+      inner += el("hp:pageBorderFill", [["type", pick(PAGE_BORDER_TYPES, borders)], ["borderFillIDRef", id], ["textBorder", bit(pa, 0) ? "PAPER" : "CONTENT"],
+        ["headerInside", bit(pa, 1)], ["footerInside", bit(pa, 2)], ["fillArea", pick(FILL_AREAS, bits(pa, 3, 2))]],
+        el("hp:offset", [["left", l], ["right", r], ["top", t], ["bottom", b]]))
+      borders++
+    }
+  }
+  return el("hp:secPr", [["id", ""], ["textDirection", bits(a, 16, 3) ? "VERTICAL" : "HORIZONTAL"], ["spaceColumns", spaceColumns],
+    ["tabStop", tabStop], ["tabStopVal", Math.trunc(tabStop / 2)], ["tabStopUnit", "HWPUNIT"], ["outlineShapeIDRef", outline],
+    ["memoShapeIDRef", ctx.memoShapes ? 1 : 0], ["textVerticalWidthHead", 0], ["masterPageCnt", 0]], inner)
+}
+
+/** 'cold' 단 정의 → hp:ctrl/hp:colPr */
+export function colPrXml(node: RecNode): string {
+  const c = new Cur(node.rec.data, 4)
+  const a = c.u16()
+  const count = bits(a, 2, 8), same = bit(a, 12)
+  let gap = 0
+  const sizes: Array<[number, number]> = []
+  if (!same && count > 1) {
+    c.u16()
+    for (let i = 0; i < count; i++) sizes.push([c.i16(), c.i16()])
+  } else {
+    gap = c.i16()
+    c.u16()
+  }
+  const lineType = c.u8(), lineWidth = c.u8(), lineColor = c.u32()
+  let inner = ""
+  if (lineType) inner += el("hp:colLine", [["type", pick(BORDER_TYPES, lineType)], ["width", pick(BORDER_WIDTHS, lineWidth)], ["color", color(lineColor)]])
+  for (const [w, g] of sizes) inner += el("hp:colSz", [["width", w], ["gap", g]])
+  return "<hp:ctrl>" + el("hp:colPr", [["id", ""], ["type", pick(COL_TYPES, bits(a, 0, 2))], ["layout", pick(COL_LAYOUTS, bits(a, 10, 2))],
+    ["colCount", count], ["sameSz", same], ["sameGap", gap]], inner || undefined) + "</hp:ctrl>"
+}
+
