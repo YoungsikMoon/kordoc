@@ -111,6 +111,8 @@ describe("PDF table cells and roles", () => {
     assert.equal(headerLineAbove([item("Table 7.1.", 260, 520, 40), item("Types of promotional materials", 360, 520, 150)], colXs, 512), null)
     // OCR text (no stream order) is left alone.
     assert.equal(headerLineAbove(free.map(it => ({ ...it, seq: undefined })), colXs, 512), null)
+    // A caption line carrying a unit note "(단위:천원)" is not a header row, even when its pieces fall into separate columns.
+    assert.equal(headerLineAbove([item("항", 105, 520, 10), item(": 511", 260, 520, 30), item("국고보조금등", 360, 520, 50), item("(단위:천원)", 460, 520, 45)], colXs, 512), null)
   })
 
   it("merges a hairline column that only holds empty or spanning cells", () => {

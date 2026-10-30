@@ -32,6 +32,8 @@ export function headerLineAbove(free: NormItem[], colXs: number[], top: number):
   // 표 캡션 줄("Table 7.1. | Types of …")은 머리행이 아니다
   const text = [...line].sort((a, b) => a.x - b.x).map(it => it.text).join(" ").trim()
   if (/^(?:Table|Figure|Fig\.|Chart|Exhibit|Diagram|Source|Note|<?표|<?그림)\s*[\dIVX]/i.test(text)) return null
+  // "(단위 : …)" 가 든 줄은 표 위 머리말·단위 줄이다(괴산 예산서 "항 : 511 국고보조금등 … (단위:천원)" — 열마다 흩어져 머리행으로 붙었다)
+  if (/\(단위[:：]/.test(text.replace(/\s+/g, ""))) return null
   if (line.some(it => it.seq === undefined || it.x < x1 - EDGE_TOL || it.x + it.w > x2 + EDGE_TOL)) return null
   // 같은 줄에 격자 밖 글이 있으면 본문 줄이다
   if (above.some(it => !line.includes(it) && Math.abs(it.y - baseY) <= fs * 0.5)) return null
