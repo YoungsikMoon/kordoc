@@ -201,6 +201,25 @@ describe("hwpToHwpx — 양식 개체(코퍼스)", { skip: !existsSync(join(RHWP
   })
 })
 
+describe("hwpToHwpx — 메모(코퍼스)", { skip: !existsSync(join(RHWP, "hwpx", "aift.hwpx")) }, () => {
+  it("구역 끝 메모 글을 MEMO 필드의 subList 로 한글 저장본과 같게 쓴다", async () => {
+    const memos = async (zip: JSZip): Promise<string[]> => {
+      const out: string[] = []
+      for (let i = 0; zip.file(`Contents/section${i}.xml`); i++) {
+        const s = await zip.file(`Contents/section${i}.xml`)!.async("string")
+        for (const m of s.matchAll(/<hp:fieldBegin [^>]*type="MEMO"[\s\S]*?<\/hp:subList><\/hp:fieldBegin>/g)) out.push(m[0])
+      }
+      return out
+    }
+    const ours = await memos(await JSZip.loadAsync(await hwpToHwpx(new Uint8Array(readFileSync(join(RHWP, "aift.hwp"))))))
+    const hancom = await memos(await JSZip.loadAsync(readFileSync(join(RHWP, "hwpx", "aift.hwpx"))))
+    assert.equal(ours.length, 2)
+    // 생성 시각은 한글처럼 지역 시각으로 쓴다 — 시간대가 다른 곳에서도 돌도록 그 칸만 빼고 맞댄다
+    const noTime = (x: string): string => x.replace(/<hp:stringParam name="CreateDateTime">[^<]*<\/hp:stringParam>/, "")
+    assert.deepEqual(ours.map(noTime), hancom.map(noTime))
+  })
+})
+
 const CORPUS = join(import.meta.dirname, "..", "bench", "corpus", "korea-kr-pairs")
 describe("hwpToHwpx — 한글 저장 짝(코퍼스)", { skip: !existsSync(CORPUS) }, () => {
   it("변환본의 글이 한글이 저장한 HWPX 의 글과 같다", async () => {

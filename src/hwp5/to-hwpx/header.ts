@@ -226,11 +226,13 @@ function numbering(r: Rec, id: number): string {
   for (let lv = 0; lv < 7; lv++) heads.push({ attrs: paraHeadAttrs(c), fmt: c.str() })
   const start = c.u16()
   const starts = heads.map(() => (c.rest >= 4 ? c.u32() : 1))
-  // 수준 8~10 (한글 2018 이상) — 머리 정보 셋·형식 문자열 셋·시작 번호 셋
+  // 수준 8~10 (한글 2018 이상) — 머리 정보 셋·형식 문자열 셋·시작 번호 셋. 없는 판은 한글이 빈 기본값(번호 1·DIGIT·글자 모양 0)으로 채운다
   if (c.rest >= 3 * 14 + 12) {
     const ext = [0, 1, 2].map(() => ({ attrs: paraHeadAttrs(c), fmt: c.str() }))
     for (const e of ext) heads.push(e)
     for (let i = 0; i < 3; i++) starts.push(c.u32())
+  } else {
+    for (let i = 0; i < 3; i++) { heads.push({ attrs: paraHeadAttrs(new Cur(Buffer.alloc(12))), fmt: "" }); starts.push(1) }
   }
   const inner = heads.map((h, i) => el("hh:paraHead", [["start", starts[i] ?? 1], ["level", i + 1], ...h.attrs], h.fmt ? escText(h.fmt) : undefined)).join("")
   return el("hh:numbering", [["id", id], ["start", start]], inner)

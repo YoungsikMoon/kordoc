@@ -7,7 +7,7 @@
  * 변환 행렬은 단정밀도로 줄여 소수 여섯째 자리까지.
  */
 
-import { Cur, type RecNode, el, esc, escText, color, pick, bit, bits, BORDER_TYPES } from "./util.js"
+import { Cur, type RecNode, readParamSet, subSet, el, esc, escText, color, pick, bit, bits, BORDER_TYPES } from "./util.js"
 import { fillBrushXml } from "./header.js"
 import { TAG, paragraphsXml } from "./section.js"
 import { type ConvertContext, type ObjCommon, readObjCommon, objHeadAttrs, objPlacementXml, subListAttrs, listGroups, captionXml } from "./controls.js"
@@ -16,6 +16,7 @@ const TAG_SHAPE = {
   LINE: 0x4e, RECTANGLE: 0x4f, ELLIPSE: 0x50, ARC: 0x51, POLYGON: 0x52, CURVE: 0x53, OLE: 0x54, PICTURE: 0x55, CONTAINER: 0x56,
 } as const
 
+const TAG_CTRL_DATA = 0x57
 const u32 = (v: number): number => v >>> 0
 /** 배정밀도 값 그대로 소수 여섯째 자리, 끝 0 은 지운다 */
 export function num6(v: number): string {
@@ -99,13 +100,23 @@ function drawTextXml(comp: RecNode, ctx: ConvertContext): string {
   const c = new Cur(g.head.rec.data, 8)
   const l = c.i16(), r = c.i16(), t = c.i16(), b = c.i16()
   const lastWidth = c.u32()
-  const name = c.rest >= 2 ? c.str() : ""
-  return el("hp:drawText", [["lastWidth", lastWidth], ["name", name], ["editable", 0]],
-    el("hp:subList", subListAttrs(g.head.rec.data), paragraphsXml(g.paras, ctx)) + el("hp:textMargin", [["left", l], ["right", r], ["top", t], ["bottom", b]]))
+  // 글상자 연결(제 목록 id·다음 id) — 사슬의 글은 sectionXml 이 줄 나눔 정보대로 나눠 두었다. 이름 칸은 한글 저장본에서 늘 비어 있다
+  const listId = c.u32()
+  const paras = (listId && ctx.linkedParas.get(listId)) || g.paras
+  return el("hp:drawText", [["lastWidth", lastWidth], ["name", ""], ["editable", 0]],
+    el("hp:subList", subListAttrs(g.head.rec.data), paragraphsXml(paras, ctx))
+    + el("hp:textMargin", [["left", l], ["right", r], ["top", t], ["bottom", b]]))
 }
 
 const ELLIPSE_ARC = ["NORMAL", "PIE", "CHORD"] as const
 const pt = (name: string, c: Cur): string => el(name, [["x", c.i32()], ["y", c.i32()]])
+
+/** 개체 하이퍼링크 — 개체 요소 아래 CTRL_DATA 매개변수 묶음(0x26f 안 문자열 0x265) */
+function shapeHref(comp: RecNode): string {
+  const cd = comp.kids.find(x => x.rec.tagId === TAG_CTRL_DATA)
+  const v = cd ? subSet(readParamSet(cd.rec.data, { o: 0 }), 0x26f)?.[0x265] : undefined
+  return typeof v === "string" ? v : ""
+}
 
 /** 개체 하나 — 개체 공통 속성(o)이 없으면 묶음 안 자식 */
 function shapeXml(comp: RecNode, o: ObjCommon | null, description: string, ctx: ConvertContext, caption: string): string {
@@ -116,6 +127,7 @@ function shapeXml(comp: RecNode, o: ObjCommon | null, description: string, ctx: 
   const comment = o && description ? `<hp:shapeComment>${escText(description)}</hp:shapeComment>` : ""
   const tail = (o ? objPlacementXml(o) + caption : "") + comment
   const common = componentHeadXml(k)
+  const href = shapeHref(comp)
 
   if (k.kind === "$pic") {
     const p = sub(TAG_SHAPE.PICTURE)
@@ -135,7 +147,7 @@ function shapeXml(comp: RecNode, o: ObjCommon | null, description: string, ctx: 
     const img = el("hc:img", [["binaryItemIDRef", binId ? ctx.binRef(binId) : ""], ["bright", bright], ["contrast", contrast],
       ["effect", pick(["REAL_PIC", "GRAY_SCALE", "BLACK_WHITE", "PATTERN8x8"], effect)], ["alpha", alpha]])
     const rect = `<hp:imgRect>${[0, 1, 2, 3].map(i => el(`hc:pt${i}`, [["x", xs[i]], ["y", ys[i]]])).join("")}</hp:imgRect>`
-    return el("hp:pic", [...head, ["href", ""], ["groupLevel", k.groupLevel], ["instid", instId], ["reverse", 0]],
+    return el("hp:pic", [...head, ["href", href], ["groupLevel", k.groupLevel], ["instid", instId], ["reverse", 0]],
       common + img + border + rect + el("hp:imgClip", [["left", cl], ["right", cr], ["top", ct], ["bottom", cb]])
       + el("hp:inMargin", [["left", m[0]], ["right", m[1]], ["top", m[2]], ["bottom", m[3]]]) + el("hp:imgDim", [["dimwidth", dimW], ["dimheight", dimH]])
       + "<hp:effects/>" + tail)
@@ -148,12 +160,12 @@ function shapeXml(comp: RecNode, o: ObjCommon | null, description: string, ctx: 
     // 행렬 뒤 자식 수(WORD)·자식 컨트롤 ID 목록, 그 뒤 인스턴스 id
     k.rest.skip(4 * k.rest.u16())
     const instId = k.rest.rest >= 4 ? k.rest.u32() : 0
-    return el("hp:container", [...head, ["href", ""], ["groupLevel", k.groupLevel], ["instid", instId]], common + kids + tail)
+    return el("hp:container", [...head, ["href", href], ["groupLevel", k.groupLevel], ["instid", instId]], common + kids + tail)
   }
 
   const s = drawingStyle(k, ctx)
   const text = drawTextXml(comp, ctx)
-  const ref: Array<[string, string | number]> = [["href", ""], ["groupLevel", k.groupLevel], ["instid", s.instId]]
+  const ref: Array<[string, string | number]> = [["href", href], ["groupLevel", k.groupLevel], ["instid", s.instId]]
   switch (k.kind) {
     case "$rec": {
       const r = sub(TAG_SHAPE.RECTANGLE)
@@ -237,7 +249,7 @@ function oleXml(comp: RecNode, k: Component, head: Array<[string, string | numbe
   const chart = o ? ctx.chartOf(binId) : null
   // 차트의 OLE 기본 갈래는 조판 전 꼴로 쓴다 — 캡션 마지막 줄 폭 0xFFFFFFFF, 줄 나눔 정보 없음. 조판된 캡션은 차트 갈래에 둔다
   const oleCaption = chart ? caption.replace(/ lastWidth="\d+"/, ' lastWidth="4294967295"').replace(/<hp:linesegarray>[\s\S]*?<\/hp:linesegarray>/g, "") : caption
-  const ole = el("hp:ole", [...head, ["href", ""], ["groupLevel", k.groupLevel], ["instid", 0], ["objectType", pick(OLE_TYPES, bits(a, 16, 6))],
+  const ole = el("hp:ole", [...head, ["href", shapeHref(comp)], ["groupLevel", k.groupLevel], ["instid", 0], ["objectType", pick(OLE_TYPES, bits(a, 16, 6))],
     ["binaryItemIDRef", ctx.oleRef(binId, !!chart)], ["hasMoniker", bit(a, 8)], ["drawAspect", OLE_ASPECTS[bits(a, 0, 8)] ?? "CONTENT"],
     ["eqBaseLine", bits(a, 9, 7)]],
   common + el("hc:extent", [["x", ex], ["y", ey]]) + line + (o ? objPlacementXml(o) + oleCaption : "") + comment)

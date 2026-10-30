@@ -96,7 +96,7 @@ export const NUM_FORMATS = ["DIGIT", "CIRCLED_DIGIT", "ROMAN_CAPITAL", "ROMAN_SM
   "CIRCLED_LATIN_SMALL", "HANGUL_SYLLABLE", "CIRCLED_HANGUL_SYLLABLE", "HANGUL_JAMO", "CIRCLED_HANGUL_JAMO", "HANGUL_PHONETIC",
   "IDEOGRAPH", "CIRCLED_IDEOGRAPH", "DECAGON_CIRCLE", "DECAGON_CIRCLE_HANJA"] as const
 
-export type Param = number | number[] | ParamSet
+export type Param = number | string | number[] | ParamSet
 export interface ParamSet { [id: number]: Param }
 
 /** 매개변수 묶음(CTRL_DATA) — 묶음 id(WORD)·항목 수(DWORD), 항목마다 id(WORD)·종류(WORD)·값. 묶음 안 묶음(0x8000)·배열(0x8001: 개수 WORD·0·종류+값)은 펼친다 */
@@ -115,7 +115,11 @@ export function readParamSet(d: Buffer, at: { o: number }): ParamSet {
       for (let j = 0; j < cnt && at.o + 6 <= d.length; j++, at.o += 6) arr.push(d.readUInt32LE(at.o + 2))
       set[id] = arr
     } else if (type === 0x8002) { set[id] = d.readUInt16LE(at.o); at.o += 2 }
-    else if (type === 1) { at.o += 2 + d.readUInt16LE(at.o) * 2; set[id] = 0 }
+    else if (type === 1) {
+      const n = d.readUInt16LE(at.o)
+      set[id] = d.toString("utf16le", at.o + 2, Math.min(d.length, at.o + 2 + n * 2))
+      at.o += 2 + n * 2
+    }
     else { set[id] = d.readInt32LE(at.o); at.o += 4 }
   }
   return set

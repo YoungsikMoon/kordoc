@@ -1,13 +1,13 @@
 /**
  * HWP 5.x 나머지 컨트롤 → HWPX: 머리말·꼬리말('head'·'foot'), 각주·미주('fn  '·'en  '), 자동 번호('atno'), 새 번호('nwno'),
  * 쪽 번호 위치('pgnp'), 감추기('pghd'), 쪽 번호 제어('pgct'), 책갈피('bokm'), 찾아보기 표시('idxm'), 글자 겹치기('tcps'),
- * 덧말('tdut'), 수식('eqed'), 양식 개체('form').
+ * 덧말('tdut'), 수식('eqed'), 양식 개체('form'), 숨은 설명('tcmt').
  *
  * 컨트롤 데이터는 CTRL_HEADER 의 컨트롤 id(4바이트) 뒤에 온다. 글을 담는 컨트롤(머리말·각주 …)은 자식 LIST_HEADER 와 뒤따르는
  * 형제 문단을 hp:subList 로 쓴다.
  */
 
-import { Cur, type RecNode, el, esc, escText, color, pick, bit, bits, NUM_FORMATS } from "./util.js"
+import { Cur, type RecNode, el, esc, escText, color, pick, bit, bits, readParamSet, NUM_FORMATS } from "./util.js"
 import { paragraphsXml } from "./section.js"
 import { type ConvertContext, type CtrlXml, readObjCommon, objHeadAttrs, objPlacementXml, subListAttrs, listGroups, captionXml } from "./controls.js"
 
@@ -90,8 +90,10 @@ export function otherControlXml(id: string, node: RecNode, ctx: ConvertContext):
     case "pgct":
       return ctrl(el("hp:pageNumCtrl", [["pageStartsOn", pick(PAGE_STARTS, bits(data(node).u32(), 0, 2))]]))
     case "bokm": {
-      const c = data(node)
-      return ctrl(el("hp:bookmark", [["name", c.rest >= 2 ? c.str() : ""]]))
+      // 이름은 CTRL_DATA 매개변수 묶음의 문자열 항목(0x4000)
+      const cd = node.kids.find(k => k.rec.tagId === TAG_CTRL_DATA)
+      const name = cd ? readParamSet(cd.rec.data, { o: 0 })[0x4000] : undefined
+      return ctrl(el("hp:bookmark", [["name", typeof name === "string" ? name : ""]]))
     }
     case "idxm": {
       const c = data(node)
@@ -119,12 +121,16 @@ export function otherControlXml(id: string, node: RecNode, ctx: ConvertContext):
       return { obj: true, xml: equationXml(node, ctx) }
     case "form":
       return formXml(node)
+    case "tcmt":
+      // 숨은 설명 — 인쇄되지 않는 글 목록
+      return ctrl(el("hp:hiddenComment", [], subListXml(node, ctx, false)))
     default:
       return null
   }
 }
 
 const TAG_FORM_OBJECT = 0x5b
+const TAG_CTRL_DATA = 0x57
 const FORM_KINDS: Record<string, string> = { "tbp+": "hp:btn", "tbc+": "hp:checkBtn", "tbr+": "hp:radioBtn", "boc+": "hp:comboBox", "tde+": "hp:edit" }
 const BUTTON_VALUES = ["UNCHECKED", "CHECKED", "INDETERMINATE"] as const
 const SCROLL_BARS = ["NONE", "HORIZONTAL", "VERTICAL", "BOTH"] as const

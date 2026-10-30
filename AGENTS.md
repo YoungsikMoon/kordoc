@@ -33,7 +33,7 @@ npm run build          # tsup — ESM+CJS 라이브러리 + CLI·MCP 바이너�
 npm run dev            # watch 모드
 npm test               # node --import tsx --test tests/*.test.ts
 npm run typecheck      # tsc --noEmit
-npm run bench:gate     # 코퍼스 회귀 게이트 체인(pages·score·roundtrip·pdf-table·pdf-text·formats·fuzz·reflow·redact·ocr)
+npm run bench:gate     # 코퍼스 회귀 게이트 체인(pages·score·roundtrip·pdf-table·pdf-text·formats·fuzz·reflow·redact·ocr·hwp2hwpx)
 npm run bench:visual   # 선택 진단: 한컴 실렌더 비교 (macOS GUI 전용 — bench/visual/, 순수 로직은 hash-lib.mjs)
 npm run sync-meta      # 공문서 엔진 스펙·구성 기준 정본(docs/) → 스킬 사본(.claude/skills/gongmunseo/references/) 동기화
 node bench/predict-layout.mjs 문서.hwpx --loose   # 생성 공문서의 한글 조판 예측(실글꼴 폭표, 한글 2024 PDF 154줄 재현) — 한컴 없이 벌어진 줄·고아 줄·압축 확인

@@ -14,7 +14,7 @@ import { fieldEndXml } from "./fields.js"
 export const TAG = {
   PARA_HEADER: 0x42, PARA_TEXT: 0x43, PARA_CHAR_SHAPE: 0x44, PARA_LINE_SEG: 0x45, PARA_RANGE_TAG: 0x46, CTRL_HEADER: 0x47,
   LIST_HEADER: 0x48, PAGE_DEF: 0x49, FOOTNOTE_SHAPE: 0x4a, PAGE_BORDER_FILL: 0x4b, SHAPE_COMPONENT: 0x4c, TABLE: 0x4d,
-  CTRL_DATA: 0x57,
+  CTRL_DATA: 0x57, MEMO_LIST: 0x5d,
 } as const
 
 /** 1 WCHAR 글자 컨트롤 */
@@ -35,7 +35,8 @@ export function paragraphsXml(nodes: RecNode[], ctx: ConvertContext): string {
 }
 
 /** 글 토큰 — 글자, 인라인 요소(hp:t 안), 개체·컨트롤 요소(run 형제) */
-type Tok = { pos: number; t: "text"; s: string } | { pos: number; t: "inline"; xml: string; mark?: boolean }
+/** cs: 글자 스타일(영역 태그 종류 1) — 같은 run 안에서도 hp:t 를 따로 연다 */
+type Tok = { pos: number; t: "text"; s: string; cs?: number } | { pos: number; t: "inline"; xml: string; mark?: boolean; cs?: number }
   | { pos: number; t: "ctrl"; xml: string; obj: boolean; def?: boolean }
 
 function paragraphXml(p: RecNode, ctx: ConvertContext): string {
@@ -59,7 +60,9 @@ function paragraphXml(p: RecNode, ctx: ConvertContext): string {
   }
   if (!runs.length) runs.push([0, 0])
   const ctrls = p.kids.filter(k => k.rec.tagId === TAG.CTRL_HEADER)
-  const toks = tokenize(text, ctrls, ctx, new Set(runs.map(r => r[0])), rangeMarks(p.kids.find(k => k.rec.tagId === TAG.PARA_RANGE_TAG)))
+  const ranges = rangeTags(p.kids.find(k => k.rec.tagId === TAG.PARA_RANGE_TAG))
+  const toks = tokenize(text, ctrls, ctx, new Set([...runs.map(r => r[0]), ...ranges.styles.flatMap(r => [r[0], r[1]])]), ranges.marks)
+  for (const k of toks) if (k.t !== "ctrl") k.cs = ranges.styles.find(r => k.pos >= r[0] && k.pos < r[1])?.[2]
 
   const units = text.length / 2
   const hasCtrl = toks.some(t => t.t === "ctrl")
@@ -85,10 +88,13 @@ function paragraphXml(p: RecNode, ctx: ConvertContext): string {
     ["columnBreak", bit(breaks, 3)], ["merged", merged]], body)
 }
 
-/** 영역 태그(PARA_RANGE_TAG: 시작·끝 위치, 종류 상위 8비트·데이터 하위 24비트) → 글자 위치마다 그 글자 앞에 둘 인라인 요소. 형광펜(종류 2, 데이터는 색)만 옮긴다 */
-function rangeMarks(node: RecNode | undefined): Map<number, string[]> {
-  const marks = new Map<number, string[]>()
-  if (!node) return marks
+/**
+ * 영역 태그(PARA_RANGE_TAG: 시작·끝 위치, 종류 상위 8비트·데이터 하위 24비트) — 형광펜(종류 2, 데이터는 색)은 글자 위치마다 그 글자
+ * 앞에 둘 인라인 요소로, 글자 스타일(종류 1, 데이터는 스타일 번호)은 [시작, 끝, 번호] 로
+ */
+function rangeTags(node: RecNode | undefined): { marks: Map<number, string[]>; styles: Array<[number, number, number]> } {
+  const marks = new Map<number, string[]>(), styles: Array<[number, number, number]> = []
+  if (!node) return { marks, styles }
   const add = (pos: number, xml: string, first: boolean): void => {
     const list = marks.get(pos) ?? []
     if (first) list.unshift(xml); else list.push(xml)
@@ -96,11 +102,13 @@ function rangeMarks(node: RecNode | undefined): Map<number, string[]> {
   }
   for (const c = new Cur(node.rec.data); c.rest >= 12;) {
     const start = c.u32(), end = c.u32(), tag = c.u32()
-    if (tag >>> 24 !== 2 || end <= start) continue
+    if (end <= start) continue
+    if (tag >>> 24 === 1) styles.push([start, end, tag & 0xffffff])
+    if (tag >>> 24 !== 2) continue
     add(start, el("hp:markpenBegin", [["color", color(tag & 0xffffff)]]), false)
     add(end, "<hp:markpenEnd/>", true) // 같은 자리에서는 앞 영역을 닫고 연다
   }
-  return marks
+  return { marks, styles }
 }
 
 /** 글 → 토큰. 글은 글자 모양 구간 경계(cuts)에서 끊는다 */
@@ -171,9 +179,14 @@ function tokenize(text: Buffer, ctrls: RecNode[], ctx: ConvertContext, cuts: Set
 function runXml(charShape: number, toks: Tok[]): string {
   const open = `<hp:run charPrIDRef="${charShape}">`
   if (!toks.length) return el("hp:run", [["charPrIDRef", charShape]])
-  let out = "", t: string | null = null
-  const closeT = (): void => { if (t !== null) out += t ? `<hp:t>${t}</hp:t>` : "<hp:t/>"; t = null }
+  let out = "", t: string | null = null, tcs: number | undefined
+  const closeT = (): void => {
+    if (t !== null) { const a = tcs === undefined ? "" : ` charStyleIDRef="${tcs}"`; out += t ? `<hp:t${a}>${t}</hp:t>` : `<hp:t${a}/>` }
+    t = null
+  }
   toks.forEach((k, i) => {
+    if (k.t !== "ctrl" && t !== null && k.cs !== tcs) closeT()
+    if (k.t !== "ctrl" && t === null) tcs = k.cs
     if (k.t === "text") t = (t ?? "") + escText(k.s)
     // 영역 표시(형광펜) 바로 뒤가 개체면 글 마디 밖, run 바로 아래에 둔다
     else if (k.t === "inline" && k.mark && toks[i + 1]?.t === "ctrl") { closeT(); out += k.xml }
@@ -196,6 +209,15 @@ export function sectionXml(top: RecNode[], ctx: ConvertContext): string {
   // 0 인 묶음은 바탕쪽이 아니다(메모 글)
   const last = top.filter(n => n.rec.tagId === TAG.PARA_HEADER).at(-1)
   ctx.tailMasters = last ? listGroups(last.kids).filter(g => g.head.rec.data.length >= 20 && (g.head.rec.data.readUInt32LE(8) || g.head.rec.data.readUInt32LE(12))) : []
+  ctx.linkedParas = splitLinkedBoxes(top)
+  // 메모 글 — 구역 끝 MEMO_LIST(번호 DWORD) 뒤 LIST_HEADER(크기 정보 없음) 와 문단
+  ctx.memos = new Map()
+  let memo = -1
+  for (const k of last?.kids ?? []) {
+    if (k.rec.tagId === TAG.MEMO_LIST) memo = k.rec.data.length >= 4 ? k.rec.data.readUInt32LE(0) : -1
+    else if (k.rec.tagId === TAG.LIST_HEADER) { if (memo >= 0 && k.rec.data.length < 20) ctx.memos.set(memo, { head: k, paras: [] }); else memo = -1 }
+    else if (k.rec.tagId === TAG.PARA_HEADER && memo >= 0) ctx.memos.get(memo)?.paras.push(k)
+  }
   return XML_DECL + `<hs:sec ${NS}>` + paragraphsXml(top, ctx) + "</hs:sec>"
 }
 
@@ -295,6 +317,47 @@ function presentationXml(data: Buffer): string {
 }
 
 const MASTER_KINDS = ["BOTH", "EVEN", "ODD"] as const
+
+/**
+ * 연결된 글상자 — HWP 는 사슬의 글을 첫 글상자(목록 머리 @20 제 id·@24 다음 id)에 모두 두고 줄 나눔 정보로 다음 글상자에 흘린다.
+ * 한글은 HWPX 의 연결 글상자에서 이 흐름을 다시 짜지 않아 다음 글상자가 비어 보인다(한글 화면 대조) — 문단을 줄 위치가 처음으로
+ * 되돌아가는 곳에서 끊어 사슬 차례대로 제 글상자에 나눠 담는다. 연결 표시는 쓰지 않는다
+ */
+function splitLinkedBoxes(top: RecNode[]): Map<number, RecNode[]> {
+  const boxes = new Map<number, { next: number; paras: RecNode[] }>()
+  const walk = (nodes: RecNode[]): void => {
+    for (const n of nodes) {
+      if (n.rec.tagId === TAG.SHAPE_COMPONENT) {
+        const g = listGroups(n.kids)[0]
+        const d = g?.head.rec.data
+        if (g && d && d.length >= 28 && d.readUInt32LE(20)) boxes.set(d.readUInt32LE(20), { next: d.readUInt32LE(24), paras: g.paras })
+      }
+      walk(n.kids)
+    }
+  }
+  walk(top)
+  const out = new Map<number, RecNode[]>()
+  const nexts = new Set([...boxes.values()].map(b => b.next))
+  const vpos = (p: RecNode, last: boolean): number => {
+    const ls = p.kids.find(k => k.rec.tagId === TAG.PARA_LINE_SEG)?.rec.data
+    if (!ls || ls.length < 36) return -1
+    return ls.readInt32LE((last ? Math.floor(ls.length / 36) - 1 : 0) * 36 + 4)
+  }
+  for (const [id, head] of boxes) {
+    if (nexts.has(id) || !head.next) continue
+    const chain = [id]
+    for (let n = head.next; n && boxes.has(n) && !chain.includes(n); n = boxes.get(n)!.next) chain.push(n)
+    let k = 0
+    const parts: RecNode[][] = [[]]
+    head.paras.forEach((p, i) => {
+      if (i > 0 && k + 1 < chain.length && vpos(p, false) >= 0 && vpos(p, false) < vpos(head.paras[i - 1], true)) { k++; parts.push([]) }
+      parts[k].push(p)
+    })
+    if (parts.length < 2) continue
+    chain.forEach((cid, i) => { if (parts[i]?.length) out.set(cid, parts[i]) })
+  }
+  return out
+}
 
 /** 바탕쪽 하나 → masterpageN.xml(ctx.masterPages 에 쌓음), 구역 정의에 둘 참조. LIST_HEADER 목록 머리 뒤 글 폭·높이·글/번호 참조 */
 function masterPageRef(g: { head: RecNode; paras: RecNode[] }, kind: string, pageNumber: number, ctx: ConvertContext): string {

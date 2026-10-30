@@ -18,6 +18,10 @@ export interface ConvertContext {
   masterPages: string[]
   /** 지금 구역의 확장 바탕쪽(구역 끝 LIST_HEADER 묶음) — 구역 정의가 기본 바탕쪽 뒤에 쓴다 */
   tailMasters: Array<{ head: RecNode; paras: RecNode[] }>
+  /** 연결된 글상자의 제 몫 문단(목록 id → 문단) — 사슬 머리에 모인 글을 줄 나눔 정보대로 나눈 것 */
+  linkedParas: Map<number, RecNode[]>
+  /** 지금 구역의 메모 글(구역 끝 MEMO_LIST 번호 → LIST_HEADER 묶음) — 메모 필드가 제 번호 글을 subList 로 쓴다 */
+  memos: Map<number, { head: RecNode; paras: RecNode[] }>
   /** 차트 OLE(BIN_DATA 순번) → 차트 파트 경로, 차트가 아니면 null */
   chartOf(binId: number): string | null
   /** 그림 BinData 참조 이름 */
@@ -32,7 +36,7 @@ export interface CtrlXml { xml: string; obj: boolean; def?: boolean }
 /** 확장 컨트롤 하나 → 요소. obj 는 run 안에서 뒤에 글 자리(hp:t)를 여는 개체(표·그림·도형·수식) */
 export function controlXml(node: RecNode, ctx: ConvertContext): CtrlXml | null {
   const id = ctrlId(node)
-  if (id.startsWith("%")) return { xml: fieldBeginXml(node, id, ctx.fields), obj: false }
+  if (id.startsWith("%")) return { xml: fieldBeginXml(node, id, ctx), obj: false }
   switch (id) {
     case "secd": return { xml: secPrXml(node, ctx), obj: false, def: true }
     case "cold": return { xml: colPrXml(node), obj: false, def: true }
@@ -146,7 +150,7 @@ function tableXml(node: RecNode, ctx: ConvertContext): string {
   const zones = t.u16()
   let zoneXml = ""
   for (let i = 0; i < zones && t.rest >= 10; i++) {
-    const sc = t.u16(), sr = t.u16(), ec = t.u16(), er = t.u16(), bf = t.u16()
+    const sr = t.u16(), sc = t.u16(), er = t.u16(), ec = t.u16(), bf = t.u16()
     zoneXml += el("hp:cellzone", [["startRowAddr", sr], ["startColAddr", sc], ["endRowAddr", er], ["endColAddr", ec], ["borderFillIDRef", bf]])
   }
   const before = tIdx >= 0 ? node.kids.slice(0, tIdx) : []

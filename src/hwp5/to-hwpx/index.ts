@@ -106,6 +106,8 @@ export async function hwpToHwpx(input: Uint8Array | ArrayBuffer, options?: HwpTo
     fields: { stack: [] },
     masterPages: [],
     tailMasters: [],
+    memos: new Map(),
+    linkedParas: new Map(),
     chartOf(binId) {
       if (chartByBin.has(binId)) return chartByBin.get(binId)!
       const item = items.find(b => b.index === binId)

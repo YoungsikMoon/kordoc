@@ -7,7 +7,8 @@
  */
 
 import { Cur, type RecNode, el, esc, escText } from "./util.js"
-import { TAG } from "./section.js"
+import { TAG, paragraphsXml } from "./section.js"
+import { subListAttrs, type ConvertContext } from "./controls.js"
 
 const FIELD_TYPES: Record<string, string> = {
   "%clk": "CLICK_HERE", "%hlk": "HYPERLINK", "%usr": "USER_INFO", "%fmu": "FORMULA", "%bmk": "BOOKMARK", "%dte": "DATE", "%ddt": "DOC_DATE",
@@ -64,10 +65,38 @@ function params(type: string, prop: number, command: string): string {
 
 export interface FieldState { stack: Array<{ id: number; fieldid: number }> }
 
+/** FILETIME(1601년부터 100ns) → 한글처럼 지역 시각에 Z 를 붙인 꼴 */
+function fileTime(low: number, high: number): string {
+  const d = new Date(Number((BigInt(high) * 2n ** 32n + BigInt(low)) / 10000n) - 11644473600000)
+  const p2 = (n: number): string => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}Z`
+}
+
+/**
+ * 메모 — HWP 는 '%unk' 필드에 "MEMO/모양/번호/생성 시각 하위/상위/작성자/" 명령을 두고 글은 구역 끝 메모 목록에 둔다. HWPX 는 MEMO 필드
+ * ('%%me') 매개변수와 subList 로 쓴다
+ */
+function memoFieldXml(id: number, a: number, prop: number, command: string, ctx: ConvertContext): string {
+  const [, shape = "", num = "0", low = "0", high = "0", author = ""] = command.split("/")
+  const n = Number(num) || 0
+  const items = [`<hp:integerParam name="Prop">${prop}</hp:integerParam>`, str("Command", command), str("ID", `memo${n}`),
+    `<hp:integerParam name="Number">${n}</hp:integerParam>`, str("Author", author), str("MemoShapeIDRef", shape),
+    str("CreateDateTime", fileTime(Number(low) >>> 0, Number(high) >>> 0))]
+  const g = ctx.memos.get(n)
+  return el("hp:fieldBegin", [["id", id], ["type", "MEMO"], ["name", ""], ["editable", a & 1], ["dirty", (a >>> 15) & 1], ["zorder", n],
+    ["fieldid", 0x25256d65]], `<hp:parameters cnt="${items.length}" name="">${items.join("")}</hp:parameters>`
+    + (g ? el("hp:subList", subListAttrs(g.head.rec.data), paragraphsXml(g.paras, ctx)) : ""))
+}
+
 /** 필드 시작 컨트롤 → hp:ctrl/hp:fieldBegin, 열린 필드에 쌓는다 */
-export function fieldBeginXml(node: RecNode, kind: string, state: FieldState): string {
+export function fieldBeginXml(node: RecNode, kind: string, ctx: ConvertContext): string {
+  const state = ctx.fields
   const c = new Cur(node.rec.data, 4)
   const a = c.u32(), prop = c.u8(), command = c.str(), id = c.u32()
+  if (kind === "%unk" && command.startsWith("MEMO/")) {
+    state.stack.push({ id, fieldid: 0x25256d65 })
+    return "<hp:ctrl>" + memoFieldXml(id, a, prop, command, ctx) + "</hp:ctrl>"
+  }
   const fieldid = node.rec.data.readUInt32LE(0)
   state.stack.push({ id, fieldid })
   const type = FIELD_TYPES[kind] ?? "UNKNOWN"

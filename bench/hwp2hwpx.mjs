@@ -34,8 +34,8 @@ const limit = Number(flag("limit", "0")) || Infinity
 const showN = Number(flag("show", "0"))
 const topN = Number(flag("top", "25"))
 const gateMode = args.includes("--gate")
-/** 무후퇴 플로어 — 변환기 첫 완성 뒤 실측으로 정한다 */
-const GATES = { attrMatch: 0, textMatch: 0, minPairs: 0 }
+/** 무후퇴 플로어 — 2026-10-31 실측(속성 0.99194·글 1·264짝) */
+const GATES = { attrMatch: 0.9919, textMatch: 1, minPairs: 264 }
 
 // ─── 정답 짝 ─────────────────────────────────────────
 
