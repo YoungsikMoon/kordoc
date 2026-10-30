@@ -147,8 +147,9 @@ export function detectRulingLines(
     && p.x2 - p.x1 >= boxMin && Math.abs(x - (p.x1 + p.x2) / 2) <= (p.x2 - p.x1) * 0.25
     && !sides(p.x1, p.y1, q.y1) && !sides(p.x2, p.y1, q.y1)
     && endsAt(p.x1, p.y1) && endsAt(p.x2, p.y1) && startsAt(q.x1, q.y1) && startsAt(q.x2, q.y1)))
-  for (const v of detectBands(ink, width, height, maxThickPx, true, (m, base, step, span) => solidRuns(m, base, step, span, bridgeMin))) {
-    if (v.y2 - v.y1 + 1 >= minLenPx || !sameSpan(endsOn(v.x1, v.y1), endsOn(v.x1, v.y2), v.x1)) continue
+  const shortV = detectBands(ink, width, height, maxThickPx, true, (m, base, step, span) => solidRuns(m, base, step, span, bridgeMin)).filter(v => v.y2 - v.y1 + 1 < minLenPx)
+  for (const v of shortV) {
+    if (!sameSpan(endsOn(v.x1, v.y1), endsOn(v.x1, v.y2), v.x1)) continue
     if (!verticals.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 <= v.y1 + tol && p.y2 >= v.y2 - tol)) verticals.push(v)
   }
   const allH = [...horizontals, ...dotH], allV = [...verticals, ...dotV]
@@ -192,6 +193,13 @@ export function detectRulingLines(
       const top = edgeH.filter(h => h.x1 <= a.x1 + tol && h.x2 >= a.x1 - tol && h.y1 < a.y1 && h.y1 >= a.y1 - depth)
       verticals.push({ ...a, y1: top.length ? Math.min(...top.map(h => h.y1)) : a.y1 })
     } else if (edgeH.some(p => (Math.abs(p.x1 - a.x1) <= tol || Math.abs(p.x2 - a.x1) <= tol) && p.y1 >= a.y1 - tol && p.y1 <= a.y2 + tol)) verticals.push(a)
+  }
+  // 머리 띠 안의 짧은 칸 구분선 — 띠 아래 겹줄 틈에서 아래 세로 괘선과 끊겨 최소 길이에 못 미쳤다. 위끝·아래끝이 가로 괘선에 닿고 바로 아래에서
+  // 같은 x 의 세로 괘선이 시작하면 그 열 경계다(검정고시 계획 과목 표: 노란 머리 행의 회색 구분선 15pt — 안 받으면 머리 글이 한 칸에 몰렸다)
+  for (const v of shortV) {
+    if (!endsOn(v.x1, v.y1).length || !endsOn(v.x1, v.y2).length) continue
+    if (!verticals.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 >= v.y2 - tol && p.y1 <= v.y2 + tol * 3 && p.y2 - p.y1 + 1 >= minLenPx)) continue
+    if (!verticals.some(p => Math.abs(p.x1 - v.x1) <= tol && p.y1 <= v.y1 + tol && p.y2 >= v.y2 - tol)) verticals.push(v)
   }
   // Faint internal rules are evidence only when enclosed by an existing dark
   // frame and repeated across both axes. Do not brighten the whole page's grid.

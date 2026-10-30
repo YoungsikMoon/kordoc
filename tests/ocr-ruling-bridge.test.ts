@@ -28,3 +28,21 @@ describe("detectRulingLines — 조직도 상자 연결선", () => {
     assert.equal(detectRulingLines(edge, W, H, 1).verticals.filter(v => Math.abs(v.x1 - 30) <= 2 && v.y2 - v.y1 < 20).length, 0)
   })
 })
+
+describe("detectRulingLines — 머리 띠 안 짧은 칸 구분선", () => {
+  // 머리 행(윗변 20·아랫변 34) 아래 3px 흰 틈 뒤 본문 윗변(38)부터 본문 세로 괘선이 이어진다 — 머리 행 구분선(14pt)은 최소 길이 미만
+  const table = (below: boolean) => {
+    const g = canvas()
+    rect(g, 20, 20, 140, 22); rect(g, 20, 34, 140, 35); rect(g, 20, 38, 140, 40); rect(g, 20, 118, 140, 120)
+    rect(g, 20, 20, 22, 120); rect(g, 138, 20, 140, 120)
+    rect(g, 59, 22, 61, 35)
+    if (below) rect(g, 59, 38, 61, 118)
+    return detectRulingLines(g, W, H, 1).verticals.filter(v => Math.abs(v.x1 - 60) <= 2 && v.y1 <= 24 && v.y2 >= 33)
+  }
+  it("바로 아래에서 같은 x 의 세로 괘선이 시작하면 열 경계로 받는다", () => {
+    assert.equal(table(true).length, 1)
+  })
+  it("아래에 이어지는 세로 괘선이 없으면 받지 않는다", () => {
+    assert.equal(table(false).length, 0)
+  })
+})
