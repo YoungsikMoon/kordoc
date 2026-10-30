@@ -238,7 +238,8 @@ export function fallbackTextEdit(ctx: FallbackCtx, origLines: string, newLines: 
   if (!key(origPlain) || origPlain === newPlain) return false
   const runsIn = (paras: ScanParagraph[]) => findRuns(paras.map(p => p.text), origPlain, opt).map(([i, j]) => paras.slice(i, j + 1))
   const runs = scope ? runsIn(scope) : ctx.scans.flatMap(s => runsIn(sectionParagraphs(s)))
-  const run = runs.length === 1 ? runs[0] : runs.length === total ? runs[occ] : undefined
+  // 같은 글이 여러 곳이면 등장 순번으로 — 짧은 글("1" "계")은 순번이 어긋나기 쉬워 하나뿐일 때만
+  const run = runs.length === 1 ? runs[0] : runs.length === total && key(origPlain).length >= 4 ? runs[occ] : undefined
   return !!run && editRun(ctx, run, origPlain, newPlain, opt)
 }
 

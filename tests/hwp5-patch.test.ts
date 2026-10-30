@@ -715,11 +715,30 @@ describe("patchHwp — 빈 표 visual 무수정", () => {
 })
 
 describe("patchHwp — 안전 게이트", () => {
-  it("컨트롤 문자(탭) 포함 문단은 graceful skip — 파일은 그대로", async () => {
+  it("컨트롤 문자(탭) 포함 문단 — 바뀐 자리가 글자만 덮으면 그 바이트만 바꾸고 탭은 그대로 둔다", async () => {
     const hwp = buildHwp([paragraphWithTab("탭이 있는 문단")])
     const md = parseHwp5Document(Buffer.from(hwp)).markdown
-    const target = md.split("\n\n").find(u => u.includes("탭이 있는 문단"))!
-    const r = await patchHwp(hwp, md.replace(target, "탭 없는 새 문단"))
+    const r = await patchHwp(hwp, md.replace("탭이 있는 문단", "탭이 없는 문단"))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    const recs = readRecords(Buffer.from(CFB.find(CFB.parse(Buffer.from(r.data!)), "/BodyText/Section0")!.content))
+    const text = recs.find(x => x.tagId === 0x43)!.data
+    assert.equal(text.readUInt16LE(0), 0x09, "앞 탭 보존")
+    assert.equal(text.subarray(16).toString("utf16le"), "탭이 없는 문단\r")
+    assert.equal(recs.find(x => x.tagId === 0x42)!.data.readUInt32LE(0), text.length / 2, "nChars")
+  })
+
+  it("편집이 제어 문자에 걸치면 graceful skip — 파일은 그대로", async () => {
+    const tab = Buffer.alloc(16); tab.writeUInt16LE(0x09, 0)
+    const textData = Buffer.concat([utf16("앞글"), tab, utf16("뒤글"), Buffer.from([0x0d, 0x00])])
+    const header = Buffer.alloc(24)
+    header.writeUInt32LE(textData.length / 2, 0)
+    header.writeUInt32LE(1 << 9, 4)
+    header.writeUInt16LE(1, 12)
+    header.writeUInt16LE(1, 16)
+    const hwp = buildHwp([Buffer.concat([rec(0x42, 0, header), rec(0x43, 1, textData), rec(0x44, 1, Buffer.alloc(8)), rec(0x45, 1, Buffer.alloc(36))])])
+    const md = parseHwp5Document(Buffer.from(hwp)).markdown
+    const target = md.split("\n\n").find(u => u.includes("앞글"))!
+    const r = await patchHwp(hwp, md.replace(target, "앞글바꿈뒤글"))
     assert.equal(r.success, true)
     assert.equal(r.applied, 0)
     assert.ok(r.skipped.length >= 1)

@@ -589,7 +589,7 @@ function modifyUnit5(oi: number, orig: OrigUnit, edited: MdUnit, ctx: PatchCtx5,
     if (!origPlain.trim() || origPlain === newPlain) return false
     const groups = scope ? [scope] : ctx.scans.map(s => s.paras)
     const runs = groups.flatMap(ps => findRuns(ps.map(p => p.rawText), origPlain, opt).map(([i, j]) => ps.slice(i, j + 1)))
-    const run = runs.length === 1 ? runs[0] : runs.length === total ? runs[occ] : undefined
+    const run = runs.length === 1 ? runs[0] : runs.length === total && origPlain.replace(/\s+/g, "").length >= 4 ? runs[occ] : undefined
     const plan = run && planRunEdits(run.map(p => p.rawText), origPlain, newPlain, opt)
     if (!run || !plan) return false
     const mark = snapshot()
@@ -964,11 +964,11 @@ function gfmCellToPlain(md: string): string | null {
  * - 선두/말미에는 개체 앵커(0x0b)·필드(0x03/0x04)·자동번호 등 "비가시 control"과 문단끝(0x0d)만 허용.
  * appendParaText(record.ts)의 바이트 전진 규칙을 그대로 미러한다 — 어긋나면 한컴 변조감지.
  */
-export function splitParaText(data: Buffer):
-  | { prefix: Buffer; prefixUnits: number; core: string; suffix: Buffer; suffixUnits: number }
-  | null {
-  interface Tok { start: number; end: number; units: number; plain: boolean; visible: boolean }
-  const toks: Tok[] = []
+interface ParaTok { start: number; end: number; units: number; plain: boolean; visible: boolean }
+
+/** PARA_TEXT 낱자 토큰 (바이트 범위) — appendParaText 의 바이트 전진 규칙 그대로. 데이터를 정확히 못 먹으면 null */
+function tokenizeParaText(data: Buffer): ParaTok[] | null {
+  const toks: ParaTok[] = []
   let i = 0
   while (i + 1 < data.length) {
     const ch = data.readUInt16LE(i)
@@ -1010,6 +1010,14 @@ export function splitParaText(data: Buffer):
     }
   }
   if (i !== data.length) return null  // 토큰화가 데이터를 정확히 소비 못함 — 안전상 미지원
+  return toks
+}
+
+export function splitParaText(data: Buffer):
+  | { prefix: Buffer; prefixUnits: number; core: string; suffix: Buffer; suffixUnits: number }
+  | null {
+  const toks = tokenizeParaText(data)
+  if (!toks) return null
 
   let firstP = -1, lastP = -1
   for (let k = 0; k < toks.length; k++) if (toks[k].plain) { if (firstP < 0) firstP = k; lastP = k }
@@ -1212,6 +1220,7 @@ function stageParaPatch(
   // PARA_TEXT를 [선두 control][텍스트 코어][말미 control/문단끝]로 분해
   const seg = splitParaText(textRec.data)
   if (!seg) {
+    if (origPlain !== undefined && stageInlineEdit(scan, para, newPlain, origPlain, keepLineseg)) return 1
     return skip(para.ctrlMask !== 0
       ? "컨트롤 문자(탭/필드/특수공백 등 텍스트 중간) 포함 문단 — 미지원 (v1)"
       : "PARA_TEXT 재구성 불일치 — 원문 보존 불가로 미지원")
@@ -1249,6 +1258,55 @@ function stageParaPatch(
 
   scan.repl.set(para.headerIdx, newHeader)
   return 1
+}
+
+/**
+ * 글 가운데 탭·필드·특수 공백 같은 제어 문자가 든 문단 — 바뀐 자리가 일반 글자만 덮으면 그 바이트만 바꾼다. 제어 문자는 바이트째
+ * 그대로 두고, CHAR_SHAPE run 은 위치만 민다. 편집이 제어 문자에 걸치거나 원문과 못 맞대면 false
+ */
+function stageInlineEdit(scan: SectionScan5, para: ScanPara5, newPlain: string, origPlain: string, keepLineseg: boolean): boolean {
+  if (origPlain.includes("\n") || newPlain.includes("\n")) return false
+  const data = scan.records[para.textIdx].data
+  const toks = tokenizeParaText(data)
+  if (!toks) return false
+  // 낱자마다 글 기여(탭 "\t"·NBSP·고정폭 빈칸, 그 밖 제어 문자는 없음)를 추출 규칙 그대로 얻는다
+  const spans: Array<{ from: number; to: number; tok: ParaTok }> = []
+  let text = ""
+  for (const tok of toks) {
+    const st = createParaTextState()
+    appendParaText(st, data.subarray(tok.start, tok.end))
+    spans.push({ from: text.length, to: text.length + st.text.length, tok })
+    text += st.text
+  }
+  if (text !== para.rawText) return false
+  const edits = alignedTextEdits(text, origPlain, newPlain)
+  if (!edits || edits.length !== 1) return false
+  const e = edits[0]
+  let byteStart: number, byteEnd: number
+  if (e.start === e.end) {
+    const at = spans.find(x => x.from === e.start && x.to > x.from) ?? spans.find(x => x.to === e.start && x.to > x.from)
+    if (!at) return false
+    byteStart = byteEnd = at.from === e.start ? at.tok.start : at.tok.end
+  } else {
+    const hit = spans.filter(x => x.from < e.end && x.to > e.start)
+    if (!hit.length || hit.some(x => !x.tok.plain || x.from < e.start || x.to > e.end)) return false
+    byteStart = hit[0].tok.start
+    byteEnd = hit[hit.length - 1].tok.end
+    // 덮은 낱자 사이에 끼인 제어 문자(글 기여 0)가 있으면 지우지 않는다
+    if (toks.some(t => t.start >= byteStart && t.end <= byteEnd && !t.plain)) return false
+  }
+  const rep = Buffer.from(e.text, "utf16le")
+  const records = scan.records
+  const newHeader = Buffer.from(records[para.headerIdx].data)
+  const nChars = (data.length - (byteEnd - byteStart) + rep.length) / 2
+  newHeader.writeUInt32LE(((para.nCharsRaw & 0x80000000) | nChars) >>> 0, 0)
+  const cs = shiftCharShape(records[para.charShapeIdx].data, byteStart / 2, byteEnd / 2, rep.length / 2)
+  scan.repl.set(para.textIdx, Buffer.concat([data.subarray(0, byteStart), rep, data.subarray(byteEnd)]))
+  scan.repl.set(para.charShapeIdx, cs.buf)
+  newHeader.writeUInt16LE(cs.count, 12)
+  stageLineSegs(scan, para, newHeader, text.slice(0, e.start) + e.text + text.slice(e.end), 0, nChars, keepLineseg)
+  scan.repl.set(para.headerIdx, newHeader)
+  return true
 }
 
 /**
