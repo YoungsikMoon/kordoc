@@ -20,8 +20,9 @@ export function registerRenderTools(server: McpServer): void {
       reflow_mode: z.enum(["keep", "charAll"]).default("keep").describe("reflow 줄바꿈: keep=어절 단위, charAll=글자 단위"),
       pages: z.string().min(1).optional().describe("페이지 선택(1-based: '3', '1-3', '1,3,7-9') — 지정하면 페이지별 산출(이미지 응답은 최대 8쪽). HWPX png/svg 에서 미지정이면 전체를 세로 스택 1장으로"),
       max_width_px: z.number().int().min(200).max(4000).optional().describe("래스터(png/jpeg) 최대 폭 px — 큰 문서 응답 부피 조절"),
+      password: z.string().optional().describe("암호로 보호된 HWPX·HWP 의 열기 암호 (렌더가 암호 안내로 실패하면 이 옵션으로 재시도하세요. 배포용·한컴 DRM 문서는 해당 없음)"),
     },
-    async ({ file_path, format, output_path, highlights, reflow_mode, pages, max_width_px }) => {
+    async ({ file_path, format, output_path, highlights, reflow_mode, pages, max_width_px, password }) => {
       try {
         const EXT: Record<string, string[]> = { png: [".png"], jpeg: [".jpg", ".jpeg"], svg: [".svg"], html: [".html", ".htm"], pdf: [".pdf"] }
         const needsFile = format === "svg" || format === "html" || format === "pdf"
@@ -35,7 +36,7 @@ export function registerRenderTools(server: McpServer): void {
           // 종전 동작(HWPX·pages 미지정): 전 페이지 세로 스택 1장/1파일
           const { renderHwpxToSvg } = await import("../render/index.js")
           // reflow는 조판 캐시가 있으면 무시되므로 항상 켠다 — 한컴본·생성본 모두 커버
-          const result = await renderHwpxToSvg(buffer, { highlights, reflow: true, reflowMode: reflow_mode })
+          const result = await renderHwpxToSvg(buffer, { highlights, reflow: true, reflowMode: reflow_mode, password })
           const summary = [
             `렌더 완료: ${result.pageCount}페이지, ${Math.round(result.width)}x${Math.round(result.height)}pt (텍스트 ${result.stats.texts}·이미지 ${result.stats.images}·표 ${result.stats.tables})`,
             ...result.warnings.map(w => `⚠️ ${w}`),
@@ -63,7 +64,7 @@ export function registerRenderTools(server: McpServer): void {
         }
         // 통합 렌더러(renderDocument) — 페이지별 산출. HWP5 는 항상 이 경로
         const { renderDocument } = await import("../render/index.js")
-        const { scene, assets } = await renderDocument(buffer, { format, pages, highlights, reflow: true, reflowMode: reflow_mode, maxWidthPx: max_width_px })
+        const { scene, assets } = await renderDocument(buffer, { format, pages, highlights, reflow: true, reflowMode: reflow_mode, maxWidthPx: max_width_px, password })
         const summary = [
           `렌더 완료: 문서 ${scene.pages.length}페이지 중 ${assets.filter(a => a.page !== undefined).length || 1}건 (텍스트 ${scene.stats.texts}·이미지 ${scene.stats.images}·표 ${scene.stats.tables}·도형 ${scene.stats.shapes})`,
           ...scene.warnings.map(w => `⚠️ ${w}`),
