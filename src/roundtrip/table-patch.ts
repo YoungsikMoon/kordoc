@@ -22,7 +22,7 @@ import {
 } from "./markdown-units.js"
 import { patchTableRows, type InsertCell } from "./table-rows.js"
 import { buildEmbeddedLineSplices } from "./embedded-line-patch.js"
-import { minimalTextSplices } from "./inline-edit.js"
+import { minimalTextSplices, parseEmphasis } from "./inline-edit.js"
 import { isDatePlaceholder } from "../form/recognize.js"
 import { clickHereEditSplices } from "../form/click-here.js"
 import { restructureCellLines } from "./structure-edit.js"
@@ -85,11 +85,12 @@ function patchGfmRowPair(
       skip("셀 내 이미지 변경은 미지원")
       continue
     }
-    const newLines = unescapeGfmCell(stripCellTokens(editedRows[er][c]))
-      .split("\n").map(s => s.trim()).filter(Boolean)
-    const origLines = unescapeGfmCell(stripCellTokens(origRows[r][c]))
-      .split("\n").map(s => s.trim()).filter(Boolean)
+    const newLines = gfmCellLines(editedRows[er][c])
+    const origLines = gfmCellLines(origRows[r][c])
     const n = applyCellEdit(table, scanTable, gridR, gridC, newLines, ctx, origRows[r][c], editedRows[er][c], origLines.length)
+    if (n > 0 && gfmCellMarks(origRows[r][c]) !== gfmCellMarks(editedRows[er][c])) {
+      ctx.skipped.push({ reason: "강조(굵게·밑줄 등) 추가·삭제는 미지원: 글만 적용, 원문 글자 모양 유지", before: summarize(origRows[r][c]), after: summarize(editedRows[er][c]), partial: true })
+    }
     if (n > 0 && origTokens) {
       ctx.skipped.push({
         reason: "셀 내 이미지·텍스트 혼재 — 텍스트만 적용 (이미지 인접 배치는 <br> 분리로 재현됨)",
@@ -99,6 +100,17 @@ function patchGfmRowPair(
     applied += n
   }
   return applied
+}
+
+/** GFM 칸 → 평문 줄: 그림 토큰을 떼고 줄(<br>)마다 강조 표지를 걷어 역이스케이프한다 — 표지는 builder 가 칸 span 서식으로 단
+ *  표기라 hp:t 에 쓰면 안 된다 */
+function gfmCellLines(md: string): string[] {
+  return stripCellTokens(md).split(/(?<!\\)<br\s*\/?>/i).map(l => parseEmphasis(l).plain.trim()).filter(Boolean)
+}
+
+/** GFM 칸의 강조 조각 수 — 편집 전후가 다르면 강조를 더하거나 뺀 것 */
+function gfmCellMarks(md: string): number {
+  return stripCellTokens(md).split(/(?<!\\)<br\s*\/?>/i).reduce((n, l) => n + parseEmphasis(l).marks.filter(Boolean).length, 0)
 }
 
 /** GFM 표 행 추가/삭제 — table-rows 엔진에 GFM 도메인을 연결 */
@@ -127,7 +139,7 @@ function patchGfmTableRows(
       const cells: InsertCell[] = []
       for (const cellMd of editedRows[ei]) {
         if (extractCellTokens(cellMd)) return null
-        const lines = unescapeGfmCell(cellMd).split("\n").map(s => s.trim()).filter(Boolean)
+        const lines = gfmCellLines(cellMd)
         cells.push({ lines, colSpan: 1, rowSpan: 1 })
       }
       return cells
@@ -390,7 +402,7 @@ export function applyCellEdit(
   // 미기입 누름틀이 든 칸 — 마크다운에는 안내문이 빠져 있다(스캔 문단 글에는 있다). 그 자리에 쓴 값은 누름틀에 채운다(본문 문단과
   // 같은 규칙). 누름틀만 든 칸은 마크다운에서 빈칸이라 아래 줄 수 맞대기가 어긋난다
   if (newLines.length === 1) {
-    const origPlain = unescapeGfmCell(stripCellTokens(before)).replace(/\s+/g, " ").trim()
+    const origPlain = gfmCellLines(before).join(" ").replace(/\s+/g, " ")
     for (const p of cell.paragraphs) {
       const xml = ctx.scans[p.sectionIndex]?.xml
       const sp = xml === undefined ? null : clickHereEditSplices(p, xml, origPlain, newLines[0])

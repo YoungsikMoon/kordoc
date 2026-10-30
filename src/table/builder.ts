@@ -840,7 +840,7 @@ function cellBlockToMarkdown(b: IRBlock): string {
     : b.spans?.length ? spansToMarkdown(b.spans) + escapeGfm(noteSuffix(b)) : escapeGfm(sanitizeText(b.text ?? "") + noteSuffix(b))
 }
 
-function cellToMarkdown(cell: IRCell, separator: string): string {
+export function cellToMarkdown(cell: IRCell, separator: string): string {
   if (!hasInlineCellBlocks(cell)) return escapeGfm(sanitizeText(cell.text))
   return cell.blocks!
     .map(cellBlockToMarkdown)

@@ -126,6 +126,36 @@ describe("patchHwpx: 문단 텍스트 수정", () => {
 })
 
 describe("patchHwpx: 표 셀 수정", () => {
+  it("굵은 칸이 있는 GFM 표도 칸 글만 고친다 — 강조 표지는 hp:t 에 쓰지 않고 굵은 run 은 그대로", async () => {
+    const original = new Uint8Array(await markdownToHwpx("| 필수 과제 | 비고 |\n| --- | --- |\n| **자율 과제** (예시) | 가 |"))
+    const markdown = (await parseHwpx(toAB(original), { layoutTables: "keep" })).markdown
+    assert.ok(markdown.includes("| **자율 과제** (예시) | 가 |"), markdown)
+    const edited = markdown.replace("| **자율 과제** (예시) | 가 |", "| **자율 과제** (예시) 수정 | 가 |")
+    const res = await patchHwpx(original, edited)
+    assert.equal(res.applied, 1, JSON.stringify(res.skipped))
+    assert.deepEqual(res.skipped, [])
+    assert.equal((await reparse(res.data!)).markdown, edited)
+    const xml = await (await JSZip.loadAsync(res.data!)).file("Contents/section0.xml")!.async("string")
+    assert.ok(!xml.includes("**"), "강조 표지가 글로 새지 않는다")
+    // 강조를 빼고 고치면 글만 적용하고 그렇다고 알린다 (원문 굵은 run 유지)
+    const unbold = await patchHwpx(original, markdown.replace("| **자율 과제** (예시) | 가 |", "| 자율 과제 (예시) 고침 | 가 |"))
+    assert.equal(unbold.applied, 1)
+    assert.ok(unbold.skipped.some(s => s.partial && /강조/.test(s.reason)), JSON.stringify(unbold.skipped))
+  })
+
+  const REAL = join(dirname(fileURLToPath(import.meta.url)), "..", "bench", "corpus", "korea-kr")
+  const realDoc = existsSync(REAL) ? readdirSync(REAL).find(f => f.startsWith("156765958_") && f.includes("기본계획 시안") && f.endsWith(".hwpx")) : undefined
+  it("굵은 칸·두 줄 칸 GFM 표(실문서) — 칸 끝 고침을 표 좌표로 반영한다", { skip: !realDoc }, async () => {
+    const original = new Uint8Array(readFileSync(join(REAL, realDoc!)))
+    const markdown = (await parseHwpx(toAB(original), { layoutTables: "keep" })).markdown
+    const unit = splitMarkdownUnits(markdown).find(u => u.kind === "gfm-table" && u.raw.includes("**자율 과제**"))!
+    const lines = unit.raw.split("\n")
+    lines[2] = lines[2].replace(/\| ([^|]*?[가-힣][^|]*?) \|/, (_m, t) => `| ${t} 수정 |`)
+    const res = await patchHwpx(original, markdown.replace(unit.raw, lines.join("\n")))
+    assert.equal(res.applied, 1, JSON.stringify(res.skipped))
+    assert.deepEqual(res.skipped.filter(s => !s.partial), [])
+  })
+
   it("GFM 셀 1개 수정 → 해당 셀만 반영", async () => {
     const { original, markdown } = await makeSynthetic()
     const edited = markdown.replace("| 예산 | 홍길동 | 1억원 |", "| 예산 | 박영희 | 1억원 |")
