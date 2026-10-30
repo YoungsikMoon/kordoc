@@ -1,0 +1,131 @@
+/**
+ * patch 가 "수정 불가"로 끝내지 않게 하는 경로들:
+ * - 강제 줄바꿈(<hp:lineBreak/>) 문단 수정
+ * - 좌표 매핑이 어긋난 편집을 원문 글로 찾아 고치기 (text-fallback)
+ * - 제자리 반영 못 한 편집이 남으면 원본 서식 새로쓰기 대체본 (rewrite-fallback)
+ */
+
+import { describe, it } from "node:test"
+import assert from "node:assert/strict"
+import JSZip from "jszip"
+import { markdownToHwpx, parseHwpx, patchHwpx } from "../src/index.js"
+import { scanSectionXml, applySplices, type SpliceEdit } from "../src/roundtrip/source-map.js"
+import { fallbackTextEdit, fallbackTableEdits } from "../src/roundtrip/text-fallback.js"
+import { needsRewrite, rewriteEdited, rewritePath } from "../src/roundtrip/rewrite-fallback.js"
+
+async function withSection(md: string, edit: (xml: string) => string): Promise<Uint8Array> {
+  const zip = await JSZip.loadAsync(await markdownToHwpx(md))
+  const xml = await zip.file("Contents/section0.xml")!.async("string")
+  zip.file("Contents/section0.xml", edit(xml))
+  return zip.generateAsync({ type: "uint8array" })
+}
+
+async function markdownOf(data: Uint8Array): Promise<string> {
+  return (await parseHwpx(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer, { layoutTables: "keep" })).markdown
+}
+
+async function sectionXml(data: Uint8Array): Promise<string> {
+  return (await JSZip.loadAsync(data)).file("Contents/section0.xml")!.async("string")
+}
+
+describe("강제 줄바꿈 문단 수정", () => {
+  it("줄바꿈 든 문단의 글을 고치면 줄바꿈은 그대로 두고 바뀐 자리만 쓴다", async () => {
+    const src = await withSection("첫 문단\n\n둘째 줄 앞부분 뒷부분입니다\n\n셋째 문단", x => x.replace("앞부분 뒷부분", "앞부분<hp:lineBreak/>뒷부분"))
+    const md = await markdownOf(src)
+    assert.ok(md.includes("앞부분\n뒷부분입니다"), md)
+    const r = await patchHwpx(src, md.replace("뒷부분입니다", "뒷부분을 고쳤습니다"))
+    assert.equal(r.success, true)
+    assert.equal(r.applied, 1)
+    assert.deepEqual(r.skipped, [])
+    assert.equal(r.verification!.stats.modified, 0)
+    assert.ok((await sectionXml(r.data!)).includes("앞부분<hp:lineBreak/>뒷부분을 고쳤습니다"))
+  })
+
+  it("줄을 늘리면 같은 줄바꿈 요소로 쓴다", async () => {
+    const src = await withSection("가나 다라", x => x.replace("가나 다라", "가나<hp:lineBreak/>다라"))
+    const md = await markdownOf(src)
+    const r = await patchHwpx(src, md.replace("다라", "다라\n마바"))
+    assert.equal(r.applied, 1)
+    assert.ok((await sectionXml(r.data!)).includes("다라<hp:lineBreak/>마바"))
+    assert.equal(r.verification!.stats.modified, 0)
+  })
+
+  it("빈 줄(줄바꿈 둘)로 갈라진 조각도 고친다", async () => {
+    const src = await withSection("앞 조각 뒤 조각입니다", x => x.replace("앞 조각 뒤", "앞 조각<hp:lineBreak/><hp:lineBreak/>뒤"))
+    const md = await markdownOf(src)
+    assert.ok(md.includes("앞 조각\n\n뒤 조각입니다"), md)
+    const r = await patchHwpx(src, md.replace("뒤 조각입니다", "뒤 조각을 바꿈"))
+    assert.equal(r.applied, 1)
+    assert.deepEqual(r.skipped, [])
+    assert.ok((await sectionXml(r.data!)).includes("앞 조각<hp:lineBreak/><hp:lineBreak/>뒤 조각을 바꿈"))
+  })
+})
+
+describe("원문 글로 찾아 고치기 (text-fallback)", () => {
+  const p = (t: string) => `<hp:p><hp:run><hp:t>${t}</hp:t></hp:run></hp:p>`
+  const cell = (r: number, c: number, body: string) =>
+    `<hp:tc><hp:subList>${body}</hp:subList><hp:cellAddr colAddr="${c}" rowAddr="${r}"/><hp:cellSpan colSpan="1" rowSpan="1"/></hp:tc>`
+
+  it("여러 문단에 걸친 제목 상자 글 — 문단 번호가 그린 머리 부호는 원문에 없어도 맞대고, 바뀐 낱말만 고친다", () => {
+    const xml = `<hs:sec xmlns:hs="x" xmlns:hp="y"><hp:tbl><hp:tr>${cell(0, 0, p("제목 첫 줄") + p("- 부제 하나") + p("부제 둘 R&amp;D"))}</hp:tr></hp:tbl></hs:sec>`
+    const scan = scanSectionXml(xml, 0)
+    const ctx = { scans: [scan], sectionSplices: [[]] as SpliceEdit[][] }
+    const ok = fallbackTextEdit(ctx, "제목 첫 줄\n- 부제 하나\n- 부제 둘 R&D", "제목 첫 줄\n- 부제 하나 고침\n- 부제 셋 R&D")
+    assert.equal(ok, true)
+    const out = applySplices(xml, ctx.sectionSplices[0])
+    assert.ok(out.includes(p("제목 첫 줄") + p("- 부제 하나 고침") + p("부제 셋 R&amp;D")), out)
+  })
+
+  it("같은 글이 여러 곳이면 IR 등장 순번으로 고른다", () => {
+    const xml = `<hs:sec xmlns:hs="x" xmlns:hp="y">${p("반복 문단")}${p("다른 문단")}${p("반복 문단")}</hs:sec>`
+    const scan = scanSectionXml(xml, 0)
+    const ctx = { scans: [scan], sectionSplices: [[]] as SpliceEdit[][] }
+    assert.equal(fallbackTextEdit(ctx, "반복 문단", "반복 문단 둘째", 1, 2), true)
+    const out = applySplices(xml, ctx.sectionSplices[0])
+    assert.equal(out, `<hs:sec xmlns:hs="x" xmlns:hp="y">${p("반복 문단")}${p("다른 문단")}${p("반복 문단 둘째")}</hs:sec>`)
+  })
+
+  it("표 칸: 행을 칸 글로 맞대 빈 칸을 채우고 글 칸을 고친다", () => {
+    const empty = `<hp:p><hp:run charPrIDRef="0"/></hp:p>`
+    const xml = `<hs:sec xmlns:hs="x" xmlns:hp="y"><hp:tbl rowCnt="2" colCnt="2">`
+      + `<hp:tr>${cell(0, 0, p("성명"))}${cell(0, 1, empty)}</hp:tr>`
+      + `<hp:tr>${cell(1, 0, p("연락처"))}${cell(1, 1, p("010"))}</hp:tr></hp:tbl></hs:sec>`
+    const scan = scanSectionXml(xml, 0)
+    const ctx = { scans: [scan], sectionSplices: [[]] as SpliceEdit[][] }
+    const r = fallbackTableEdits(ctx, scan.tables[0], [["성명", ""], ["연락처", "010"]], [["성명", "홍길동"], ["연락처", "010-1234"]])
+    assert.equal(r.applied, 2)
+    assert.deepEqual(r.failed, [])
+    const out = applySplices(xml, ctx.sectionSplices[0])
+    assert.ok(out.includes("<hp:t>홍길동</hp:t>"), out)
+    assert.ok(out.includes("<hp:t>010-1234</hp:t>"), out)
+  })
+
+  it("이미 고친 자리와 겹치면 쓰지 않는다", () => {
+    const xml = `<hs:sec xmlns:hs="x" xmlns:hp="y">${p("하나 둘")}</hs:sec>`
+    const scan = scanSectionXml(xml, 0)
+    const t = scan.bodyParagraphs[0].tRanges[0]
+    const ctx = { scans: [scan], sectionSplices: [[{ start: t.contentStart, end: t.contentEnd, replacement: "x" }]] }
+    assert.equal(fallbackTextEdit(ctx, "하나 둘", "하나 셋"), false)
+    assert.equal(ctx.sectionSplices[0].length, 1)
+  })
+})
+
+describe("새로쓰기 대체본 (rewrite-fallback)", () => {
+  it("글을 반영 못 한 건너뜀이 있을 때만 대체본이 필요하다", () => {
+    assert.equal(needsRewrite({ success: true, data: new Uint8Array(1), applied: 1, skipped: [] }), false)
+    assert.equal(needsRewrite({ success: true, data: new Uint8Array(1), applied: 1, skipped: [{ reason: "강조", partial: true }] }), false)
+    assert.equal(needsRewrite({ success: true, data: new Uint8Array(1), applied: 0, skipped: [{ reason: "미지원" }] }), true)
+    assert.equal(needsRewrite({ success: false, applied: 0, skipped: [], error: "x" }), true)
+    assert.equal(rewritePath("/a/b/out.hwpx"), "/a/b/out.rewrite.hwpx")
+    assert.equal(rewritePath("/a/b/out.HWP"), "/a/b/out.rewrite.hwpx")
+  })
+
+  it("HWPX 원본은 견본으로 편집 내용 전부를 새로 쓴다", async () => {
+    const src = new Uint8Array(await markdownToHwpx("# 제목\n\n□ 첫 항목\n\n| 구분 | 값 |\n| --- | --- |\n| 가 | 1 |"))
+    const r = await rewriteEdited(src, true, "# 새 제목\n\n□ 바꾼 항목\n\n□ 늘린 항목\n\n| 구분 | 값 | 비고 |\n| --- | --- | --- |\n| 가 | 1 | 열 추가 |", false)
+    assert.ok(r)
+    assert.equal(r.templated, true)
+    const md = await markdownOf(r.data)
+    for (const s of ["새 제목", "바꾼 항목", "늘린 항목", "열 추가"]) assert.ok(md.includes(s), md)
+  })
+})

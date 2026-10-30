@@ -26,8 +26,9 @@ import {
 } from "../hwp5/record.js"
 import type { IRBlock, IRTable, PatchOptions, PatchResult, PatchSkip, DiffResult } from "../types.js"
 import {
-  buildOrigUnits, alignUnits, diffUnitLists, textUnitToPlain, patchHwpx, type OrigUnit,
+  buildOrigUnits, alignUnits, diffUnitLists, textUnitToPlain, patchHwpx, fallbackPlain, tableUnitCells, type OrigUnit,
 } from "./patcher.js"
+import { findRuns, planRunEdits, prepareFallback } from "./text-fallback.js"
 import { detectFormat } from "../detect.js"
 import {
   splitMarkdownUnits, normForMatch, sanitizeText, parseGfmTable, unescapeGfmCell, unescapeGfm, escapeGfm, summarize,
@@ -348,14 +349,14 @@ export async function patchHwp(
   const tableMap = resolveTableMappings(origBlocks, scans.flatMap(s => s.tables))
 
   // 5) 변경 적용 (스테이징)
+  const ctx: PatchCtx5 = { origBlocks, paraMap, scans, tableMap, skipped, keepLineseg: options?.keepLineseg === true }
+  const unitKeys = origUnits.map(u => (u.kind === "text" ? fallbackPlain(u.raw, origBlocks[u.blockIdx]).replace(/\s+/g, "") : ""))
   for (const [oi, ei] of pairs) {
     if (oi !== null && ei !== null) {
       const orig = origUnits[oi]
       const edited = editedUnits[ei]
       if (orig.raw === edited.raw) continue
-      applied += handleModified(orig, edited, {
-        origBlocks, paraMap, scans, tableMap, skipped, keepLineseg: options?.keepLineseg === true,
-      })
+      applied += modifyUnit5(oi, orig, edited, ctx, unitKeys)
     } else if (oi !== null) {
       skipped.push({ reason: "블록 삭제는 미지원 (v1) — 원본 유지", before: summarize(origUnits[oi].raw) })
     } else if (ei !== null) {
@@ -565,6 +566,77 @@ function handleModified(orig: OrigUnit, edited: MdUnit, ctx: PatchCtx5): number 
   }
 
   return skip("지원하지 않는 블록 유형 변경")
+}
+
+/**
+ * 변경 유닛 — 좌표 경로(handleModified)가 한 건도 못 고쳤으면 그 경로의 스테이징·건너뜀을 되돌리고 원문 글을 문단에서 찾아
+ * 바뀐 자리만 고친다(text-fallback). 문단·글자 모양은 원문 그대로다. 빈 칸 채우기는 좌표 경로만 한다
+ */
+function modifyUnit5(oi: number, orig: OrigUnit, edited: MdUnit, ctx: PatchCtx5, unitKeys: string[]): number {
+  const snapshot = () => ctx.scans.map(s => ({ repl: new Map(s.repl), inserts: new Map([...s.inserts].map(([k, v]): [number, RawRecord[]] => [k, [...v]])) }))
+  const restore = (snap: ReturnType<typeof snapshot>) => ctx.scans.forEach((s, i) => { s.repl = snap[i].repl; s.inserts = snap[i].inserts })
+  const before = snapshot()
+  const skipSnap = ctx.skipped.length
+  const n = handleModified(orig, edited, ctx)
+  const fresh = ctx.skipped.slice(skipSnap)
+  if (n > 0 || fresh.length === 0 || fresh.every(s => s.partial)) return n
+  if (orig.kind !== edited.kind || orig.kind === "separator" || orig.kind === "image") return n
+  const after = snapshot()
+  restore(before)
+
+  const edit = (origLines: string, newLines: string, occ: number, total: number, scope?: ScanPara5[]): boolean => {
+    const { origPlain, newPlain, opt } = prepareFallback(origLines, newLines)
+    if (!origPlain.trim() || origPlain === newPlain) return false
+    const groups = scope ? [scope] : ctx.scans.map(s => s.paras)
+    const runs = groups.flatMap(ps => findRuns(ps.map(p => p.rawText), origPlain, opt).map(([i, j]) => ps.slice(i, j + 1)))
+    const run = runs.length === 1 ? runs[0] : runs.length === total ? runs[occ] : undefined
+    const plan = run && planRunEdits(run.map(p => p.rawText), origPlain, newPlain, opt)
+    if (!run || !plan) return false
+    const mark = snapshot()
+    for (let k = 0; k < run.length; k++) {
+      if (!plan[k].length) continue
+      const raw = run[k].rawText
+      let next = raw
+      for (const e of [...plan[k]].sort((a, b) => b.start - a.start)) next = next.slice(0, e.start) + e.text + next.slice(e.end)
+      // 줄바꿈 든 새 글은 통째 쓰기 경로라 앞뒤 공백을 그쪽이 붙인다
+      if (!stageParaPatch(ctx.scans[run[k].sectionIndex], run[k], next.includes("\n") ? next.trim() : next, () => 0, ctx.keepLineseg, raw)) {
+        restore(mark)
+        return false
+      }
+    }
+    return true
+  }
+
+  let applied = 0
+  const failed: Array<{ before: string; after: string }> = []
+  const block = ctx.origBlocks[orig.blockIdx]
+  if (orig.kind === "text") {
+    const k = unitKeys[oi] ?? ""
+    let occ = 0, total = 0
+    unitKeys.forEach((x, i) => { if (x === k) { total++; if (i < oi) occ++ } })
+    if (edit(fallbackPlain(orig.raw, block), fallbackPlain(edited.raw, block), occ, Math.max(total, 1))) applied = 1
+  } else {
+    const o = tableUnitCells(orig), e = tableUnitCells(edited)
+    if (o && e && o.length === e.length && o.every((r, i) => r.length === e[i].length)) {
+      const table = ctx.tableMap.get(orig.blockIdx)
+      const scope = table ? [...table.cells.values()].flatMap(c => c.paras).sort((a, b) => a.headerIdx - b.headerIdx) : undefined
+      const keys = o.flat().map(c => c.replace(/\s+/g, ""))
+      o.flat().forEach((oc, f) => {
+        const ec = e.flat()[f]
+        if (oc === ec || keys[f] === ec.replace(/\s+/g, "")) return
+        const occ = keys.slice(0, f).filter(x => x === keys[f]).length
+        if (!oc.startsWith("\u0000") && keys[f] && edit(oc, ec, occ, keys.filter(x => x === keys[f]).length, scope)) applied++
+        else failed.push({ before: oc.replace("\u0000", ""), after: ec.replace("\u0000", "") })
+      })
+    }
+  }
+  if (applied === 0) {
+    restore(after)
+    return n
+  }
+  ctx.skipped.length = skipSnap
+  for (const f of failed) ctx.skipped.push({ reason: "표 칸 위치를 찾지 못함 — 이 칸만 미적용", before: summarize(f.before), after: summarize(f.after) })
+  return applied
 }
 
 // ── 문단 ──

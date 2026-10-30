@@ -27,7 +27,7 @@ import { noteFormatFrom, noteRefMark, type NoteNumberFormat } from "../hwpx/note
 import { patchZipEntries } from "./zip-patch.js"
 import { checkPatchIntegrity } from "./integrity.js"
 import { AUTONUM_PREFIX_RE,
-  splitMarkdownUnits, normForMatch, sanitizeText, unescapeGfm, summarize, parseGfmTable,
+  splitMarkdownUnits, normForMatch, sanitizeText, unescapeGfm, summarize, parseGfmTable, parseHtmlTable, htmlCellInnerToLines,
   alignUnits, editedFromVisual, editedFromWideCols, LAYOUT_MODE_MISMATCH,
   type MdUnit,
 } from "./markdown-units.js"
@@ -38,6 +38,8 @@ import { resolveSectionEntryNames } from "./hwpx-entries.js"
 import { detectFormat } from "../detect.js"
 import { patchHwp } from "./hwp5-patch.js"
 import { parseEmphasis, minimalTextSplices } from "./inline-edit.js"
+import { lineBreakTextSplices } from "./line-break-edit.js"
+import { fallbackTextEdit, fallbackTableEdits } from "./text-fallback.js"
 import { readZipEntry } from "../hwpx/parser-shared.js"
 import { createStructureEditor, pairTablesInGaps, charStyles } from "./structure-edit.js"
 
@@ -136,7 +138,8 @@ export async function patchHwpx(
   //    삭제+추가로 보고하므로 그대로 반영하면 원본 서식이 전부 복제본으로 갈린다
   const sectionSplices: SpliceEdit[][] = scans.map(() => [])
   const structural = options?.structure !== false && origUnits.length * editedUnits.length <= 4_000_000
-  const ctx: PatchCtx = { origBlocks, paraMap, scans, scanTables, obTableOrdinals, sectionSplices, skipped, tableInsert, structure: structural, borders }
+  const ctx: PatchCtx = { origBlocks, paraMap, scans, scanTables, obTableOrdinals, sectionSplices, skipped, tableInsert, structure: structural, borders,
+    unitKeys: origUnits.map(u => (u.kind === "text" ? fallbackPlain(u.raw, origBlocks[u.blockIdx]).replace(/\s+/g, "") : "")) }
   const struct = structural ? createStructureEditor({
     origUnits, origBlocks, paraMap, scans, scanTables, obTableOrdinals, sectionSplices, skipped,
     inlineOf: oi => textUnitInline(origUnits[oi].raw, origBlocks[origUnits[oi].blockIdx]),
@@ -151,7 +154,7 @@ export async function patchHwpx(
       const edited = editedUnits[ei]
       if (looseRaw(orig.raw) === looseRaw(edited.raw)) continue
       const restyled = struct?.restyle(oi, edited) ?? null
-      applied += restyled ?? handleModifiedUnit(orig, edited, ctx)
+      applied += restyled ?? modifyUnit(oi, orig, edited, ctx)
     } else if (oi !== null) {
       lastOi = oi
       if (struct) applied += struct.remove(oi)
@@ -225,6 +228,8 @@ export interface OrigUnit extends MdUnit {
   /** 한 문단 블록이 여러 유닛으로 갈라짐 (강제 줄바꿈 \n\n, 문단 내 '|' 줄, [별표] 2블록
    *  병합) — 유닛 하나의 수정이 문단 전체를 덮어쓰므로 부분 수정 미지원 처리 */
   fragment?: boolean
+  /** 강제 줄바꿈 빈 줄로 갈라진 문단 조각의 순번 — 조각 글만 바꿔 문단 전체 글로 다시 맞춘다 */
+  part?: number
 }
 
 /**
@@ -251,6 +256,7 @@ export function buildOrigUnits(blocks: IRBlock[]): OrigUnit[] {
         || ((block.type === "paragraph" || block.type === "heading") && subUnits.length > 1)
       for (let s = 0; s < subUnits.length; s++) {
         const u: OrigUnit = { ...subUnits[s], blockIdx: i, fragment: isFragment || undefined }
+        if (isFragment && consume === 1 && block.text?.includes("\n")) u.part = s
         // 표 캡션 — 표 유닛 앞의 **...** 텍스트 유닛
         if (block.type === "table" && block.table?.caption && s === 0 && subUnits.length > 1 && u.kind === "text" && u.raw.startsWith("**")) {
           u.role = "caption"
@@ -472,6 +478,72 @@ interface PatchCtx {
   structure?: boolean
   /** 행 추가 복제 행 테두리 고침 (table-rows) */
   borders?: BorderVariants
+  /** 원본 유닛별 글 열쇠(공백 뺀 평문, 글 유닛만) — 글로 찾아 고치기의 등장 순번 */
+  unitKeys?: string[]
+}
+
+/** 글로 찾아 고치기용 평문(줄은 "\n") — 강조 표지·첨자 태그·그림 줄을 걷는다 (원문 hp:t 에 없는 표기) */
+export function fallbackPlain(raw: string, block: IRBlock | undefined): string {
+  const inline = block ? textUnitInline(raw, block, "\n") : raw.split("\n").map(l => l.trim()).filter(Boolean).join("\n")
+  return parseEmphasis(inline.replace(/!\[[^\]]*\]\([^)]*\)/g, " ").replace(/<br\s*\/?>/gi, "\n")).plain.replace(/<\/?(?:sup|sub)>/g, "")
+}
+
+/** 표 유닛 → 행별 칸 평문 (GFM·HTML). 칸 안 그림·중첩표는 null 칸 글로 */
+export function tableUnitCells(u: MdUnit): string[][] | null {
+  const cell = (t: string) => parseEmphasis(t).plain.replace(/<\/?(?:sup|sub)>/g, "").trim()
+  if (u.kind === "gfm-table") {
+    return parseGfmTable(u.raw.split("\n")).map(r => r.map(c => cell(c.replace(/(?<!\\)<br\s*\/?>/gi, "\n").replace(/\\\|/g, "|"))))
+  }
+  if (u.kind === "html-table") {
+    const rows = parseHtmlTable(u.raw)
+    if (!rows) return null
+    return rows.map(r => r.cells.map(c => {
+      const { lines, hadNonText } = htmlCellInnerToLines(c.inner)
+      return hadNonText ? "\u0000" + lines.join("\n") : cell(lines.join("\n"))
+    }))
+  }
+  return null
+}
+
+/**
+ * 변경 유닛 처리 — 좌표 경로(handleModifiedUnit)가 한 건도 못 고쳤으면 그 경로의 splice·건너뜀을 되돌리고
+ * 원문 글을 문단에서 찾아 고친다(text-fallback). 서식은 원문 문단·칸 그대로다
+ */
+function modifyUnit(oi: number, orig: OrigUnit, edited: MdUnit, ctx: PatchCtx): number {
+  const snap = ctx.sectionSplices.map(s => s.length)
+  const skipSnap = ctx.skipped.length
+  const n = handleModifiedUnit(orig, edited, ctx)
+  const fresh = ctx.skipped.slice(skipSnap)
+  if (n > 0 || fresh.length === 0 || fresh.every(s => s.partial)) return n
+  if (orig.kind === "separator" || orig.kind === "image" || orig.kind !== edited.kind) return n
+  const removed = ctx.sectionSplices.map((s, i) => s.splice(snap[i]))
+  const block = ctx.origBlocks[orig.blockIdx]
+  let applied = 0
+  let failed: Array<{ before: string; after: string }> = []
+  if (orig.kind === "text") {
+    const origPlain = fallbackPlain(orig.raw, block)
+    const keys = ctx.unitKeys ?? []
+    const k = keys[oi] ?? ""
+    let occ = 0, total = 0
+    keys.forEach((x, i) => { if (x === k) { total++; if (i < oi) occ++ } })
+    if (fallbackTextEdit(ctx, origPlain, fallbackPlain(edited.raw, block), occ, Math.max(total, 1))) applied = 1
+  } else {
+    const o = tableUnitCells(orig), e = tableUnitCells(edited)
+    if (o && e && o.length === e.length && o.every((r, i) => r.length === e[i].length)
+      && o.every((r, i) => r.every((c, j) => !c.startsWith("\u0000") || c === e[i][j]))) {
+      const ordinal = ctx.obTableOrdinals.size === ctx.scanTables.length ? ctx.obTableOrdinals.get(orig.blockIdx) : undefined
+      const r = fallbackTableEdits(ctx, ordinal !== undefined ? ctx.scanTables[ordinal] : undefined, o, e)
+      applied = r.applied
+      failed = r.failed
+    }
+  }
+  if (applied === 0) {
+    removed.forEach((r, i) => ctx.sectionSplices[i].push(...r))
+    return n
+  }
+  ctx.skipped.length = skipSnap
+  for (const f of failed) ctx.skipped.push({ reason: "표 칸 위치를 찾지 못함 — 이 칸만 미적용", before: summarize(f.before), after: summarize(f.after) })
+  return applied
 }
 
 /** 변경된 유닛 쌍 처리 — 적용 건수 반환 */
@@ -485,7 +557,7 @@ function handleModifiedUnit(orig: OrigUnit, edited: MdUnit, ctx: PatchCtx): numb
   if (orig.role === "caption") return skip("표 캡션 수정은 미지원 (v1)")
   if (orig.kind === "separator" || orig.kind === "image") return skip("이미지/구분선 변경은 미지원")
   if (!block) return skip("블록 매핑 실패")
-  if (orig.fragment) return skip("문단 분절(강제 줄바꿈/병합 유닛) — 부분 수정은 미지원 (v1)")
+  if (orig.fragment && orig.part === undefined) return skip("문단 분절(강제 줄바꿈/병합 유닛) — 부분 수정은 미지원 (v1)")
 
   if (block.type === "table" && block.table) {
     if (orig.kind !== edited.kind) return skip("표 ↔ 비표 변경은 미지원 (표 구조 변경)")
@@ -589,11 +661,8 @@ function patchParagraphUnit(
   const mapping = ctx.paraMap.get(orig.blockIdx)
   if (!mapping?.para) return skip("문단 소스맵 매핑 실패 (머리말/글상자/캡션 영역이거나 텍스트 불일치)")
 
-  // 문단 내 강제 줄바꿈(<hp:br/>/<hp:lineBreak/>) — 평문 치환 시 줄바꿈이 공백으로
-  // 변해 무손실 약속이 깨지므로 미지원 (v1)
-  if (block.text && block.text.includes("\n")) {
-    return skip("문단 내 강제 줄바꿈 포함 — 수정 시 줄바꿈 보존 불가로 미지원 (v1)")
-  }
+  // 문단 내 강제 줄바꿈(<hp:lineBreak/>) — 줄바꿈을 "\n" 으로 맞대 바뀐 자리만 고친다
+  if (block.text && block.text.includes("\n")) return patchLineBreakParagraph(block, orig, edited, mapping, ctx, skip)
 
   // 편집 마크다운 → 평문 + 서식 조각 (강조 표지는 걷는다: 조각 경계가 run 서식 경계)
   const origInline = parseEmphasis(textUnitInline(orig.raw, block))
@@ -661,15 +730,45 @@ function patchParagraphUnit(
   return 1
 }
 
+/** 강제 줄바꿈 문단: 마크다운 줄을 "\n" 으로 이은 평문끼리 diff 해 줄바꿈 요소를 지키며 고친다. 줄바꿈을 늘리고 줄여도 된다 */
+function patchLineBreakParagraph(
+  block: IRBlock, orig: OrigUnit, edited: MdUnit, mapping: ParaMapping, ctx: PatchCtx,
+  skip: (reason: string) => number,
+): number {
+  if (block.footnoteText || mapping.noteMarks?.length || mapping.prefixStripped) {
+    return skip("강제 줄바꿈 문단의 각주·자동번호 — 수정 미지원")
+  }
+  const plain = (raw: string) => parseEmphasis(textUnitInline(raw, block, "\n")).plain
+  let origNorm = plain(orig.raw)
+  let newNorm = plain(edited.raw)
+  if (newNorm === origNorm) return skip("텍스트 외 변경(헤딩 레벨/서식)만 감지 — 스타일 변경은 미지원")
+  if (newNorm.split("\n").some(l => sanitizeText(l) !== l) && origNorm.split("\n").every(l => sanitizeText(l) === l)) {
+    return skip("공백 정규화 불안정 텍스트 — 패치 시 원문 보존 불가로 미지원")
+  }
+  // 빈 줄(줄바꿈 둘)로 갈라진 조각 — 문단 전체 글에서 이 조각 자리만 바꾼다
+  if (orig.part !== undefined) {
+    const parts = splitMarkdownUnits(blocksToMarkdown([block])).map(u => plain(u.raw))
+    if (parts[orig.part] !== origNorm) return skip("문단 분절(강제 줄바꿈) 조각 매핑 실패 — 미지원")
+    origNorm = parts.join("\n\n")
+    parts[orig.part] = newNorm
+    newNorm = parts.join("\n\n")
+  }
+  const xml = ctx.scans[mapping.para!.sectionIndex]?.xml
+  const splices = xml ? lineBreakTextSplices(mapping.para!, xml, origNorm, newNorm) : null
+  if (!splices) return skip("강제 줄바꿈 문단을 원문과 맞대지 못함 — 미지원")
+  ctx.sectionSplices[mapping.para!.sectionIndex].push(...splices)
+  return 1
+}
+
 /** 텍스트 유닛 마크다운 → 평문 (builder 렌더링의 역변환): 강조 표지(** · <u> 등)는 걷는다 (글자로 찍히지 않게) */
 export function textUnitToPlain(raw: string, block: IRBlock): string {
   return parseEmphasis(textUnitInline(raw, block)).plain
 }
 
 /** 텍스트 유닛 마크다운 → 강조 표지가 남은 인라인 글 (헤딩 접두·링크·관련 이탤릭만 벗김) */
-function textUnitInline(raw: string, block: IRBlock): string {
-  // 여러 줄(soft-wrap)은 한 문단으로
-  let text = raw.split("\n").map(l => l.trim()).filter(Boolean).join(" ")
+function textUnitInline(raw: string, block: IRBlock, sep = " "): string {
+  // 여러 줄(soft-wrap)은 한 문단으로 — 강제 줄바꿈 문단은 줄을 "\n" 으로 잇는다
+  let text = raw.split("\n").map(l => l.trim()).filter(Boolean).join(sep)
   // 헤딩 접두 — 헤딩/[별표] 블록만 (리터럴 '# '로 시작하는 일반 문단은 보존)
   if (block.type === "heading" || (block.text && /^\[별표\s*\d+/.test(sanitizeText(block.text)))) {
     text = text.replace(/^#{1,6}\s+/, "")

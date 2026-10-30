@@ -845,13 +845,14 @@ describe("patchHwp — 본문 문단 다중줄 (<br> 규약, §4b)", () => {
     assert.deepEqual(Buffer.from(r.data!), Buffer.from(hwp), "no-op 바이트 불변")
   })
 
-  it("원본 다중줄 문단 수정에 <br> 없으면 skip (soft-wrap 접힘과 구분 불가)", async () => {
+  it("원본 다중줄 문단 수정에 <br> 없어도 바뀐 자리만 고쳐 줄바꿈을 지킨다 (원문 글로 찾아 고치기)", async () => {
     const hwp = buildHwp([paragraph("가나\n다라")])
     const md = parseHwp5Document(Buffer.from(hwp)).markdown
     const r = await patchHwp(hwp, md.replace("다라", "다라 수정"))
     assert.equal(r.success, true)
-    assert.equal(r.applied, 0)
-    assert.ok(r.skipped.some(s => s.reason.includes("<br>")), JSON.stringify(r.skipped))
+    assert.equal(r.applied, 1, JSON.stringify(r.skipped))
+    assert.deepEqual(r.skipped, [])
+    assert.ok(parseHwp5Document(Buffer.from(r.data!)).markdown.includes("가나\n다라 수정"))
   })
 
   it("원본 다중줄 문단을 <br> 표기로 수정하면 적용된다", async () => {
