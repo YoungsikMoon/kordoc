@@ -17,6 +17,14 @@ describe("COM 폴백 — 보안 승인 모듈 등록", () => {
     assert.ok(script.includes("$hwp.RegisterModule('FilePathCheckDLL', 'FilePathCheckerModuleExample')"), script)
     assert.ok(!script.includes("RegisterModule('FilePathCheckerModule'"))
   })
+  it("임시 폴더 만들기·복사는 try 안에 있어 실패해도 finally 가 지운다 (#177)", async () => {
+    const { comPowerShellInvocation } = await import("../src/hwpx/com-fallback.js")
+    const script = comPowerShellInvocation("C:\\in\\a.hwpx").args.at(-1)!
+    const tryAt = script.indexOf("try {")
+    assert.ok(tryAt > 0 && tryAt < script.indexOf("New-Item -ItemType Directory"), script)
+    assert.ok(tryAt < script.indexOf("Copy-Item -LiteralPath"), script)
+    assert.ok(script.indexOf("$tmpDir = Join-Path") < tryAt, "finally 가 쓸 경로는 try 앞에서 정한다")
+  })
   it("벤치 한컴 PDF 스크립트도 같은 종류 이름을 쓴다", () => {
     const ps1 = readFileSync(new URL("../bench/hangul-com-pdf.ps1", import.meta.url), "utf8")
     assert.ok(ps1.includes("RegisterModule('FilePathCheckDLL', 'FilePathCheckerModuleExample')"))

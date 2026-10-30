@@ -82,11 +82,12 @@ $ErrorActionPreference = 'Stop'
 
 $src = $env:KORDOC_COM_SRC
 $tmpDir = Join-Path $env:TEMP ('hwp-com-' + [guid]::NewGuid().ToString('N'))
-[void](New-Item -ItemType Directory -Path $tmpDir -Force)
-$tmpFile = Join-Path $tmpDir (Split-Path $src -Leaf)
-Copy-Item -LiteralPath $src -Destination $tmpFile -Force
 
 try {
+  # 폴더 만들기·복사도 try 안 — 복사가 실패해도 finally 가 임시 폴더를 지운다 (#177)
+  [void](New-Item -ItemType Directory -Path $tmpDir -Force)
+  $tmpFile = Join-Path $tmpDir (Split-Path $src -Leaf)
+  Copy-Item -LiteralPath $src -Destination $tmpFile -Force
   $hwp = New-Object -ComObject HWPFrame.HwpObject
   $hwp.RegisterModule('FilePathCheckDLL', 'FilePathCheckerModuleExample') | Out-Null
   # suspendpassword: 열기 암호가 걸린 문서는 암호 입력 창을 띄우지 않고 바로 실패 — 숨은 창이 입력을 기다리며 멈추던 것 (#93)
