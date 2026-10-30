@@ -16,6 +16,8 @@ export interface ConvertContext {
   fields: FieldState
   /** 바탕쪽 파트(masterpageN.xml 내용) — 구역 정의를 만나는 차례로 쌓는다 */
   masterPages: string[]
+  /** 지금 구역의 확장 바탕쪽(구역 끝 LIST_HEADER 묶음) — 구역 정의가 기본 바탕쪽 뒤에 쓴다 */
+  tailMasters: Array<{ head: RecNode; paras: RecNode[] }>
   /** 차트 OLE(BIN_DATA 순번) → 차트 파트 경로, 차트가 아니면 null */
   chartOf(binId: number): string | null
   /** 그림 BinData 참조 이름 */

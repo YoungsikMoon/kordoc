@@ -105,6 +105,7 @@ export async function hwpToHwpx(input: Uint8Array | ArrayBuffer, options?: HwpTo
     memoShapes: docInfo.filter(r => r.tagId === TAG_MEMO_SHAPE).length,
     fields: { stack: [] },
     masterPages: [],
+    tailMasters: [],
     chartOf(binId) {
       if (chartByBin.has(binId)) return chartByBin.get(binId)!
       const item = items.find(b => b.index === binId)

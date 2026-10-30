@@ -1,7 +1,7 @@
 /**
  * HWP 5.x 나머지 컨트롤 → HWPX: 머리말·꼬리말('head'·'foot'), 각주·미주('fn  '·'en  '), 자동 번호('atno'), 새 번호('nwno'),
  * 쪽 번호 위치('pgnp'), 감추기('pghd'), 쪽 번호 제어('pgct'), 책갈피('bokm'), 찾아보기 표시('idxm'), 글자 겹치기('tcps'),
- * 덧말('tdut'), 수식('eqed').
+ * 덧말('tdut'), 수식('eqed'), 양식 개체('form').
  *
  * 컨트롤 데이터는 CTRL_HEADER 의 컨트롤 id(4바이트) 뒤에 온다. 글을 담는 컨트롤(머리말·각주 …)은 자식 LIST_HEADER 와 뒤따르는
  * 형제 문단을 hp:subList 로 쓴다.
@@ -117,9 +117,74 @@ export function otherControlXml(id: string, node: RecNode, ctx: ConvertContext):
     }
     case "eqed":
       return { obj: true, xml: equationXml(node, ctx) }
+    case "form":
+      return formXml(node)
     default:
       return null
   }
+}
+
+const TAG_FORM_OBJECT = 0x5b
+const FORM_KINDS: Record<string, string> = { "tbp+": "hp:btn", "tbc+": "hp:checkBtn", "tbr+": "hp:radioBtn", "boc+": "hp:comboBox", "tde+": "hp:edit" }
+const BUTTON_VALUES = ["UNCHECKED", "CHECKED", "INDETERMINATE"] as const
+const SCROLL_BARS = ["NONE", "HORIZONTAL", "VERTICAL", "BOTH"] as const
+const TAB_KEYS = ["NEXT_OBJECT", "INSERT_TAB"] as const
+const TEXT_ALIGNS = ["LEFT", "CENTER", "RIGHT"] as const
+
+/** 양식 개체 속성 문자열 — "키:종류:값" 을 빈칸으로 잇는다. wstring 은 "키:wstring:글자 수:값", set 은 "키:set:길이:" 뒤에 안쪽 항목이 이어진다 */
+function formProps(s: string): Map<string, string> {
+  const out = new Map<string, string>()
+  let i = 0
+  const word = (): string => {
+    const j = s.indexOf(":", i)
+    const w = j < 0 ? s.slice(i) : s.slice(i, j)
+    i = j < 0 ? s.length : j + 1
+    return w
+  }
+  while (i < s.length) {
+    while (s[i] === " ") i++
+    if (i >= s.length) break
+    const key = word(), type = word()
+    if (type === "set") { word(); continue }
+    if (type === "wstring") {
+      const n = Number(word())
+      out.set(key, s.slice(i, i + n))
+      i += n
+      continue
+    }
+    const j = s.indexOf(" ", i) < 0 ? s.length : s.indexOf(" ", i)
+    out.set(key, s.slice(i, j))
+    i = j
+  }
+  return out
+}
+
+/** 'form' 양식 개체 — 개체 공통 속성(크기·배치) + FORM_OBJECT(종류 id, 글자 수 WORD@12, 속성 문자열@14). 단추·선택 상자·라디오·콤보·입력 칸 */
+function formXml(node: RecNode): CtrlXml | null {
+  const rec = node.kids.find(k => k.rec.tagId === TAG_FORM_OBJECT)?.rec.data
+  const tag = rec && rec.length >= 14 ? FORM_KINDS[rec.toString("latin1", 0, 4)] : undefined
+  if (!rec || !tag) return null
+  const p = formProps(rec.toString("utf16le", 14, 14 + rec.readUInt16LE(12) * 2))
+  const s = (k: string): string => p.get(k) ?? ""
+  const n = (k: string): number => Number(p.get(k) ?? 0) || 0
+  let own: Array<[string, string | number]>, inner = ""
+  if (tag === "hp:comboBox") {
+    // 한글은 콤보 상자의 보이는 글을 목록 항목 하나로 쓴다
+    own = [["listBoxRows", n("ListBoxRows")], ["listBoxWidth", n("ListBoxWidth")], ["editEnable", n("EditEnable")], ["selectedValue", ""]]
+    inner = el("hp:listItem", [["displayText", ""], ["value", s("Text")]])
+  } else if (tag === "hp:edit") {
+    own = [["multiLine", n("MultiLine")], ["passwordChar", s("PasswordChar")], ["maxLength", n("MaxLength")], ["scrollBars", pick(SCROLL_BARS, n("ScrollBars"))],
+      ["tabKeyBehavior", pick(TAB_KEYS, n("TabKeyBehavior"))], ["numOnly", n("Number")], ["readOnly", n("ReadOnly")], ["alignText", pick(TEXT_ALIGNS, n("AlignText"))]]
+    inner = s("Text") ? `<hp:text>${escText(s("Text"))}</hp:text>` : "<hp:text/>"
+  } else {
+    own = [["caption", s("Caption")], ["value", pick(BUTTON_VALUES, n("Value"))], ["radioGroupName", s("RadioGroupName")], ["triState", n("TriState")],
+      ["backStyle", n("BackStyle") ? "OPAQUE" : "TRANSPARENT"]]
+  }
+  return { obj: true, xml: el(tag, [...own, ["name", s("Name")], ["foreColor", color(n("ForeColor"))], ["backColor", color(n("BackColor"))], ["groupName", s("GroupName")],
+    ["tabStop", n("TabStop")], ["editable", n("Editable")], ["tabOrder", n("TabOrder")], ["enabled", n("Enabled")], ["borderTypeIDRef", n("BorderType")],
+    ["drawFrame", n("DrawFrame")], ["printable", n("Printable")], ["command", s("Command")]],
+  el("hp:formCharPr", [["charPrIDRef", n("CharShapeID")], ["followContext", n("FollowContext")], ["autoSz", n("AutoSize")], ["wordWrap", n("WordWrap")]])
+    + inner + objPlacementXml(readObjCommon(node))) }
 }
 
 /** 수식 — 개체 공통 속성 + EQEDIT(속성·스크립트·기준 크기·색·기준선·판·글꼴) */

@@ -169,6 +169,38 @@ describe("convertToHwpx·CLI·MCP — 저장 경로", () => {
   })
 })
 
+const RHWP = join(import.meta.dirname, "..", "bench", "corpus", "rhwp")
+describe("hwpToHwpx — 확장 바탕쪽(코퍼스)", { skip: !existsSync(join(RHWP, "hwpx", "exam_kor.hwpx")) }, () => {
+  it("구역 끝 바탕쪽을 한글 저장본처럼 마지막 쪽·임의 쪽으로 쓴다", async () => {
+    const kinds = async (zip: JSZip): Promise<string[]> => {
+      const out: string[] = []
+      for (let i = 0; zip.file(`Contents/section${i}.xml`); i++) {
+        const sec = await zip.file(`Contents/section${i}.xml`)!.async("string")
+        for (const [, id] of sec.matchAll(/<hp:masterPage idRef="([^"]+)"\/>/g)) {
+          const mp = await zip.file(`Contents/${id}.xml`)!.async("string")
+          out.push(`${i}:${mp.match(/type="(\w+)" pageNumber="(\d+)"/)!.slice(1).join("/")}`)
+        }
+      }
+      return out
+    }
+    const ours = await kinds(await JSZip.loadAsync(await hwpToHwpx(new Uint8Array(readFileSync(join(RHWP, "exam_kor.hwp"))))))
+    const hancom = await kinds(await JSZip.loadAsync(readFileSync(join(RHWP, "hwpx", "exam_kor.hwpx"))))
+    assert.deepEqual(ours, hancom)
+    assert.ok(ours.includes("2:OPTIONAL_PAGE/4") && ours.includes("0:LAST_PAGE/0"), ours.join(" "))
+  })
+})
+
+describe("hwpToHwpx — 양식 개체(코퍼스)", { skip: !existsSync(join(RHWP, "hwpx", "form-01.hwpx")) }, () => {
+  it("단추·선택 상자·라디오·콤보·입력 칸을 한글 저장본과 같게 쓴다", async () => {
+    const forms = async (zip: JSZip): Promise<string[]> =>
+      [...(await zip.file("Contents/section0.xml")!.async("string")).matchAll(/<hp:(btn|checkBtn|radioBtn|comboBox|edit) [\s\S]*?<\/hp:\1>/g)].map(m => m[0])
+    const ours = await forms(await JSZip.loadAsync(await hwpToHwpx(new Uint8Array(readFileSync(join(RHWP, "form-01.hwp"))))))
+    const hancom = await forms(await JSZip.loadAsync(readFileSync(join(RHWP, "hwpx", "form-01.hwpx"))))
+    assert.equal(ours.length, 5)
+    assert.deepEqual(ours, hancom)
+  })
+})
+
 const CORPUS = join(import.meta.dirname, "..", "bench", "corpus", "korea-kr-pairs")
 describe("hwpToHwpx — 한글 저장 짝(코퍼스)", { skip: !existsSync(CORPUS) }, () => {
   it("변환본의 글이 한글이 저장한 HWPX 의 글과 같다", async () => {

@@ -192,6 +192,10 @@ function runXml(charShape: number, toks: Tok[]): string {
 
 /** 섹션 레코드 트리 → sectionN.xml */
 export function sectionXml(top: RecNode[], ctx: ConvertContext): string {
+  // 확장 바탕쪽(마지막 쪽·임의 쪽)은 구역 끝 — 마지막 문단 뒤 수준 1 LIST_HEADER 와 문단(트리에선 그 문단의 자식)이다. 글 폭·높이가
+  // 0 인 묶음은 바탕쪽이 아니다(메모 글)
+  const last = top.filter(n => n.rec.tagId === TAG.PARA_HEADER).at(-1)
+  ctx.tailMasters = last ? listGroups(last.kids).filter(g => g.head.rec.data.length >= 20 && (g.head.rec.data.readUInt32LE(8) || g.head.rec.data.readUInt32LE(12))) : []
   return XML_DECL + `<hs:sec ${NS}>` + paragraphsXml(top, ctx) + "</hs:sec>"
 }
 
@@ -240,7 +244,13 @@ export function secPrXml(node: RecNode, ctx: ConvertContext): string {
   let notes = 0, borders = 0
   // 바탕쪽 — 구역 정의 자식 LIST_HEADER 와 뒤따르는 문단. 종류는 구역 속성 비트 29(양쪽)·30(짝수)·31(홀수) 중 선 것의 차례로 놓인다
   const kinds = MASTER_KINDS.filter((_, i) => bit(a, 29 + i))
-  const masters = listGroups(node.kids).map((g, i) => masterPageRef(g, kinds[i] ?? "BOTH", ctx))
+  const masters = listGroups(node.kids).map((g, i) => masterPageRef(g, kinds[i] ?? "BOTH", 0, ctx))
+  // 확장 바탕쪽 — 확장 값이 3 이면 마지막 쪽, 그보다 크면 (값 − 3) 쪽 임의 쪽 (한글 저장 짝·한글 PDF 로 확인)
+  for (const g of ctx.tailMasters) {
+    const ext = g.head.rec.data.readUInt16LE(18)
+    masters.push(ext > 3 ? masterPageRef(g, "OPTIONAL_PAGE", ext - 3, ctx) : masterPageRef(g, "LAST_PAGE", 0, ctx))
+  }
+  ctx.tailMasters = []
   for (const k of node.kids) {
     const d = k.rec.data
     if (k.rec.tagId === TAG.PAGE_DEF) {
@@ -286,14 +296,14 @@ function presentationXml(data: Buffer): string {
 
 const MASTER_KINDS = ["BOTH", "EVEN", "ODD"] as const
 
-/** 바탕쪽 하나 → masterpageN.xml(ctx.masterPages 에 쌓음), 구역 정의에 둘 참조. LIST_HEADER 목록 머리 뒤 글 폭·높이·글/번호 참조·확장 플래그 */
-function masterPageRef(g: { head: RecNode; paras: RecNode[] }, kind: string, ctx: ConvertContext): string {
+/** 바탕쪽 하나 → masterpageN.xml(ctx.masterPages 에 쌓음), 구역 정의에 둘 참조. LIST_HEADER 목록 머리 뒤 글 폭·높이·글/번호 참조 */
+function masterPageRef(g: { head: RecNode; paras: RecNode[] }, kind: string, pageNumber: number, ctx: ConvertContext): string {
   const d = g.head.rec.data
   const c = new Cur(d, 8)
   const size: Record<string, number> = { textWidth: c.u32(), textHeight: c.u32(), hasTextRef: c.u8(), hasNumRef: c.u8() }
-  const ext = c.u16()
   const id = `masterpage${ctx.masterPages.length}`
-  ctx.masterPages.push(XML_DECL + `<masterPage ${NS} id="${id}" type="${kind}" pageNumber="0" pageDuplicate="${bit(ext, 0)}" pageFront="0">`
+  // 겹치기(pageDuplicate)는 확장 값 비트로 알 수 없다 — 한글 저장본은 확장 값 3·7 에서도 0 이다
+  ctx.masterPages.push(XML_DECL + `<masterPage ${NS} id="${id}" type="${kind}" pageNumber="${pageNumber}" pageDuplicate="0" pageFront="0">`
     + el("hp:subList", subListAttrs(d).map(([k, v]) => [k, size[k] ?? v]), paragraphsXml(g.paras, ctx)) + "</masterPage>")
   return el("hp:masterPage", [["idRef", id]])
 }
